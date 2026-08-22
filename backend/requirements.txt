@@ -1,0 +1,30 @@
+# Django
+Django>=5.2,<7.0
+djangorestframework>=3.16,<4.0
+django-cors-headers>=4.7,<5.0
+
+# Database
+psycopg[binary]>=3.2,<4.0
+dj-database-url>=2.3,<3.0
+
+# Environment
+python-dotenv>=1.1,<2.0
+django-environ>=0.12,<1.0
+
+# Code quality
+flake8>=7.3,<8.0
+# flake8-django==1.4.0  # incompatible with Python 3.14, re-add when fixed
+isort>=6.0,<9.0
+black>=25.1,<27.0
+
+# Testing
+pytest>=8.4,<10.0
+pytest-django>=4.11,<5.0
+pytest-cov>=6.2,<8.0
+
+# DRF extras
+djangorestframework-simplejwt>=5.5,<6.0
+django-filter>=25.1,<27.0
+
+# Redis / cache
+django-redis>=5.4,<8.0
