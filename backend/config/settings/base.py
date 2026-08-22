@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_filters",
     # Local apps (add as they're created)
+    "core",
     # "tenants",
     # "users",
     # "branches",
@@ -63,7 +64,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    # "tenants.middleware.TenantMiddleware",  # enable after tenants app is created
+    "core.middleware.TenantMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]

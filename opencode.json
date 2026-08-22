@@ -1,0 +1,5 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "ollama-cloud/gpt-oss:120b",
+  "agent": {}
+}
