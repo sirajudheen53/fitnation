@@ -113,12 +113,6 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
     }
   }
 
-  void _onOtpBackspace(int index, String value) {
-    if (value.isEmpty && index > 0) {
-      _focusNodes[index - 1].requestFocus();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);

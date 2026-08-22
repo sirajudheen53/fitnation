@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'core/theme/app_theme.dart';
 import 'features/auth/data/data_sources/auth_local_data_source.dart';
+import 'features/auth/presentation/providers/auth_providers.dart';
 import 'features/auth/presentation/providers/auth_notifier.dart';
 import 'router/app_router.dart';
 

@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
-import '../../core/constants/app_constants.dart';
+import '../../../core/constants/app_constants.dart';
 
 /// Singleton Dio instance configured for the FBOS API.
 class ApiClient {

@@ -61,10 +61,40 @@ When working on this project, use the appropriate agent:
 - `/agent frontend` — for Next.js/frontend coding
 - `/agent mobile` — for Flutter/mobile coding
 
-## Important
-- Always write tests for new features
+## 🚨 STRICT TESTING RULE (NON-NEGOTIABLE)
+
+**Every feature MUST include tests in the same commit. No exceptions.**
+
+### Backend (Django)
+- Unit tests for every model, serializer, view, permission, middleware
+- Integration tests (APITestCase) for every API endpoint
+- Multi-tenant isolation tests for every tenant-scoped model
+- Minimum 80% code coverage
+- Run: `cd backend && python3 -m pytest --cov`
+- TDD encouraged: write failing test first, then implement
+
+### Frontend (Next.js)
+- Jest + React Testing Library tests for every component
+- Playwright e2e tests for every page/flow
+- Test: rendering, interactions, API mocking, error/loading/empty states
+- Minimum 80% code coverage
+- Run: `cd frontend && npm run test`
+
+### Mobile (Flutter)
+- Widget tests for every reusable widget
+- Unit tests for every model, service, repository, provider
+- Integration tests for every screen/flow
+- Minimum 80% code coverage
+- Run: `cd mobile && flutter test`
+
+### Enforcement
+- **No PR merged without passing tests in CI**
+- **No story marked Done without test evidence**
+- **No deployment without green CI**
+- Tests written IN THE SAME COMMIT as the feature
+- Bug fixes: write reproducing test FIRST, then fix
+
+## Other Rules
 - Never commit secrets, API keys, or passwords
 - Follow the architecture in /docs
-- Run `python manage.py test` after backend changes
-- Run `npm run test` after frontend changes
-- Run `flutter test` after mobile changes
+- Run tests after ALL changes

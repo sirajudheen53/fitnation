@@ -87,21 +87,90 @@ jobs:
           isort --check-only .
         continue-on-error: true
 
-      - name: Run tests with pytest
+      - name: Run tests with pytest (80% coverage minimum)
         env:
           DJANGO_SETTINGS_MODULE: config.settings.dev
           DATABASE_URL: postgres://fitnation:fitnation_test@localhost:5432/fitnation_test
           REDIS_URL: redis://localhost:6379/1
           SECRET_KEY: test-secret-key-for-ci
         run: |
-          pytest --cov=. --cov-report=xml --cov-report=term-missing
+          pytest --cov=. --cov-report=xml --cov-report=term-missing --cov-fail-under=80
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
           directory: backend
           files: ./backend/coverage.xml
-          fail_ci_if_error: false
+          fail_ci_if_error: true
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Frontend: Lint + Test
+  # ─────────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend Lint & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint with ESLint
+        run: npx eslint . --max-warnings 0
+        continue-on-error: false
+
+      - name: Run tests with Jest (80% coverage minimum)
+        run: npm run test -- --coverage --coverageThreshold='{"global":{"lines":80}}'
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Mobile: Analyze + Test
+  # ─────────────────────────────────────────────────────────────────────────────
+  mobile:
+    name: Mobile Analyze & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze with dart analyze
+        run: dart analyze
+        continue-on-error: false
+
+      - name: Run tests with coverage
+        run: flutter test --coverage
+
+      - name: Check coverage (80% minimum)
+        run: |
+          COVERAGE=$(cat coverage/lcov.info | grep -o 'end_of_record' | wc -l)
+          if [ "$COVERAGE" -eq 0 ]; then
+            echo "No coverage data found!"
+            exit 1
+          fi
+          echo "Coverage data found: $COVERAGE files"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Docker Build (backend image)

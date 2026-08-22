@@ -1,10 +1,6 @@
-import 'package:json_annotation/json_annotation.dart';
 import 'user_model.dart';
 
-part 'auth_response.g.dart';
-
 /// Response from OTP verify endpoint.
-@JsonSerializable()
 class AuthResponse {
   final String token;
   final UserModel user;
@@ -16,7 +12,20 @@ class AuthResponse {
     this.permissions = const [],
   });
 
-  factory AuthResponse.fromJson(Map<String, dynamic> json) => _$AuthResponseFromJson(json);
+  factory AuthResponse.fromJson(Map<String, dynamic> json) {
+    return AuthResponse(
+      token: json['token'] as String,
+      user: UserModel.fromJson(json['user'] as Map<String, dynamic>),
+      permissions: (json['permissions'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
+    );
+  }
 
-  Map<String, dynamic> toJson() => _$AuthResponseToJson(this);
+  Map<String, dynamic> toJson() => {
+        'token': token,
+        'user': user.toJson(),
+        'permissions': permissions,
+      };
 }

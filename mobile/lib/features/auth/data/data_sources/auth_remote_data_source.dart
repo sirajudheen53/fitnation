@@ -105,6 +105,7 @@ class AuthRemoteDataSource {
 
       case DioExceptionType.cancel:
       case DioExceptionType.badCertificate:
+      case DioExceptionType.transformTimeout:
       case DioExceptionType.unknown:
         return UnknownFailure(message: e.message ?? 'Unknown error');
     }

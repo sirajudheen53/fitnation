@@ -23,9 +23,6 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
 
-  # Data classes
-  json_annotation: ^4.9.0
-
   # Device info
   device_info_plus: ^11.2.0
 
@@ -40,11 +37,6 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-
-  # Code generation
-  build_runner: ^2.4.13
-  json_serializable: ^6.9.0
-  source_gen: ^2.0.0
 
   # Testing
   integration_test:

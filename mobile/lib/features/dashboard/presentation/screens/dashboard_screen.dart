@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers/auth_notifier.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../auth/presentation/providers/auth_notifier.dart';
 
 /// Customer dashboard scaffold — main screen after login.
 /// Shows bottom navigation with permission-filtered tabs.

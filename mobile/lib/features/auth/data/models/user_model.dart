@@ -1,26 +1,14 @@
-import 'package:json_annotation/json_annotation.dart';
-
-part 'user_model.g.dart';
-
 /// User profile returned from the API.
-@JsonSerializable()
 class UserModel {
   final int id;
   final String? email;
-  @JsonKey(name: 'first_name')
   final String? firstName;
-  @JsonKey(name: 'last_name')
   final String? lastName;
   final String role;
-  @JsonKey(name: 'tenant_id')
   final int? tenantId;
-  @JsonKey(name: 'tenant_name')
   final String? tenantName;
-  @JsonKey(name: 'branch_id')
   final int? branchId;
-  @JsonKey(name: 'branch_name')
   final String? branchName;
-  @JsonKey(name: 'is_owner')
   final bool isOwner;
 
   const UserModel({
@@ -36,9 +24,33 @@ class UserModel {
     this.isOwner = false,
   });
 
-  factory UserModel.fromJson(Map<String, dynamic> json) => _$UserModelFromJson(json);
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel(
+      id: json['id'] as int,
+      email: json['email'] as String?,
+      firstName: json['first_name'] as String?,
+      lastName: json['last_name'] as String?,
+      role: json['role'] as String,
+      tenantId: json['tenant_id'] as int?,
+      tenantName: json['tenant_name'] as String?,
+      branchId: json['branch_id'] as int?,
+      branchName: json['branch_name'] as String?,
+      isOwner: (json['is_owner'] as bool?) ?? false,
+    );
+  }
 
-  Map<String, dynamic> toJson() => _$UserModelToJson(this);
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'email': email,
+        'first_name': firstName,
+        'last_name': lastName,
+        'role': role,
+        'tenant_id': tenantId,
+        'tenant_name': tenantName,
+        'branch_id': branchId,
+        'branch_name': branchName,
+        'is_owner': isOwner,
+      };
 
   /// Full display name.
   String get fullName {
@@ -50,7 +62,7 @@ class UserModel {
   /// Whether this user is a customer (mobile app user).
   bool get isCustomer => role == 'customer';
 
-  /// Creates a copy of this model with updated fields.
+  /// Creates a copy with updated fields.
   UserModel copyWith({
     int? id,
     String? email,
