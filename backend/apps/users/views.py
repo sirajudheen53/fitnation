@@ -3,7 +3,7 @@
 from django.contrib.auth import authenticate
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.exceptions import AuthenticationFailed, ValidationError
+from rest_framework.exceptions import AuthenticationFailed, NotFound, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -31,6 +31,29 @@ from apps.users.services import (
     get_or_create_customer_by_phone,
     get_user_permissions,
     issue_token,
+)
+from apps.users.trainer_selectors import (
+    trainer_assignment_list,
+    trainer_get_by_id,
+    trainer_list,
+    trainer_metrics,
+    trainer_schedule_list,
+)
+from apps.users.trainer_services import (
+    assign_customer_to_trainer,
+    create_schedule,
+    create_trainer,
+    unassign_customer_from_trainer,
+    update_schedule,
+    update_trainer,
+)
+from apps.users.serializers import (
+    TrainerCreateSerializer,
+    TrainerCustomerAssignmentSerializer,
+    TrainerSerializer,
+    TrainerUpdateSerializer,
+    TrainerScheduleSerializer,
+    TrainerMetricsSerializer,
 )
 
 
@@ -273,3 +296,210 @@ class UserViewSet(ViewSet):
                 "role_at_branch": role_at_branch,
             }
         )
+
+
+# ── Trainer ViewSet ───────────────────────────────────────────────────────────
+
+
+class TrainerViewSet(ViewSet):
+    """Tenant-scoped trainer management CRUD with schedule, assignment, and metrics."""
+
+    authentication_classes = [TenantTokenAuthentication]
+    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    required_permission = "users.view_user"
+
+    def _get_trainer(self, request: Request, pk: int):
+        """Retrieve a trainer or raise 404."""
+        from apps.users.models import Trainer
+
+        try:
+            return trainer_get_by_id(request.tenant, int(pk))
+        except Trainer.DoesNotExist as exc:
+            raise NotFound("Trainer not found") from exc
+
+    def list(self, request: Request) -> Response:
+        """List trainers in the current tenant."""
+        qs = trainer_list(
+            tenant=request.tenant,
+            is_active=request.query_params.get("is_active"),
+            specialization=request.query_params.get("specialization"),
+            search=request.query_params.get("search"),
+        )
+        serializer = TrainerSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    def create(self, request: Request) -> Response:
+        """Create a new trainer in the tenant."""
+        self.required_permission = "users.create_user"
+        serializer = TrainerCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        trainer = create_trainer(
+            tenant=request.tenant,
+            email=data["email"],
+            first_name=data["first_name"],
+            last_name=data["last_name"],
+            phone=data.get("phone", ""),
+            password=data.get("password", ""),
+            specialization=data.get("specialization", ""),
+            bio=data.get("bio", ""),
+            certifications=data.get("certifications", []),
+            experience_years=data.get("experience_years", 0),
+            max_clients=data.get("max_clients", 50),
+            profile_photo=data.get("profile_photo", ""),
+            actor=request.user,
+        )
+        return Response(
+            TrainerSerializer(trainer).data, status=status.HTTP_201_CREATED
+        )
+
+    def retrieve(self, request: Request, pk: int) -> Response:
+        """Retrieve a single trainer."""
+        trainer = self._get_trainer(request, pk)
+        serializer = TrainerSerializer(trainer)
+        return Response(serializer.data)
+
+    def partial_update(self, request: Request, pk: int) -> Response:
+        """Update a trainer profile."""
+        self.required_permission = "users.edit_user"
+        trainer = self._get_trainer(request, pk)
+        serializer = TrainerUpdateSerializer(
+            trainer,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        trainer = update_trainer(trainer, **serializer.validated_data)
+        return Response(TrainerSerializer(trainer).data)
+
+    @action(detail=True, methods=["get", "post"], url_path="schedule")
+    def schedule(self, request: Request, pk: int) -> Response:
+        """GET: List trainer's schedule. POST: Add a schedule entry."""
+        trainer = self._get_trainer(request, pk)
+
+        if request.method == "GET":
+            schedules = trainer_schedule_list(request.tenant, trainer.id)
+            serializer = TrainerScheduleSerializer(schedules, many=True)
+            return Response(serializer.data)
+
+        # POST — create new schedule entry
+        self.required_permission = "users.edit_user"
+        serializer = TrainerScheduleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        schedule = create_schedule(
+            tenant=request.tenant,
+            trainer=trainer,
+            day_of_week=data["day_of_week"],
+            start_time=data["start_time"],
+            end_time=data["end_time"],
+            is_available=data.get("is_available", True),
+        )
+        return Response(
+            TrainerScheduleSerializer(schedule).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"schedule/(?P<schedule_id>\d+)",
+    )
+    def update_schedule(self, request: Request, pk: int, schedule_id: int) -> Response:
+        """PATCH: Update a specific schedule entry."""
+        self.required_permission = "users.edit_user"
+        trainer = self._get_trainer(request, pk)
+        from apps.users.models import TrainerSchedule
+
+        try:
+            schedule = TrainerSchedule.objects.get(
+                id=schedule_id,
+                tenant=request.tenant,
+                trainer=trainer,
+            )
+        except TrainerSchedule.DoesNotExist as exc:
+            raise NotFound("Schedule entry not found") from exc
+
+        serializer = TrainerScheduleSerializer(
+            schedule, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        schedule = update_schedule(schedule, **data)
+        return Response(TrainerScheduleSerializer(schedule).data)
+
+    @action(detail=True, methods=["post"], url_path="assign-customer")
+    def assign_customer(self, request: Request, pk: int) -> Response:
+        """Assign a customer to this trainer."""
+        self.required_permission = "users.edit_user"
+        trainer = self._get_trainer(request, pk)
+        customer_id = request.data.get("customer_id")
+
+        if customer_id is None:
+            raise ValidationError("customer_id is required")
+
+        from apps.customers.models import Customer
+
+        try:
+            customer = Customer.objects.get(id=int(customer_id), tenant=request.tenant)
+        except (Customer.DoesNotExist, ValueError) as exc:
+            raise NotFound("Customer not found") from exc
+
+        assignment = assign_customer_to_trainer(
+            tenant=request.tenant,
+            trainer=trainer,
+            customer_id=customer.id,
+        )
+        return Response(
+            TrainerCustomerAssignmentSerializer(assignment).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["get"], url_path="assignments")
+    def assignments(self, request: Request, pk: int) -> Response:
+        """List customer assignments for a trainer."""
+        trainer = self._get_trainer(request, pk)
+        is_active = request.query_params.get("is_active")
+        if is_active is not None and isinstance(is_active, str):
+            is_active = is_active.lower() in ("true", "1", "yes")
+        qs = trainer_assignment_list(
+            tenant=request.tenant,
+            trainer_id=trainer.id,
+            is_active=is_active,
+        )
+        serializer = TrainerCustomerAssignmentSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"unassign-customer/(?P<assignment_id>\d+)",
+    )
+    def unassign_customer(self, request: Request, pk: int, assignment_id: int) -> Response:
+        """Unassign a customer from this trainer."""
+        self.required_permission = "users.edit_user"
+        trainer = self._get_trainer(request, pk)
+        from apps.users.models import TrainerCustomerAssignment
+
+        try:
+            assignment = TrainerCustomerAssignment.objects.get(
+                id=assignment_id,
+                tenant=request.tenant,
+                trainer=trainer,
+            )
+        except TrainerCustomerAssignment.DoesNotExist as exc:
+            raise NotFound("Assignment not found") from exc
+
+        assignment = unassign_customer_from_trainer(assignment)
+        return Response(TrainerCustomerAssignmentSerializer(assignment).data)
+
+    @action(detail=True, methods=["get"], url_path="metrics")
+    def performance_metrics(self, request: Request, pk: int) -> Response:
+        """Return aggregate performance metrics for a trainer."""
+        trainer = self._get_trainer(request, pk)
+        metrics = trainer_metrics(request.tenant, trainer.id)
+        serializer = TrainerMetricsSerializer(data=metrics)
+        serializer.is_valid(raise_exception=True)
+        return Response(serializer.data)

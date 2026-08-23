@@ -18,6 +18,13 @@ class Customer(TenantModelMixin):
         OTHER = "other", "Other"
         PREFER_NOT_TO_SAY = "prefer_not_to_say", "Prefer not to say"
 
+    class Status(models.TextChoices):
+        """Lifecycle status of a customer."""
+
+        ACTIVE = "active", "Active"
+        INACTIVE = "inactive", "Inactive"
+        SUSPENDED = "suspended", "Suspended"
+
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -41,6 +48,21 @@ class Customer(TenantModelMixin):
     )
     emergency_contact_name = models.CharField(max_length=200, blank=True)
     emergency_contact_phone = models.CharField(max_length=20, blank=True)
+    address_street = models.CharField(max_length=300, blank=True)
+    address_city = models.CharField(max_length=100, blank=True)
+    address_state = models.CharField(max_length=100, blank=True)
+    address_postal_code = models.CharField(max_length=20, blank=True)
+    profile_photo = models.ImageField(
+        upload_to="customer-photos/",
+        blank=True,
+        null=True,
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+    )
+    notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -80,6 +102,9 @@ class HealthProfile(TenantModelMixin):
     )
     injuries = models.TextField(blank=True)
     medical_info = models.JSONField(default=dict, blank=True)
+    medical_conditions = models.JSONField(default=list, blank=True)
+    allergies = models.JSONField(default=list, blank=True)
+    medications = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -199,3 +224,28 @@ class BodyMeasurement(TenantModelMixin):
     def __str__(self) -> str:
         """Return measurement label."""
         return f"Measurement: {self.customer.name} @ {self.date_logged}"
+
+
+class ProgressPhoto(TenantModelMixin):
+    """Progress photos logged by a customer over time."""
+
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name="progress_photos",
+    )
+    image = models.ImageField(upload_to="progress-photos/")
+    caption = models.CharField(max_length=300, blank=True)
+    taken_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """ProgressPhoto model metadata."""
+
+        db_table = "progress_photos"
+        ordering = ["-taken_at", "-created_at"]
+
+    def __str__(self) -> str:
+        """Return progress photo label."""
+        return f"ProgressPhoto: {self.customer.name} @ {self.taken_at}"

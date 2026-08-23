@@ -3,17 +3,25 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from apps.customers.models import BodyMeasurement, Customer, FitnessGoal, HealthProfile
+from apps.customers.models import (
+    BodyMeasurement,
+    Customer,
+    FitnessGoal,
+    HealthProfile,
+    ProgressPhoto,
+)
 from apps.customers.serializers import (
     BodyMeasurementSerializer,
     CustomerSerializer,
     FitnessGoalSerializer,
     HealthProfileSerializer,
+    ProgressPhotoSerializer,
 )
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
@@ -27,10 +35,24 @@ class CustomerViewSet(ModelViewSet):
     permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "customers.view_customer"
     serializer_class = CustomerSerializer
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ["name", "phone", "email"]
+    ordering_fields = ["name", "created_at", "updated_at"]
+    ordering = ["-created_at"]
 
     def get_queryset(self) -> Customer:
-        """Return customers scoped to the request tenant."""
-        return Customer.objects.for_tenant(self.request.tenant)
+        """Return customers scoped to the request tenant with optional filters."""
+        queryset = Customer.objects.for_tenant(self.request.tenant)
+        branch = self.request.query_params.get("branch")
+        if branch:
+            queryset = queryset.filter(branch_id=branch)
+        status_param = self.request.query_params.get("status")
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        gender = self.request.query_params.get("gender")
+        if gender:
+            queryset = queryset.filter(gender=gender)
+        return queryset
 
     def create(self, request: Request) -> Response:
         """Create a new customer."""
@@ -150,6 +172,31 @@ class CustomerViewSet(ModelViewSet):
         goal = serializer.save(tenant=request.tenant, customer=customer)
         return Response(
             FitnessGoalSerializer(goal).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["get", "post"], url_path="progress-photos")
+    def progress_photos(self, request: Request, pk: int) -> Response:
+        """List or create progress photos for a customer."""
+        self.required_permission = "customers.view_customer"
+        customer = get_object_or_404(
+            Customer.objects.for_tenant(request.tenant),
+            id=pk,
+        )
+
+        if request.method == "GET":
+            photos = customer.progress_photos.all()
+            return Response(ProgressPhotoSerializer(photos, many=True).data)
+
+        self.required_permission = "customers.edit_customer"
+        serializer = ProgressPhotoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        photo = serializer.save(
+            tenant=request.tenant,
+            customer=customer,
+        )
+        return Response(
+            ProgressPhotoSerializer(photo).data,
             status=status.HTTP_201_CREATED,
         )
 

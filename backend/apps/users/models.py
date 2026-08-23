@@ -3,7 +3,7 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
-from apps.tenants.models import Tenant
+from apps.tenants.models import Tenant, TenantModelMixin
 
 
 class UserManager(BaseUserManager):
@@ -126,6 +126,26 @@ class Trainer(models.Model):
     specialization = models.CharField(max_length=100, blank=True)
     bio = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    certifications = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Array of {name, issuer, year, expiry} objects.",
+    )
+    experience_years = models.PositiveIntegerField(default=0)
+    rating = models.DecimalField(
+        max_digits=3,
+        decimal_places=2,
+        default=0,
+        help_text="Average rating (0.00–5.00).",
+    )
+    profile_photo = models.URLField(
+        blank=True,
+        help_text="URL to the trainer's profile photo.",
+    )
+    max_clients = models.PositiveIntegerField(
+        default=50,
+        help_text="Maximum simultaneous clients allowed.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -137,6 +157,88 @@ class Trainer(models.Model):
     def __str__(self) -> str:
         """Return trainer label."""
         return f"Trainer: {self.user.email}"
+
+
+class TrainerSchedule(TenantModelMixin):
+    """Weekly availability schedule for a trainer."""
+
+    class DayOfWeek(models.TextChoices):
+        """Days of the week."""
+
+        MONDAY = "monday", "Monday"
+        TUESDAY = "tuesday", "Tuesday"
+        WEDNESDAY = "wednesday", "Wednesday"
+        THURSDAY = "thursday", "Thursday"
+        FRIDAY = "friday", "Friday"
+        SATURDAY = "saturday", "Saturday"
+        SUNDAY = "sunday", "Sunday"
+
+    trainer = models.ForeignKey(
+        Trainer,
+        on_delete=models.CASCADE,
+        related_name="schedules",
+    )
+    day_of_week = models.CharField(
+        max_length=10,
+        choices=DayOfWeek.choices,
+    )
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    is_available = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """TrainerSchedule model metadata."""
+
+        db_table = "trainer_schedules"
+        ordering = ["day_of_week", "start_time"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["trainer", "day_of_week"],
+                name="uq_trainer_schedule_day",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """Return schedule label."""
+        return f"{self.trainer} — {self.day_of_week} {self.start_time}-{self.end_time}"
+
+
+class TrainerCustomerAssignment(TenantModelMixin):
+    """Direct customer-trainer mapping (not branch-scoped)."""
+
+    trainer = models.ForeignKey(
+        Trainer,
+        on_delete=models.CASCADE,
+        related_name="customer_assignments",
+    )
+    customer = models.ForeignKey(
+        "customers.Customer",
+        on_delete=models.CASCADE,
+        related_name="trainer_assignments",
+    )
+    is_active = models.BooleanField(default=True)
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    unassigned_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """TrainerCustomerAssignment model metadata."""
+
+        db_table = "trainer_customer_assignments"
+        ordering = ["-assigned_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["trainer", "customer"],
+                name="uq_trainer_customer_assignment",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """Return assignment label."""
+        return f"{self.trainer} → {self.customer}"
 
 
 class AuthToken(models.Model):

@@ -7,6 +7,7 @@ from apps.customers.models import (
     Customer,
     FitnessGoal,
     HealthProfile,
+    ProgressPhoto,
 )
 
 
@@ -28,6 +29,13 @@ class CustomerSerializer(serializers.ModelSerializer):
             "gender",
             "emergency_contact_name",
             "emergency_contact_phone",
+            "address_street",
+            "address_city",
+            "address_state",
+            "address_postal_code",
+            "profile_photo",
+            "status",
+            "notes",
             "is_active",
             "created_at",
             "updated_at",
@@ -65,6 +73,9 @@ class HealthProfileSerializer(serializers.ModelSerializer):
             "bmi",
             "injuries",
             "medical_info",
+            "medical_conditions",
+            "allergies",
+            "medications",
             "created_at",
             "updated_at",
         ]
@@ -113,3 +124,22 @@ class BodyMeasurementSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "date_logged", "created_at", "updated_at"]
+
+
+class ProgressPhotoSerializer(serializers.ModelSerializer):
+    """Serialize progress photo details."""
+
+    class Meta:
+        """Serializer metadata."""
+
+        model = ProgressPhoto
+        fields = [
+            "id",
+            "customer",
+            "image",
+            "caption",
+            "taken_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "taken_at", "created_at", "updated_at"]

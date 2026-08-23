@@ -9,11 +9,13 @@ from apps.users.views import (
     MeView,
     OTPRequestView,
     OTPVerifyView,
+    TrainerViewSet,
     UserViewSet,
 )
 
 router = DefaultRouter()
 router.register(r"users", UserViewSet, basename="user")
+router.register(r"trainers", TrainerViewSet, basename="trainer")
 
 urlpatterns = [
     path("auth/login/", LoginView.as_view(), name="login"),

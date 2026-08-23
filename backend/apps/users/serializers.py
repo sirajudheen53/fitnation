@@ -4,7 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from apps.users.auth import AuthToken
-from apps.users.models import User
+from apps.users.models import Trainer, TrainerCustomerAssignment, TrainerSchedule, User
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -145,3 +145,168 @@ class OTPVerifySerializer(serializers.Serializer):
         required=False,
         allow_blank=True,
     )
+
+
+# ── Trainer serializers ────────────────────────────────────────────────────────
+
+
+class TrainerScheduleSerializer(serializers.ModelSerializer):
+    """Serializer for TrainerSchedule model."""
+
+    class Meta:
+        """Serializer metadata."""
+
+        model = TrainerSchedule
+        fields = [
+            "id",
+            "trainer",
+            "day_of_week",
+            "start_time",
+            "end_time",
+            "is_available",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "trainer"]
+
+    def to_internal_value(self, data: dict) -> dict:
+        """Ensure is_available defaults to True when not provided."""
+        if "is_available" not in data:
+            data = data.copy()
+            data["is_available"] = True
+        return super().to_internal_value(data)
+
+
+class TrainerSerializer(serializers.ModelSerializer):
+    """Serializer for Trainer model with nested user info."""
+
+    email = serializers.CharField(source="user.email", read_only=True)
+    first_name = serializers.CharField(source="user.first_name", read_only=True)
+    last_name = serializers.CharField(source="user.last_name", read_only=True)
+    phone = serializers.CharField(source="user.phone", read_only=True)
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    schedules = TrainerScheduleSerializer(many=True, read_only=True)
+
+    class Meta:
+        """Serializer metadata."""
+
+        model = Trainer
+        fields = [
+            "id",
+            "user_id",
+            "email",
+            "first_name",
+            "last_name",
+            "phone",
+            "specialization",
+            "bio",
+            "is_active",
+            "certifications",
+            "experience_years",
+            "rating",
+            "profile_photo",
+            "max_clients",
+            "schedules",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "rating"]
+
+
+class TrainerCreateSerializer(serializers.Serializer):
+    """Serializer for creating a new trainer (creates user + profile)."""
+
+    email = serializers.EmailField()
+    first_name = serializers.CharField(max_length=150)
+    last_name = serializers.CharField(max_length=150)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    password = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True,
+        validators=[validate_password],
+    )
+    specialization = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    bio = serializers.CharField(required=False, allow_blank=True)
+    certifications = serializers.JSONField(required=False, default=list)
+    experience_years = serializers.IntegerField(required=False, default=0)
+    max_clients = serializers.IntegerField(required=False, default=50)
+    profile_photo = serializers.URLField(required=False, allow_blank=True)
+
+    def to_internal_value(self, data: dict) -> dict:
+        """Parse certifications from JSON string if needed."""
+        certifications = data.get("certifications")
+        if isinstance(certifications, str):
+            import json
+            try:
+                data = data.copy()
+                data["certifications"] = json.loads(certifications)
+            except (json.JSONDecodeError, ValueError):
+                raise serializers.ValidationError(
+                    {"certifications": "Value must be valid JSON."}
+                )
+        return super().to_internal_value(data)
+
+
+class TrainerUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating an existing trainer profile."""
+
+    class Meta:
+        """Serializer metadata."""
+
+        model = Trainer
+        fields = [
+            "specialization",
+            "bio",
+            "is_active",
+            "certifications",
+            "experience_years",
+            "profile_photo",
+            "max_clients",
+        ]
+
+
+class TrainerCustomerAssignmentSerializer(serializers.ModelSerializer):
+    """Serializer for TrainerCustomerAssignment model."""
+
+    customer_name = serializers.CharField(source="customer.name", read_only=True)
+    customer_email = serializers.CharField(source="customer.email", read_only=True)
+    trainer_email = serializers.CharField(
+        source="trainer.user.email", read_only=True
+    )
+
+    class Meta:
+        """Serializer metadata."""
+
+        model = TrainerCustomerAssignment
+        fields = [
+            "id",
+            "trainer",
+            "customer",
+            "is_active",
+            "assigned_at",
+            "unassigned_at",
+            "customer_name",
+            "customer_email",
+            "trainer_email",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "assigned_at",
+            "unassigned_at",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class TrainerMetricsSerializer(serializers.Serializer):
+    """Serializer for trainer performance metrics response."""
+
+    trainer_id = serializers.IntegerField()
+    active_clients = serializers.IntegerField()
+    rating = serializers.FloatField()
+    max_clients = serializers.IntegerField()
+    utilization = serializers.FloatField()
+    total_assignments = serializers.IntegerField()

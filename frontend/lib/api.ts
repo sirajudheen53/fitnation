@@ -272,6 +272,312 @@ export function deleteCustomer(id: number | string, token: string): Promise<void
   });
 }
 
+/* ── Memberships ──────────────────────────────────────────────── */
+
+import {
+  AssignMembershipData,
+  Coupon,
+  CouponFormData,
+  CouponListResponse,
+  Membership,
+  MembershipListResponse,
+  MembershipPlan,
+  MembershipPlanFormData,
+  MembershipPlanListResponse,
+} from "@/types/membership";
+
+/* Membership plans */
+
+export function fetchMembershipPlans(token: string): Promise<MembershipPlanListResponse> {
+  return request<MembershipPlanListResponse>("/memberships/plans/", { token });
+}
+
+export function fetchMembershipPlan(
+  id: number | string,
+  token: string,
+): Promise<MembershipPlan> {
+  return request<MembershipPlan>(`/memberships/plans/${id}/`, { token });
+}
+
+export function createMembershipPlan(
+  data: MembershipPlanFormData,
+  token: string,
+): Promise<MembershipPlan> {
+  return request<MembershipPlan>("/memberships/plans/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateMembershipPlan(
+  id: number | string,
+  data: MembershipPlanFormData,
+  token: string,
+): Promise<MembershipPlan> {
+  return request<MembershipPlan>(`/memberships/plans/${id}/`, {
+    method: "PUT",
+    body: data,
+    token,
+  });
+}
+
+export function deleteMembershipPlan(id: number | string, token: string): Promise<void> {
+  return request<void>(`/memberships/plans/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/* Active memberships */
+
+export function fetchMemberships(token: string): Promise<MembershipListResponse> {
+  return request<MembershipListResponse>("/memberships/memberships/", { token });
+}
+
+export function assignMembership(
+  data: AssignMembershipData,
+  token: string,
+): Promise<Membership> {
+  return request<Membership>("/memberships/memberships/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function cancelMembership(id: number | string, token: string): Promise<Membership> {
+  return request<Membership>(`/memberships/memberships/${id}/cancel/`, {
+    method: "POST",
+    token,
+  });
+}
+
+/* Coupons */
+
+export function fetchCoupons(token: string): Promise<CouponListResponse> {
+  return request<CouponListResponse>("/memberships/coupons/", { token });
+}
+
+export function createCoupon(data: CouponFormData, token: string): Promise<Coupon> {
+  return request<Coupon>("/memberships/coupons/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateCoupon(
+  id: number | string,
+  data: CouponFormData,
+  token: string,
+): Promise<Coupon> {
+  return request<Coupon>(`/memberships/coupons/${id}/`, {
+    method: "PUT",
+    body: data,
+    token,
+  });
+}
+
+export function deleteCoupon(id: number | string, token: string): Promise<void> {
+  return request<void>(`/memberships/coupons/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/* ── Payments ────────────────────────────────────────────────── */
+
+import {
+  Invoice,
+  InvoiceListResponse,
+  Payment,
+  PaymentFormData,
+  PaymentListResponse,
+  RevenueSummary,
+} from "@/types/payment";
+
+export function fetchPayments(token: string): Promise<PaymentListResponse> {
+  return request<PaymentListResponse>("/payments/payments/", { token });
+}
+
+export function fetchPayment(id: number | string, token: string): Promise<Payment> {
+  return request<Payment>(`/payments/payments/${id}/`, { token });
+}
+
+export function createPayment(data: PaymentFormData, token: string): Promise<Payment> {
+  return request<Payment>("/payments/payments/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function fetchRevenueSummary(token: string): Promise<RevenueSummary> {
+  return request<RevenueSummary>("/payments/revenue-summary/", { token });
+}
+
+/* Invoices */
+
+export function fetchInvoices(token: string): Promise<InvoiceListResponse> {
+  return request<InvoiceListResponse>("/invoices/invoices/", { token });
+}
+
+export function fetchInvoice(id: number | string, token: string): Promise<Invoice> {
+  return request<Invoice>(`/invoices/invoices/${id}/`, { token });
+}
+
+/* ── Attendance ───────────────────────────────────────────────── */
+
+import {
+  AttendanceListResponse,
+  AttendanceRecord,
+  AttendanceStatsResponse,
+  CheckInData,
+} from "@/types/attendance";
+
+export function fetchAttendance(token: string): Promise<AttendanceListResponse> {
+  return request<AttendanceListResponse>("/attendance/records/", { token });
+}
+
+export function fetchAttendanceStats(token: string): Promise<AttendanceStatsResponse> {
+  return request<AttendanceStatsResponse>("/attendance/stats/", { token });
+}
+
+export function checkIn(data: CheckInData, token: string): Promise<AttendanceRecord> {
+  return request<AttendanceRecord>("/attendance/check-in/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function checkOut(id: number | string, token: string): Promise<AttendanceRecord> {
+  return request<AttendanceRecord>(`/attendance/records/${id}/check-out/`, {
+    method: "POST",
+    token,
+  });
+}
+
+/* ── Trainers ─────────────────────────────────────────────────── */
+
+import {
+  AssignmentFormData,
+  AssignmentListResponse,
+  ScheduleListResponse,
+  ScheduleSlot,
+  Trainer,
+  TrainerAssignment,
+  TrainerFormData,
+  TrainerListResponse,
+} from "@/types/trainer";
+
+export function fetchTrainers(token: string): Promise<TrainerListResponse> {
+  return request<TrainerListResponse>("/trainers/trainers/", { token });
+}
+
+export function fetchTrainer(id: number | string, token: string): Promise<Trainer> {
+  return request<Trainer>(`/trainers/trainers/${id}/`, { token });
+}
+
+export function createTrainer(data: TrainerFormData, token: string): Promise<Trainer> {
+  return request<Trainer>("/trainers/trainers/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateTrainer(
+  id: number | string,
+  data: TrainerFormData,
+  token: string,
+): Promise<Trainer> {
+  return request<Trainer>(`/trainers/trainers/${id}/`, {
+    method: "PUT",
+    body: data,
+    token,
+  });
+}
+
+export function deleteTrainer(id: number | string, token: string): Promise<void> {
+  return request<void>(`/trainers/trainers/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/* Assignments */
+
+export function fetchAssignments(token: string): Promise<AssignmentListResponse> {
+  return request<AssignmentListResponse>("/trainers/assignments/", { token });
+}
+
+export function assignTrainer(
+  data: AssignmentFormData,
+  token: string,
+): Promise<TrainerAssignment> {
+  return request<TrainerAssignment>("/trainers/assignments/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/* Schedule */
+
+export function fetchSchedule(token: string): Promise<ScheduleListResponse> {
+  return request<ScheduleListResponse>("/trainers/schedule/", { token });
+}
+
+export function createScheduleSlot(
+  data: Omit<ScheduleSlot, "id" | "trainer_name">,
+  token: string,
+): Promise<ScheduleSlot> {
+  return request<ScheduleSlot>("/trainers/schedule/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/* ── Dashboard ────────────────────────────────────────────────── */
+
+import {
+  AttendanceDashboardData,
+  DashboardOverview,
+  MembershipStatsData,
+  PendingPayment,
+  RevenueResponse,
+  TrainerOverviewData,
+} from "@/types/dashboard";
+
+export function fetchDashboardOverview(token: string): Promise<DashboardOverview> {
+  return request<DashboardOverview>("/dashboard/overview/", { token });
+}
+
+export function fetchDashboardRevenue(token: string): Promise<RevenueResponse> {
+  return request<RevenueResponse>("/dashboard/revenue/", { token });
+}
+
+export function fetchDashboardAttendance(token: string): Promise<AttendanceDashboardData> {
+  return request<AttendanceDashboardData>("/dashboard/attendance/", { token });
+}
+
+export function fetchDashboardMemberships(token: string): Promise<MembershipStatsData> {
+  return request<MembershipStatsData>("/dashboard/memberships/", { token });
+}
+
+export function fetchDashboardTrainers(token: string): Promise<TrainerOverviewData[]> {
+  return request<TrainerOverviewData[]>("/dashboard/trainers/", { token });
+}
+
+export function fetchDashboardPendingPayments(
+  token: string,
+): Promise<PendingPayment[]> {
+  return request<PendingPayment[]>("/dashboard/pending-payments/", { token });
+}
+
 export function login(data: LoginRequest): Promise<LoginResponse> {
   return request<LoginResponse>("/auth/login/", {
     method: "POST",
