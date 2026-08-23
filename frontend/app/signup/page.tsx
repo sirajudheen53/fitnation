@@ -11,7 +11,7 @@ import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
-import { signup, type ApiError } from "@/lib/api";
+import { signup, ApiError } from "@/lib/api";
 
 const signupSchema = z.object({
   business_name: z
@@ -75,7 +75,7 @@ export default function SignUpPage() {
             const msg = (messages as string[])[0];
             return `${field}: ${msg}`;
           });
-        setServerError(fieldErrors[0] || err.message);
+        setServerError((fieldErrors[0] as string | undefined) || err.message);
       } else {
         setServerError("Something went wrong. Please try again.");
       }

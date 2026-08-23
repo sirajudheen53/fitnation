@@ -11,7 +11,7 @@ import {
   getPlans,
   selectPlan,
   type SubscriptionPlan,
-  type ApiError,
+  ApiError,
 } from "@/lib/api";
 
 type LoadingState = "loading" | "ready" | "submitting" | "error";
@@ -40,13 +40,15 @@ function SelectPlanContent() {
   const registrationId = searchParams.get("registration_id");
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
-  const [state, setState] = useState<LoadingState>("loading");
-  const [error, setError] = useState("");
+  const [state, setState] = useState<LoadingState>(() => {
+    return registrationId ? "loading" : "error";
+  });
+  const [error, setError] = useState(() => {
+    return registrationId ? "" : "Missing registration ID. Please complete signup first.";
+  });
 
   useEffect(() => {
     if (!registrationId) {
-      setState("error");
-      setError("Missing registration ID. Please complete signup first.");
       return;
     }
 
@@ -85,7 +87,7 @@ function SelectPlanContent() {
       setState("ready");
       setSelectedPlan(null);
       if (err instanceof ApiError) {
-        setError(err.data?.error || err.message);
+        setError((err.data?.error as string | undefined) || err.message);
       } else {
         setError("Failed to select plan. Please try again.");
       }

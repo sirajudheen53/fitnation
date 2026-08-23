@@ -11,7 +11,7 @@ import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
-import { completeOnboarding, type ApiError } from "@/lib/api";
+import { completeOnboarding, ApiError } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 
 const BUSINESS_TYPES = [
@@ -99,7 +99,7 @@ export default function OnboardingPage() {
       router.push(result.redirect_to || "/dashboard");
     } catch (err) {
       if (err instanceof ApiError) {
-        setServerError(err.data?.error || err.message);
+        setServerError((err.data?.error as string | undefined) || err.message);
       } else {
         setServerError("Failed to complete onboarding. Please try again.");
       }

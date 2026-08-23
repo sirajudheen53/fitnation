@@ -43,18 +43,19 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "django_filters",
-    # Local apps (add as they're created)
-    "core",
-    # "tenants",
-    # "users",
-    # "branches",
-    # "customers",
+    # Local apps
+    "apps.core",
+    "apps.tenants",
+    "apps.users",
+    "apps.branches",
+    "apps.customers",
     # "memberships",
     # "payments",
     # "attendance",
     # "workouts",
     # "diets",
-    # "permissions",
+    "apps.permissions",
+    "apps.vendors",
 ]
 
 MIDDLEWARE = [
@@ -64,7 +65,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "core.middleware.TenantMiddleware",
+    "apps.tenants.middleware.TenantMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -114,7 +115,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 # ── REST Framework ─────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        "apps.users.authentication.TenantTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
@@ -151,3 +152,14 @@ CACHES = {
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# ── Custom User Model ──────────────────────────────────────────────────────────
+AUTH_USER_MODEL = "users.User"
+
+# ── Password Validation ─────────────────────────────────────────────────────────
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]

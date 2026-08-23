@@ -17,6 +17,16 @@ export class ApiError extends Error {
   }
 }
 
+/** Extract a human-readable error message from an unknown caught value. */
+export function errorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    return (err.data?.error as string | undefined) || err.message;
+  }
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return "An unexpected error occurred.";
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -203,6 +213,63 @@ export interface LoginResponse {
   token: string;
   user: LoginUser;
   permissions: string[];
+}
+
+import {
+  Customer,
+  CustomerFormData,
+  CustomerListResponse,
+  HealthProfileFormData,
+} from "@/types/customer";
+
+export function fetchCustomers(token: string): Promise<CustomerListResponse> {
+  return request<CustomerListResponse>("/customers/", { token });
+}
+
+export function fetchCustomer(id: number | string, token: string): Promise<Customer> {
+  return request<Customer>(`/customers/${id}/`, { token });
+}
+
+export function createCustomer(
+  data: CustomerFormData,
+  token: string,
+): Promise<Customer> {
+  return request<Customer>("/customers/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateCustomer(
+  id: number | string,
+  data: CustomerFormData,
+  token: string,
+): Promise<Customer> {
+  return request<Customer>(`/customers/${id}/`, {
+    method: "PUT",
+    body: data,
+    token,
+  });
+}
+
+export function updateHealthProfile(
+  id: number | string,
+  data: HealthProfileFormData,
+  token: string,
+): Promise<Customer> {
+  return request<Customer>(`/customers/${id}/health-profile/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+export function deleteCustomer(id: number | string, token: string): Promise<void> {
+  return request<void>(`/customers/${id}/`, {
+    method: "DELETE",
+    token,
+  });
 }
 
 export function login(data: LoginRequest): Promise<LoginResponse> {

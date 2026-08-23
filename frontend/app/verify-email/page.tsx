@@ -7,7 +7,7 @@ import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Alert } from "@/components/ui/Alert";
-import { verifyEmail, resendVerification, type ApiError } from "@/lib/api";
+import { verifyEmail, resendVerification, ApiError } from "@/lib/api";
 
 type VerifyState = "loading" | "success" | "error" | "resend";
 
@@ -16,21 +16,23 @@ function VerifyEmailContent() {
   const router = useRouter();
   const token = searchParams.get("token");
   const registrationId = searchParams.get("registration_id");
-  const [state, setState] = useState<VerifyState>("loading");
-  const [message, setMessage] = useState("");
+  const [state, setState] = useState<VerifyState>(() => {
+    return token ? "loading" : "error";
+  });
+  const [message, setMessage] = useState(() => {
+    return token ? "" : "No verification token found. Please check your email link.";
+  });
   const [resendEmail, setResendEmail] = useState("");
   const [resending, setResending] = useState(false);
 
   useEffect(() => {
     if (!token) {
-      setState("error");
-      setMessage("No verification token found. Please check your email link.");
       return;
     }
 
     async function doVerify() {
       try {
-        const result = await verifyEmail(token);
+        const result = await verifyEmail(token || "");
         setState("success");
         setMessage(result.message);
         // Auto-redirect to plan selection after 2 seconds
@@ -40,7 +42,7 @@ function VerifyEmailContent() {
       } catch (err) {
         setState("error");
         if (err instanceof ApiError) {
-          setMessage(err.data?.error || err.message);
+          setMessage((err.data?.error as string | undefined) || err.message);
         } else {
           setMessage("Verification failed. Please try again.");
         }
@@ -60,7 +62,7 @@ function VerifyEmailContent() {
       setMessage(result.message);
     } catch (err) {
       if (err instanceof ApiError) {
-        setMessage(err.data?.error || err.message);
+        setMessage((err.data?.error as string | undefined) || err.message);
       } else {
         setMessage("Failed to resend. Please try again.");
       }
