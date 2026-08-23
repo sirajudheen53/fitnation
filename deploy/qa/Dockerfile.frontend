@@ -1,0 +1,51 @@
+# FBOS Next.js frontend — QA build (multi-stage, standalone output)
+#
+# PREREQUISITE: next.config.ts must set `output: "standalone"` so Next.js
+# emits a self-contained server bundle under .next/standalone.
+#   const nextConfig = { output: "standalone", ... }
+#
+# Stage 1: deps → Stage 2: build → Stage 3: minimal standalone runtime
+
+# ── Stage 1: install dependencies ───────────────────────────────────────
+FROM node:22-alpine AS deps
+WORKDIR /app
+
+# Copy lockfile first for better layer caching
+COPY package.json package-lock.json* ./
+RUN npm ci || npm install
+
+# ── Stage 2: build ──────────────────────────────────────────────────────
+FROM node:22-alpine AS builder
+WORKDIR /app
+
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-https://qa.fitnation.app/api/v1}
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+RUN npm run build
+
+# ── Stage 3: standalone runtime ─────────────────────────────────────────
+FROM node:22-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000
+
+# Non-root user for security
+RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
+
+# Copy standalone output + static assets
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+USER nextjs
+
+EXPOSE 3000
+
+# Standalone server entrypoint
+CMD ["node", "server.js"]

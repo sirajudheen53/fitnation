@@ -1,0 +1,60 @@
+# FBOS Django backend — QA build (multi-stage)
+# Base: Python 3.14-slim (matches backend/.python-version)
+# Build: install deps → runtime: collectstatic + gunicorn/uvicorn workers
+
+# ── Builder stage: install dependencies ─────────────────────────────────
+FROM python:3.14-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Build toolchain for psycopg (binary wheel may still need libpq headers on slim)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python deps (includes gunicorn + uvicorn for ASGI workers)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir \
+        gunicorn>=23,<24 \
+        "uvicorn[standard]>=0.34,<1.0"
+
+# ── Runtime stage ───────────────────────────────────────────────────────
+FROM python:3.14-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DJANGO_SETTINGS_MODULE=config.settings.qa \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Runtime deps only (psycopg v3 binary needs libpq at runtime)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed Python packages from builder
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy project source
+COPY . .
+
+# Collect static into /app/staticfiles (served by nginx)
+RUN python manage.py collectstatic --noinput 2>/dev/null || true
+
+EXPOSE 8000
+
+# gunicorn with uvicorn async workers (Django 5.2 / Python 3.14)
+CMD ["gunicorn", "config.wsgi:application", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "3", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--timeout", "120"]

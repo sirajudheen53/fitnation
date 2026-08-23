@@ -402,7 +402,7 @@ class TrainerScheduleTests(TestCase):
         )
         updated = update_schedule(schedule, is_available=False, end_time="10:00")
         self.assertFalse(updated.is_available)
-        self.assertEqual(str(updated.end_time), "10:00:00")
+        self.assertEqual(str(updated.end_time), "10:00")
 
     def test_unique_day_per_trainer(self) -> None:
         """Duplicate day entries for the same trainer are rejected."""

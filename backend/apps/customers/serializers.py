@@ -142,4 +142,4 @@ class ProgressPhotoSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "taken_at", "created_at", "updated_at"]
+        read_only_fields = ["id", "customer", "taken_at", "created_at", "updated_at"]
