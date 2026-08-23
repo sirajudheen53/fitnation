@@ -592,6 +592,7 @@ class TrainerAPITests(APITestCase):
                 ],
                 "profile_photo": "https://cdn.fitnation.com/photos/new.jpg",
             },
+            format="json",
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["email"], "newtrainer@local.test")
