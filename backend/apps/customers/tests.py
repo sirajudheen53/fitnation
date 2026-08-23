@@ -231,7 +231,7 @@ class CustomerAPITests(APITestCase):
             email="c4@example.com",
         )
         response = self.client.put(
-            f"/api/v1/customers/customers/{customer.id}/health_profile/",
+            f"/api/v1/customers/customers/{customer.id}/health-profile/",
             {
                 "customer": customer.id,
                 "height_cm": "175.00",
@@ -246,7 +246,7 @@ class CustomerAPITests(APITestCase):
         self.assertEqual(float(response.data["bmi"]), expected_bmi)
 
         response = self.client.get(
-            f"/api/v1/customers/customers/{customer.id}/health_profile/",
+            f"/api/v1/customers/customers/{customer.id}/health-profile/",
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("height_cm", response.data)
@@ -291,7 +291,7 @@ class CustomerAPITests(APITestCase):
             email="c6@example.com",
         )
         response = self.client.post(
-            f"/api/v1/customers/customers/{customer.id}/fitness_goals/",
+            f"/api/v1/customers/customers/{customer.id}/fitness-goals/",
             {
                 "customer": customer.id,
                 "goal_type": "lose_weight",
@@ -303,7 +303,7 @@ class CustomerAPITests(APITestCase):
         self.assertEqual(response.status_code, 201)
 
         response = self.client.get(
-            f"/api/v1/customers/customers/{customer.id}/fitness_goals/",
+            f"/api/v1/customers/customers/{customer.id}/fitness-goals/",
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)

@@ -58,7 +58,7 @@ class CustomerViewSet(ModelViewSet):
         self.required_permission = "customers.edit_customer"
         return super().partial_update(request, *args, **kwargs)
 
-    @action(detail=True, methods=["get", "put", "patch"])
+    @action(detail=True, methods=["get", "put", "patch"], url_path="health-profile")
     def health_profile(self, request: Request, pk: int) -> Response:
         """Retrieve or update the customer's health profile."""
         self.required_permission = "customers.view_customer"
@@ -131,7 +131,7 @@ class CustomerViewSet(ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    @action(detail=True, methods=["get", "post"])
+    @action(detail=True, methods=["get", "post"], url_path="fitness-goals")
     def fitness_goals(self, request: Request, pk: int) -> Response:
         """List or create fitness goals for a customer."""
         self.required_permission = "customers.view_customer"

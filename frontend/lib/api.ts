@@ -223,18 +223,18 @@ import {
 } from "@/types/customer";
 
 export function fetchCustomers(token: string): Promise<CustomerListResponse> {
-  return request<CustomerListResponse>("/customers/", { token });
+  return request<CustomerListResponse>("/customers/customers/", { token });
 }
 
 export function fetchCustomer(id: number | string, token: string): Promise<Customer> {
-  return request<Customer>(`/customers/${id}/`, { token });
+  return request<Customer>(`/customers/customers/${id}/`, { token });
 }
 
 export function createCustomer(
   data: CustomerFormData,
   token: string,
 ): Promise<Customer> {
-  return request<Customer>("/customers/", {
+  return request<Customer>("/customers/customers/", {
     method: "POST",
     body: data,
     token,
@@ -246,7 +246,7 @@ export function updateCustomer(
   data: CustomerFormData,
   token: string,
 ): Promise<Customer> {
-  return request<Customer>(`/customers/${id}/`, {
+  return request<Customer>(`/customers/customers/${id}/`, {
     method: "PUT",
     body: data,
     token,
@@ -258,7 +258,7 @@ export function updateHealthProfile(
   data: HealthProfileFormData,
   token: string,
 ): Promise<Customer> {
-  return request<Customer>(`/customers/${id}/health-profile/`, {
+  return request<Customer>(`/customers/customers/${id}/health-profile/`, {
     method: "PATCH",
     body: data,
     token,
@@ -266,7 +266,7 @@ export function updateHealthProfile(
 }
 
 export function deleteCustomer(id: number | string, token: string): Promise<void> {
-  return request<void>(`/customers/${id}/`, {
+  return request<void>(`/customers/customers/${id}/`, {
     method: "DELETE",
     token,
   });
