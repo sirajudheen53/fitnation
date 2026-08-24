@@ -1329,3 +1329,117 @@ export function unwrapNotificationLogs(
 ): NotificationLog[] {
   return Array.isArray(res) ? res : (res.results ?? []);
 }
+
+/* ── Customer detail sub-resources (FBOS-025) ─────────────────── */
+
+import {
+  BodyMeasurement,
+  BodyMeasurementFormData,
+  CustomerFitnessGoal,
+  FitnessGoalFormData,
+  HealthProfile,
+  HealthProfileUpdate,
+  ProgressPhoto,
+  ProgressPhotoFormData,
+  ProgressSummary,
+} from "@/types/customer-detail";
+
+/** List fitness goals for a customer (plain array). */
+export function fetchFitnessGoals(
+  id: number | string,
+  token: string,
+): Promise<CustomerFitnessGoal[]> {
+  return request<CustomerFitnessGoal[]>(`/customers/${id}/fitness-goals/`, {
+    token,
+  });
+}
+
+/** Create a fitness goal for a customer. */
+export function createFitnessGoal(
+  id: number | string,
+  data: FitnessGoalFormData,
+  token: string,
+): Promise<CustomerFitnessGoal> {
+  return request<CustomerFitnessGoal>(`/customers/${id}/fitness-goals/`, {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/** List body measurements for a customer (plain array). */
+export function fetchBodyMeasurements(
+  id: number | string,
+  token: string,
+): Promise<BodyMeasurement[]> {
+  return request<BodyMeasurement[]>(`/customers/${id}/measurements/`, {
+    token,
+  });
+}
+
+/** Create a body measurement for a customer. */
+export function createBodyMeasurement(
+  id: number | string,
+  data: BodyMeasurementFormData,
+  token: string,
+): Promise<BodyMeasurement> {
+  return request<BodyMeasurement>(`/customers/${id}/measurements/`, {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/** Fetch the customer's health profile. */
+export function fetchHealthProfile(
+  id: number | string,
+  token: string,
+): Promise<HealthProfile> {
+  return request<HealthProfile>(`/customers/${id}/health-profile/`, { token });
+}
+
+/** Update the customer's health profile. */
+export function updateCustomerHealthProfile(
+  id: number | string,
+  data: HealthProfileUpdate,
+  token: string,
+): Promise<HealthProfile> {
+  return request<HealthProfile>(`/customers/${id}/health-profile/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/** List progress photos for a customer (plain array). */
+export function fetchProgressPhotos(
+  id: number | string,
+  token: string,
+): Promise<ProgressPhoto[]> {
+  return request<ProgressPhoto[]>(`/customers/${id}/progress-photos/`, {
+    token,
+  });
+}
+
+/** Create a progress photo for a customer. */
+export function createProgressPhoto(
+  id: number | string,
+  data: ProgressPhotoFormData,
+  token: string,
+): Promise<ProgressPhoto> {
+  return request<ProgressPhoto>(`/customers/${id}/progress-photos/`, {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/** Fetch the aggregated progress summary for a customer. */
+export function fetchProgressSummary(
+  id: number | string,
+  token: string,
+): Promise<ProgressSummary> {
+  return request<ProgressSummary>(`/customers/${id}/progress-summary/`, {
+    token,
+  });
+}
