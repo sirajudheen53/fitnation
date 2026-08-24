@@ -5,6 +5,8 @@ from typing import Any
 
 from django.db import models
 
+from apps.core.fields import EncryptedCharField
+
 
 class Tenant(models.Model):
     """Represents a vendor (gym business) on the platform. Root of all tenant-scoped data."""
@@ -24,9 +26,7 @@ class Tenant(models.Model):
         SUSPENDED = "suspended", "Suspended"
         CANCELLED = "cancelled", "Cancelled"
 
-    uuid = models.UUIDField(
-        default=uuid.uuid4, editable=False, unique=True, db_index=True
-    )
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
     name = models.CharField(max_length=200)
     legal_name = models.CharField(max_length=300, blank=True)
     subscription_plan = models.CharField(
@@ -42,6 +42,9 @@ class Tenant(models.Model):
     contact_email = models.EmailField(unique=True)
     contact_phone = models.CharField(max_length=20, blank=True)
     timezone = models.CharField(max_length=50, default="Asia/Kolkata")
+    wati_api_key = EncryptedCharField(max_length=500, blank=True)
+    wati_endpoint = models.URLField(blank=True)
+    is_wati_enabled = models.BooleanField(default=False)
     settings = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

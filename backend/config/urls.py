@@ -29,6 +29,7 @@ urlpatterns = [
     path("api/v1/marketplace/", include("apps.marketplace.urls")),
     path("api/v1/ai/", include("apps.body_analysis.urls")),
     path("api/v1/ai/coach/", include("apps.ai_coach.urls")),
+    path("api/v1/notifications/", include("apps.notifications.urls")),
     path("api/v1/auth/", include("apps.vendors.urls")),
     path(
         "api/v1/subscriptions/plans/",

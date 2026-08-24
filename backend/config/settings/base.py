@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     "apps.body_analysis",
     "apps.marketplace",
     "apps.ai_coach",
+    "apps.notifications",
 ]
 
 MIDDLEWARE = [
