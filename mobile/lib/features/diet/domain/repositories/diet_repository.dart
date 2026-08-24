@@ -1,6 +1,6 @@
 import '../../../../core/errors/failures.dart';
-import '../data/data_sources/diet_remote_data_source.dart';
-import '../data/models/diet_plan.dart';
+import '../../data/data_sources/diet_remote_data_source.dart';
+import '../../data/models/diet_plan.dart';
 
 /// Repository for diet-related operations.
 class DietRepository {

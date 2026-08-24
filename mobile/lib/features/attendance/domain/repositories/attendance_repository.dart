@@ -1,6 +1,6 @@
 import '../../../../core/errors/failures.dart';
-import '../data/data_sources/attendance_remote_data_source.dart';
-import '../data/models/attendance_record.dart';
+import '../../data/data_sources/attendance_remote_data_source.dart';
+import '../../data/models/attendance_record.dart';
 
 /// Repository for attendance-related operations.
 class AttendanceRepository {
@@ -16,9 +16,9 @@ class AttendanceRepository {
       final records = await _remote.getAttendanceHistory(customerId);
       return (records: records, error: null);
     } on Failure catch (e) {
-      return (records: const [], error: e);
+      return (records: const <AttendanceRecord>[], error: e);
     } catch (e) {
-      return (records: const [], error: UnknownFailure(message: e.toString()));
+      return (records: const <AttendanceRecord>[], error: UnknownFailure(message: e.toString()));
     }
   }
 

@@ -1,10 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/data/data_sources/api_client.dart';
-import '../../auth/presentation/providers/auth_notifier.dart';
-import '../data/data_sources/profile_remote_data_source.dart';
-import '../data/models/customer_profile.dart';
-import '../domain/repositories/profile_repository.dart';
+import '../../../auth/data/data_sources/api_client.dart';
+import '../../../auth/presentation/providers/auth_notifier.dart';
+import '../../data/data_sources/profile_remote_data_source.dart';
+import '../../data/models/customer_profile.dart';
+import '../../domain/repositories/profile_repository.dart';
 
 /// Provides the ProfileRemoteDataSource.
 final profileRemoteDataSourceProvider = Provider<ProfileRemoteDataSource>((ref) {

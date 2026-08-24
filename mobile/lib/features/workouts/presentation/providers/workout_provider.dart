@@ -1,12 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/data/data_sources/api_client.dart';
-import '../../auth/presentation/providers/auth_notifier.dart';
-import '../data/data_sources/workout_remote_data_source.dart';
-import '../data/models/exercise.dart';
-import '../data/models/workout_log.dart';
-import '../data/models/workout_plan.dart';
-import '../domain/repositories/workout_repository.dart';
+import '../../../auth/data/data_sources/api_client.dart';
+import '../../../auth/presentation/providers/auth_notifier.dart';
+import '../../data/data_sources/workout_remote_data_source.dart';
+import '../../data/models/exercise.dart';
+import '../../data/models/workout_log.dart';
+import '../../data/models/workout_plan.dart';
+import '../../domain/repositories/workout_repository.dart';
 
 /// Provides the WorkoutRemoteDataSource.
 final workoutRemoteDataSourceProvider = Provider<WorkoutRemoteDataSource>((ref) {

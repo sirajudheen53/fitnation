@@ -1,10 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/data/data_sources/api_client.dart';
-import '../../auth/presentation/providers/auth_notifier.dart';
-import '../data/data_sources/progress_remote_data_source.dart';
-import '../data/models/body_measurement.dart';
-import '../domain/repositories/progress_repository.dart';
+import '../../../auth/data/data_sources/api_client.dart';
+import '../../../auth/presentation/providers/auth_notifier.dart';
+import '../../data/data_sources/progress_remote_data_source.dart';
+import '../../data/models/body_measurement.dart';
+import '../../domain/repositories/progress_repository.dart';
 
 /// Provides the ProgressRemoteDataSource.
 final progressRemoteDataSourceProvider = Provider<ProgressRemoteDataSource>((ref) {

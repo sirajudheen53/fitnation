@@ -44,12 +44,16 @@ class AuthRepository {
       );
 
       // Persist auth state
-      await _local.saveToken(response.token);
+      final token = response.token;
+      if (token == null) {
+        return (response: null, error: const AuthFailure(message: 'No token returned'));
+      }
+      await _local.saveToken(token);
       await _local.saveUser(response.user);
       await _local.savePermissions(response.permissions);
 
       // Update API client with new token
-      ApiClient.getInstance(token: response.token);
+      ApiClient.getInstance(token: token);
 
       return (response: response, error: null);
     } on Failure catch (e) {

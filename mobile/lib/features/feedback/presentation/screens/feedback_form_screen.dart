@@ -109,7 +109,7 @@ class _FeedbackFormScreenState extends ConsumerState<FeedbackFormScreen> {
 
               // Category
               DropdownButtonFormField<String>(
-                value: _category,
+                initialValue: _category,
                 decoration: const InputDecoration(
                   labelText: 'Category',
                   prefixIcon: Icon(Icons.category_outlined),

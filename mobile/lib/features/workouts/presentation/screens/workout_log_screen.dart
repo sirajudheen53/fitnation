@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/providers/auth_notifier.dart';
+import '../../data/models/workout_exercise.dart';
 import '../../data/models/workout_log.dart';
 import '../../data/models/workout_plan.dart';
 import '../providers/workout_provider.dart';

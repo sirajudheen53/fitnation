@@ -1,8 +1,8 @@
 import '../../../../core/errors/failures.dart';
-import '../data/data_sources/workout_remote_data_source.dart';
-import '../data/models/exercise.dart';
-import '../data/models/workout_log.dart';
-import '../data/models/workout_plan.dart';
+import '../../data/data_sources/workout_remote_data_source.dart';
+import '../../data/models/exercise.dart';
+import '../../data/models/workout_log.dart';
+import '../../data/models/workout_plan.dart';
 
 /// Repository for workout-related operations.
 class WorkoutRepository {
@@ -50,9 +50,9 @@ class WorkoutRepository {
       );
       return (exercises: exercises, error: null);
     } on Failure catch (e) {
-      return (exercises: const [], error: e);
+      return (exercises: const <Exercise>[], error: e);
     } catch (e) {
-      return (exercises: const [], error: UnknownFailure(message: e.toString()));
+      return (exercises: const <Exercise>[], error: UnknownFailure(message: e.toString()));
     }
   }
 

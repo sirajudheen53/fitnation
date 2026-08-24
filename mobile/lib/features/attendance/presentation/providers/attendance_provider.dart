@@ -1,10 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/data/data_sources/api_client.dart';
-import '../../auth/presentation/providers/auth_notifier.dart';
-import '../data/data_sources/attendance_remote_data_source.dart';
-import '../data/models/attendance_record.dart';
-import '../domain/repositories/attendance_repository.dart';
+import '../../../auth/data/data_sources/api_client.dart';
+import '../../../auth/presentation/providers/auth_notifier.dart';
+import '../../data/data_sources/attendance_remote_data_source.dart';
+import '../../data/models/attendance_record.dart';
+import '../../domain/repositories/attendance_repository.dart';
 
 /// Provides the AttendanceRemoteDataSource.
 final attendanceRemoteDataSourceProvider =

@@ -1,6 +1,6 @@
 import '../../../../core/errors/failures.dart';
-import '../data/data_sources/progress_remote_data_source.dart';
-import '../data/models/body_measurement.dart';
+import '../../data/data_sources/progress_remote_data_source.dart';
+import '../../data/models/body_measurement.dart';
 
 /// Repository for progress-related operations.
 class ProgressRepository {
@@ -16,9 +16,9 @@ class ProgressRepository {
       final measurements = await _remote.getMeasurements(customerId);
       return (measurements: measurements, error: null);
     } on Failure catch (e) {
-      return (measurements: const [], error: e);
+      return (measurements: const <BodyMeasurement>[], error: e);
     } catch (e) {
-      return (measurements: const [], error: UnknownFailure(message: e.toString()));
+      return (measurements: const <BodyMeasurement>[], error: UnknownFailure(message: e.toString()));
     }
   }
 
@@ -30,9 +30,9 @@ class ProgressRepository {
       final goals = await _remote.getFitnessGoals(customerId);
       return (goals: goals, error: null);
     } on Failure catch (e) {
-      return (goals: const [], error: e);
+      return (goals: const <FitnessGoal>[], error: e);
     } catch (e) {
-      return (goals: const [], error: UnknownFailure(message: e.toString()));
+      return (goals: const <FitnessGoal>[], error: UnknownFailure(message: e.toString()));
     }
   }
 }

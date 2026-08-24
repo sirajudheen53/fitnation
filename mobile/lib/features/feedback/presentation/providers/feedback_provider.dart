@@ -1,10 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/data/data_sources/api_client.dart';
-import '../../auth/presentation/providers/auth_notifier.dart';
-import '../data/data_sources/feedback_remote_data_source.dart';
-import '../data/models/feedback.dart';
-import '../domain/repositories/feedback_repository.dart';
+import '../../../auth/data/data_sources/api_client.dart';
+import '../../data/data_sources/feedback_remote_data_source.dart';
+import '../../data/models/feedback.dart';
+import '../../domain/repositories/feedback_repository.dart';
 
 /// Provides the FeedbackRemoteDataSource.
 final feedbackRemoteDataSourceProvider = Provider<FeedbackRemoteDataSource>((ref) {

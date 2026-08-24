@@ -199,7 +199,7 @@ class _WeightChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final (i, m) in weights.indexed)
+          for (final m in weights)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(

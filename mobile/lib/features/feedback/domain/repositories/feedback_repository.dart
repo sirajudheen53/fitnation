@@ -1,6 +1,6 @@
 import '../../../../core/errors/failures.dart';
-import '../data/data_sources/feedback_remote_data_source.dart';
-import '../data/models/feedback.dart';
+import '../../data/data_sources/feedback_remote_data_source.dart';
+import '../../data/models/feedback.dart';
 
 /// Repository for feedback operations.
 class FeedbackRepository {
@@ -30,9 +30,9 @@ class FeedbackRepository {
       final feedback = await _remote.getFeedback(customerId);
       return (feedback: feedback, error: null);
     } on Failure catch (e) {
-      return (feedback: const [], error: e);
+      return (feedback: const <Feedback>[], error: e);
     } catch (e) {
-      return (feedback: const [], error: UnknownFailure(message: e.toString()));
+      return (feedback: const <Feedback>[], error: UnknownFailure(message: e.toString()));
     }
   }
 }

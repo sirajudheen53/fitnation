@@ -169,6 +169,7 @@ void main() {
 
     test('toJson omits token when null', () {
       const response = AuthResponse(
+        token: null,
         user: UserModel(id: 1, role: 'customer'),
         permissions: [],
       );

@@ -55,9 +55,9 @@ class WorkoutRemoteDataSource {
       final response = await _dio.get(
         AppConstants.exercisesEndpoint,
         queryParameters: {
-          if (category != null) 'category': category,
-          if (difficulty != null) 'difficulty': difficulty,
-          if (muscleGroup != null) 'muscle_group': muscleGroup,
+          'category': ?category,
+          'difficulty': ?difficulty,
+          'muscle_group': ?muscleGroup,
         },
       );
       final results = _extractResults(response.data);

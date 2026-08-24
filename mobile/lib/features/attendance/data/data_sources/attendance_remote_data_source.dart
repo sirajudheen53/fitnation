@@ -41,7 +41,7 @@ class AttendanceRemoteDataSource {
         AppConstants.attendanceCheckInEndpoint,
         data: {
           'qr_code': qrCode,
-          if (customerId != null) 'customer': customerId,
+          'customer': ?customerId,
         },
       );
       return AttendanceRecord.fromJson(response.data as Map<String, dynamic>);

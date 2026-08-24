@@ -1,6 +1,6 @@
 import '../../../../core/errors/failures.dart';
-import '../data/data_sources/profile_remote_data_source.dart';
-import '../data/models/customer_profile.dart';
+import '../../data/data_sources/profile_remote_data_source.dart';
+import '../../data/models/customer_profile.dart';
 
 /// Repository for profile-related operations.
 class ProfileRepository {
@@ -44,9 +44,9 @@ class ProfileRepository {
       final memberships = await _remote.getMemberships(customerId);
       return (memberships: memberships, error: null);
     } on Failure catch (e) {
-      return (memberships: const [], error: e);
+      return (memberships: const <Membership>[], error: e);
     } catch (e) {
-      return (memberships: const [], error: UnknownFailure(message: e.toString()));
+      return (memberships: const <Membership>[], error: UnknownFailure(message: e.toString()));
     }
   }
 }

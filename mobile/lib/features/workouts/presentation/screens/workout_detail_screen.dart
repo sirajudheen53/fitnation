@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../data/models/workout_exercise.dart';
 import '../../data/models/workout_plan.dart';
 
 /// Shows the details of a workout day with its exercises.

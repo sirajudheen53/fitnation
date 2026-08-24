@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../theme/app_theme.dart';
 
@@ -9,7 +10,7 @@ class AsyncView<T> extends StatelessWidget {
   final Widget Function(T data) builder;
   final Widget? loading;
   final Widget Function(Object error, StackTrace stackTrace)? errorBuilder;
-  final Widget Function()? onRetry;
+  final VoidCallback? onRetry;
 
   const AsyncView({
     super.key,
@@ -48,7 +49,7 @@ class _LoadingView extends StatelessWidget {
 
 class _ErrorView extends StatelessWidget {
   final String message;
-  final Widget Function()? onRetry;
+  final VoidCallback? onRetry;
 
   const _ErrorView({required this.message, this.onRetry});
 
