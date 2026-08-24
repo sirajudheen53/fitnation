@@ -1168,3 +1168,59 @@ export function generateMealPlan(
 export function fetchShoppingList(token: string): Promise<ShoppingListResponse> {
   return request<ShoppingListResponse>("/ai/nutrition/shopping-list/", { token });
 }
+
+/* ── Branches (FBOS-023) ──────────────────────────────────────── */
+
+import {
+  Branch,
+  BranchFormData,
+  BranchListResponse,
+} from "@/types/branch";
+
+/* The branch list endpoint returns a plain array (no pagination). */
+export function fetchBranches(token: string): Promise<BranchListResponse> {
+  return request<BranchListResponse>("/branches/", { token });
+}
+
+export function fetchBranch(id: number | string, token: string): Promise<Branch> {
+  return request<Branch>(`/branches/${id}/`, { token });
+}
+
+export function createBranch(
+  data: BranchFormData,
+  token: string,
+): Promise<Branch> {
+  return request<Branch>("/branches/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateBranch(
+  id: number | string,
+  data: Partial<BranchFormData>,
+  token: string,
+): Promise<Branch> {
+  return request<Branch>(`/branches/${id}/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/**
+ * Delete a branch.
+ * NOTE: The Sprint 1 backend does not yet expose a DELETE endpoint. This
+ * function targets `DELETE /branches/{id}/` and will surface a 405 until
+ * Forge adds it. Flagged as an open gap for FBOS-023.
+ */
+export function deleteBranch(
+  id: number | string,
+  token: string,
+): Promise<void> {
+  return request<void>(`/branches/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
