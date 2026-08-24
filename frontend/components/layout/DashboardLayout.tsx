@@ -15,6 +15,7 @@ import {
   ShoppingBag,
   MessageCircle,
   Utensils,
+  TrendingUp,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { href: "/memberships", label: "Memberships", icon: CreditCard },
   { href: "/payments", label: "Payments", icon: Wallet },
   { href: "/attendance", label: "Attendance", icon: CalendarCheck },
+  { href: "/trainers/performance", label: "Trainer Performance", icon: TrendingUp },
   { href: "/workouts", label: "Workouts", icon: Dumbbell },
   { href: "/diet", label: "Diets", icon: Apple },
   { href: "/marketplace", label: "Marketplace", icon: ShoppingBag },

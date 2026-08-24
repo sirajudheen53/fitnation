@@ -1224,3 +1224,40 @@ export function deleteBranch(
     token,
   });
 }
+
+/* ── Trainer performance (FBOS-024) ───────────────────────────── */
+
+import {
+  TrainerMetrics,
+  TrainerPerformanceDetail,
+  TrainerPerformanceListResponse,
+} from "@/types/trainer-performance";
+
+/** List monthly trainer performance snapshots (plain array, no pagination). */
+export function fetchTrainerPerformance(
+  token: string,
+): Promise<TrainerPerformanceListResponse> {
+  return request<TrainerPerformanceListResponse>("/trainer-performance/", {
+    token,
+  });
+}
+
+/** Fetch aggregated performance + monthly series for a single trainer. */
+export function fetchTrainerPerformanceDetail(
+  id: number | string,
+  token: string,
+): Promise<TrainerPerformanceDetail> {
+  return request<TrainerPerformanceDetail>(`/trainers/${id}/performance/`, {
+    token,
+  });
+}
+
+/** Fetch live metrics (active clients, utilization) for a single trainer. */
+export function fetchTrainerMetrics(
+  id: number | string,
+  token: string,
+): Promise<TrainerMetrics> {
+  return request<TrainerMetrics>(`/users/trainers/${id}/metrics/`, {
+    token,
+  });
+}
