@@ -49,6 +49,12 @@ class RolePermission(BasePermission):
             "attendance.log_attendance",
             "dashboard.view_dashboard",
             "reports.view_report",
+            "feedback.view_feedback",
+            "feedback.create_feedback",
+            "feedback.edit_feedback",
+            "exercises.view_exercise",
+            "exercises.edit_exercise",
+            "exercises.delete_exercise",
         },
         "trainer": {
             "customers.view_customer",
@@ -59,6 +65,11 @@ class RolePermission(BasePermission):
             "workouts.create_workout",
             "workouts.edit_workout",
             "dashboard.view_dashboard",
+            "feedback.view_feedback",
+            "feedback.edit_feedback",
+            "exercises.view_exercise",
+            "exercises.edit_exercise",
+            "exercises.delete_exercise",
         },
         "dietitian": {
             "customers.view_customer",
@@ -73,6 +84,9 @@ class RolePermission(BasePermission):
             "attendance.log_attendance",
             "workouts.view_workout",
             "diets.view_diet",
+            "feedback.view_feedback",
+            "feedback.create_feedback",
+            "exercises.view_exercise",
         },
     }
 

@@ -32,7 +32,7 @@ const NAV_ITEMS = [
   { href: "/payments", label: "Payments", icon: Wallet },
   { href: "/attendance", label: "Attendance", icon: CalendarCheck },
   { href: "/workouts", label: "Workouts", icon: Dumbbell },
-  { href: "/diets", label: "Diets", icon: Apple },
+  { href: "/diet", label: "Diets", icon: Apple },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

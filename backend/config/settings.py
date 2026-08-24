@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.vendors",
     "apps.branches",
     "apps.customers",
+    "apps.exercises",
     "apps.permissions",
 ]
 

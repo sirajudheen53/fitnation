@@ -584,3 +584,335 @@ export function login(data: LoginRequest): Promise<LoginResponse> {
     body: data,
   });
 }
+
+/* ── Diet plans & food items ─────────────────────────────────── */
+
+import {
+  DietAssignment,
+  DietAssignmentFormData,
+  DietAssignmentListResponse,
+  DietPlan,
+  DietPlanFormData,
+  DietPlanListResponse,
+  FoodItem,
+  FoodItemFormData,
+  FoodItemListResponse,
+  NutritionBreakdown,
+} from "@/types/diet";
+
+/* Food items */
+
+export function fetchFoodItems(
+  token: string,
+  params?: { search?: string; food_group?: string; is_veg?: string },
+): Promise<FoodItemListResponse> {
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (params?.food_group) query.set("food_group", params.food_group);
+  if (params?.is_veg) query.set("is_veg", params.is_veg);
+  const qs = query.toString();
+  return request<FoodItemListResponse>(`/food-items/${qs ? `?${qs}` : ""}`, { token });
+}
+
+export function createFoodItem(
+  data: FoodItemFormData,
+  token: string,
+): Promise<FoodItem> {
+  return request<FoodItem>("/food-items/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateFoodItem(
+  id: number | string,
+  data: FoodItemFormData,
+  token: string,
+): Promise<FoodItem> {
+  return request<FoodItem>(`/food-items/${id}/`, {
+    method: "PUT",
+    body: data,
+    token,
+  });
+}
+
+export function deleteFoodItem(id: number | string, token: string): Promise<void> {
+  return request<void>(`/food-items/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/* Diet plans */
+
+export function fetchDietPlans(
+  token: string,
+  params?: { goal?: string; is_template?: string },
+): Promise<DietPlanListResponse> {
+  const query = new URLSearchParams();
+  if (params?.goal) query.set("goal", params.goal);
+  if (params?.is_template) query.set("is_template", params.is_template);
+  const qs = query.toString();
+  return request<DietPlanListResponse>(`/diet-plans/${qs ? `?${qs}` : ""}`, { token });
+}
+
+export function fetchDietPlan(
+  id: number | string,
+  token: string,
+): Promise<DietPlan> {
+  return request<DietPlan>(`/diet-plans/${id}/`, { token });
+}
+
+export function createDietPlan(
+  data: DietPlanFormData,
+  token: string,
+): Promise<DietPlan> {
+  return request<DietPlan>("/diet-plans/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateDietPlan(
+  id: number | string,
+  data: DietPlanFormData,
+  token: string,
+): Promise<DietPlan> {
+  return request<DietPlan>(`/diet-plans/${id}/`, {
+    method: "PUT",
+    body: data,
+    token,
+  });
+}
+
+export function deleteDietPlan(id: number | string, token: string): Promise<void> {
+  return request<void>(`/diet-plans/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export function fetchDietPlanNutrition(
+  id: number | string,
+  token: string,
+): Promise<NutritionBreakdown> {
+  return request<NutritionBreakdown>(`/diet-plans/${id}/nutrition-breakdown/`, {
+    token,
+  });
+}
+
+export function duplicateDietPlan(
+  id: number | string,
+  token: string,
+): Promise<DietPlan> {
+  return request<DietPlan>(`/diet-plans/${id}/duplicate/`, {
+    method: "POST",
+    token,
+  });
+}
+
+/* Diet assignments */
+
+export function fetchDietAssignments(
+  token: string,
+  params?: { customer?: string; is_active?: string },
+): Promise<DietAssignmentListResponse> {
+  const query = new URLSearchParams();
+  if (params?.customer) query.set("customer", params.customer);
+  if (params?.is_active) query.set("is_active", params.is_active);
+  const qs = query.toString();
+  return request<DietAssignmentListResponse>(
+    `/diet-assignments/${qs ? `?${qs}` : ""}`,
+    { token },
+  );
+}
+
+export function assignDietPlan(
+  data: DietAssignmentFormData,
+  token: string,
+): Promise<DietAssignment> {
+  return request<DietAssignment>("/diet-assignments/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/* ── Exercises ───────────────────────────────────────────────── */
+
+import {
+  Exercise,
+  ExerciseCategory,
+  ExerciseCategoryListResponse,
+  ExerciseFilters,
+  ExerciseFormData,
+  ExerciseListResponse,
+} from "@/types/exercise";
+
+function buildQueryString(filters: ExerciseFilters = {}): string {
+  const params = new URLSearchParams();
+  if (filters.category) params.set("category", filters.category);
+  if (filters.difficulty) params.set("difficulty", filters.difficulty);
+  if (filters.muscle_group) params.set("muscle_group", filters.muscle_group);
+  if (filters.equipment_needed) params.set("equipment_needed", filters.equipment_needed);
+  if (filters.search) params.set("search", filters.search);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
+export function fetchExerciseCategories(
+  token: string,
+): Promise<ExerciseCategoryListResponse> {
+  return request<ExerciseCategoryListResponse>(
+    "/exercises/exercise-categories/",
+    { token },
+  );
+}
+
+export function createExerciseCategory(
+  data: { name: string; description?: string },
+  token: string,
+): Promise<ExerciseCategory> {
+  return request<ExerciseCategory>("/exercises/exercise-categories/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function fetchExercises(
+  token: string,
+  filters: ExerciseFilters = {},
+): Promise<ExerciseListResponse> {
+  return request<ExerciseListResponse>(
+    `/exercises/exercises/${buildQueryString(filters)}`,
+    { token },
+  );
+}
+
+export function fetchExercise(
+  id: number | string,
+  token: string,
+): Promise<Exercise> {
+  return request<Exercise>(`/exercises/exercises/${id}/`, { token });
+}
+
+export function createExercise(
+  data: ExerciseFormData,
+  token: string,
+): Promise<Exercise> {
+  return request<Exercise>("/exercises/exercises/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateExercise(
+  id: number | string,
+  data: ExerciseFormData,
+  token: string,
+): Promise<Exercise> {
+  return request<Exercise>(`/exercises/exercises/${id}/`, {
+    method: "PUT",
+    body: data,
+    token,
+  });
+}
+
+export function deleteExercise(
+  id: number | string,
+  token: string,
+): Promise<void> {
+  return request<void>(`/exercises/exercises/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/* ── Feedback (FBOS-015) ─────────────────────────────────────── */
+
+import {
+  Feedback,
+  FeedbackAnalytics,
+  FeedbackFormData,
+  FeedbackListResponse,
+  FeedbackResponse as FeedbackResponseItem,
+  FeedbackResponseFormData,
+  FeedbackResponseListResponse,
+  FeedbackResponseData,
+  FeedbackSurvey,
+  FeedbackSurveyFormData,
+  FeedbackSurveyListResponse,
+} from "@/types/feedback";
+
+export function fetchFeedback(token: string): Promise<FeedbackListResponse> {
+  return request<FeedbackListResponse>("/feedback/feedback/", { token });
+}
+
+export function createFeedback(
+  data: FeedbackFormData,
+  token: string,
+): Promise<Feedback> {
+  return request<Feedback>("/feedback/feedback/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function respondToFeedback(
+  id: number | string,
+  data: FeedbackResponseData,
+  token: string,
+): Promise<Feedback> {
+  return request<Feedback>(`/feedback/feedback/${id}/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+export function fetchFeedbackAnalytics(token: string): Promise<FeedbackAnalytics> {
+  return request<FeedbackAnalytics>("/feedback/feedback-analytics/", { token });
+}
+
+export function fetchFeedbackSurveys(
+  token: string,
+): Promise<FeedbackSurveyListResponse> {
+  return request<FeedbackSurveyListResponse>("/feedback/feedback-surveys/", {
+    token,
+  });
+}
+
+export function createFeedbackSurvey(
+  data: FeedbackSurveyFormData,
+  token: string,
+): Promise<FeedbackSurvey> {
+  return request<FeedbackSurvey>("/feedback/feedback-surveys/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function fetchFeedbackResponses(
+  token: string,
+): Promise<FeedbackResponseListResponse> {
+  return request<FeedbackResponseListResponse>("/feedback/feedback-responses/", {
+    token,
+  });
+}
+
+export function createFeedbackResponse(
+  data: FeedbackResponseFormData,
+  token: string,
+): Promise<FeedbackResponseItem> {
+  return request<FeedbackResponseItem>("/feedback/feedback-responses/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
