@@ -1261,3 +1261,71 @@ export function fetchTrainerMetrics(
     token,
   });
 }
+
+/* ── Wati notifications (FBOS-022) ────────────────────────────── */
+
+import {
+  NotificationLog,
+  NotificationLogListResponse,
+  NotificationStatus,
+  NotificationType,
+  TestNotificationResult,
+  WatiSettings,
+  WatiSettingsUpdate,
+} from "@/types/notification";
+
+/** Fetch the tenant's current Wati configuration. */
+export function fetchNotificationSettings(
+  token: string,
+): Promise<WatiSettings> {
+  return request<WatiSettings>("/notifications/settings/", { token });
+}
+
+/** Update the tenant's Wati configuration. */
+export function updateNotificationSettings(
+  data: WatiSettingsUpdate,
+  token: string,
+): Promise<WatiSettings> {
+  return request<WatiSettings>("/notifications/settings/", {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/** Send a test WhatsApp message to verify Wati connectivity. */
+export function sendTestNotification(
+  data: { to: string; message?: string; notification_type?: NotificationType },
+  token: string,
+): Promise<TestNotificationResult> {
+  return request<TestNotificationResult>("/notifications/test/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/** List notification logs, optionally filtered by status and/or type. */
+export function fetchNotificationLogs(
+  token: string,
+  params?: { status?: NotificationStatus; notification_type?: NotificationType },
+): Promise<NotificationLogListResponse> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.notification_type) query.set("notification_type", params.notification_type);
+  const qs = query.toString();
+  return request<NotificationLogListResponse>(
+    `/notifications/logs/${qs ? `?${qs}` : ""}`,
+    { token },
+  );
+}
+
+/**
+ * Helper that normalises a raw paginated response into an array, tolerating
+ * plain-array responses from endpoints that skip DRF pagination.
+ */
+export function unwrapNotificationLogs(
+  res: NotificationLogListResponse | NotificationLog[],
+): NotificationLog[] {
+  return Array.isArray(res) ? res : (res.results ?? []);
+}
