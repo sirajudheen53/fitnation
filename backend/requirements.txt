@@ -28,3 +28,9 @@ django-filter>=25.1,<27.0
 
 # Redis / cache
 django-redis>=5.4,<8.0
+
+# Payments
+razorpay>=1.4,<2.0
+
+# Encryption (Fernet-backed EncryptedCharField)
+cryptography>=44.0,<51.0
