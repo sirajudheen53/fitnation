@@ -1,7 +1,6 @@
 """FBOS Test Settings — SQLite in-memory for fast tests."""
 
 from .base import *  # noqa: F401, F403
-from .base import env
 
 DEBUG = False
 ALLOWED_HOSTS = ["*"]
@@ -33,6 +32,11 @@ MIGRATION_MODULES = {
         "vendors",
         "feedback",
         "diet",
+        "ai_nutrition",
+        "ai_coach",
+        "body_analysis",
+        "marketplace",
+        "notifications",
         "admin",
         "auth",
         "contenttypes",

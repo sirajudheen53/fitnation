@@ -5,7 +5,28 @@ from typing import ClassVar
 from django.db import models
 from django.utils import timezone
 
+from apps.core.fields import EncryptedCharField
 from apps.tenants.models import TenantModelMixin
+
+
+class RazorpayConfig(TenantModelMixin):
+    """Per-tenant Razorpay credentials and activation state."""
+
+    api_key = EncryptedCharField(max_length=255, blank=True)
+    api_secret = EncryptedCharField(max_length=255, blank=True)
+    webhook_secret = EncryptedCharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """RazorpayConfig model metadata."""
+
+        db_table = "razorpay_configs"
+
+    def __str__(self) -> str:
+        """Return a human-readable label."""
+        return f"Razorpay config for {self.tenant.name} ({'active' if self.is_active else 'inactive'})"
 
 
 class Payment(TenantModelMixin):
@@ -50,6 +71,8 @@ class Payment(TenantModelMixin):
         default=Status.PENDING,
     )
     transaction_id = models.CharField(max_length=100, blank=True)
+    razorpay_order_id = models.CharField(max_length=100, blank=True)
+    razorpay_payment_id = models.CharField(max_length=100, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -63,6 +86,7 @@ class Payment(TenantModelMixin):
         indexes: ClassVar[list] = [
             models.Index(fields=["tenant", "customer"], name="idx_payment_tenant_customer"),
             models.Index(fields=["tenant", "status"], name="idx_payment_tenant_status"),
+            models.Index(fields=["tenant", "razorpay_order_id"], name="idx_payment_order_id"),
         ]
 
     def __str__(self) -> str:
@@ -123,3 +147,44 @@ class Invoice(TenantModelMixin):
             invoice_number__startswith=prefix,
         ).count()
         return f"{prefix}-{count + 1:04d}"
+
+
+class PaymentRefund(TenantModelMixin):
+    """A refund issued against a payment via Razorpay."""
+
+    class Status(models.TextChoices):
+        """Lifecycle status of a refund."""
+
+        PENDING = "pending", "Pending"
+        PROCESSED = "processed", "Processed"
+        FAILED = "failed", "Failed"
+
+    payment = models.ForeignKey(
+        Payment,
+        on_delete=models.CASCADE,
+        related_name="refunds",
+    )
+    refund_id = models.CharField(max_length=100, blank=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    reason = models.CharField(max_length=200, blank=True)
+    error_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """PaymentRefund model metadata."""
+
+        db_table = "payment_refunds"
+        ordering: ClassVar[list] = ["-created_at"]
+        indexes: ClassVar[list] = [
+            models.Index(fields=["tenant", "payment"], name="idx_refund_tenant_payment"),
+        ]
+
+    def __str__(self) -> str:
+        """Return a human-readable refund label."""
+        return f"Refund {self.refund_id or self.id} — {self.amount}"
