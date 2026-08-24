@@ -916,3 +916,139 @@ export function createFeedbackResponse(
     token,
   });
 }
+
+/* ── Workouts (FBOS-012) ──────────────────────────────────────── */
+
+import {
+  WorkoutAssignment,
+  WorkoutAssignmentFormData,
+  WorkoutAssignmentListResponse,
+  WorkoutLog,
+  WorkoutLogFormData,
+  WorkoutLogListResponse,
+  WorkoutPlan,
+  WorkoutPlanFormData,
+  WorkoutPlanListResponse,
+} from "@/types/workout";
+
+/* Workout plans */
+
+export function fetchWorkoutPlans(
+  token: string,
+  params?: { goal?: string; difficulty?: string; is_template?: string },
+): Promise<WorkoutPlanListResponse> {
+  const query = new URLSearchParams();
+  if (params?.goal) query.set("goal", params.goal);
+  if (params?.difficulty) query.set("difficulty", params.difficulty);
+  if (params?.is_template) query.set("is_template", params.is_template);
+  const qs = query.toString();
+  return request<WorkoutPlanListResponse>(
+    `/workouts/workout-plans/${qs ? `?${qs}` : ""}`,
+    { token },
+  );
+}
+
+export function fetchWorkoutPlan(
+  id: number | string,
+  token: string,
+): Promise<WorkoutPlan> {
+  return request<WorkoutPlan>(`/workouts/workout-plans/${id}/`, { token });
+}
+
+export function createWorkoutPlan(
+  data: WorkoutPlanFormData,
+  token: string,
+): Promise<WorkoutPlan> {
+  return request<WorkoutPlan>("/workouts/workout-plans/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateWorkoutPlan(
+  id: number | string,
+  data: WorkoutPlanFormData,
+  token: string,
+): Promise<WorkoutPlan> {
+  return request<WorkoutPlan>(`/workouts/workout-plans/${id}/`, {
+    method: "PUT",
+    body: data,
+    token,
+  });
+}
+
+export function deleteWorkoutPlan(
+  id: number | string,
+  token: string,
+): Promise<void> {
+  return request<void>(`/workouts/workout-plans/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export function duplicateWorkoutPlan(
+  id: number | string,
+  token: string,
+): Promise<WorkoutPlan> {
+  return request<WorkoutPlan>(`/workouts/workout-plans/${id}/duplicate/`, {
+    method: "POST",
+    token,
+  });
+}
+
+/* Workout assignments */
+
+export function fetchWorkoutAssignments(
+  token: string,
+  params?: { customer?: string; is_active?: string },
+): Promise<WorkoutAssignmentListResponse> {
+  const query = new URLSearchParams();
+  if (params?.customer) query.set("customer", params.customer);
+  if (params?.is_active) query.set("is_active", params.is_active);
+  const qs = query.toString();
+  return request<WorkoutAssignmentListResponse>(
+    `/workouts/workout-assignments/${qs ? `?${qs}` : ""}`,
+    { token },
+  );
+}
+
+export function assignWorkoutPlan(
+  data: WorkoutAssignmentFormData,
+  token: string,
+): Promise<WorkoutAssignment> {
+  return request<WorkoutAssignment>("/workouts/workout-assignments/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/* Workout logs */
+
+export function fetchWorkoutLogs(
+  token: string,
+  params?: { customer?: string; date_from?: string; date_to?: string },
+): Promise<WorkoutLogListResponse> {
+  const query = new URLSearchParams();
+  if (params?.customer) query.set("customer", params.customer);
+  if (params?.date_from) query.set("date_from", params.date_from);
+  if (params?.date_to) query.set("date_to", params.date_to);
+  const qs = query.toString();
+  return request<WorkoutLogListResponse>(
+    `/workouts/workout-logs/${qs ? `?${qs}` : ""}`,
+    { token },
+  );
+}
+
+export function createWorkoutLog(
+  data: WorkoutLogFormData,
+  token: string,
+): Promise<WorkoutLog> {
+  return request<WorkoutLog>("/workouts/workout-logs/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}

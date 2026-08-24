@@ -13,6 +13,34 @@ class AppConstants {
   static const String logoutEndpoint = '/auth/logout/';
   static const String meEndpoint = '/auth/me/';
 
+  // Customer
+  static const String customerProfileEndpoint = '/customers/customers/';
+  static const String customerHealthProfileEndpoint = '/customers/customers/{id}/health-profile/';
+  static const String customerFitnessGoalsEndpoint = '/customers/customers/{id}/fitness-goals/';
+  static const String customerMeasurementsEndpoint = '/customers/customers/{id}/measurements/';
+
+  // Exercise library
+  static const String exercisesEndpoint = '/exercises/exercises/';
+
+  // Workouts
+  static const String workoutAssignmentsEndpoint = '/workouts/workout-assignments/';
+  static const String workoutPlansEndpoint = '/workouts/workout-plans/';
+  static const String workoutLogsEndpoint = '/workouts/workout-logs/';
+
+  // Diet
+  static const String dietAssignmentsEndpoint = '/diet/diet-assignments/';
+  static const String dietPlansEndpoint = '/diet/diet-plans/';
+
+  // Attendance
+  static const String attendanceRecordsEndpoint = '/attendance/attendance-records/';
+  static const String attendanceCheckInEndpoint = '/attendance/attendance-records/check-in/';
+
+  // Membership
+  static const String membershipsEndpoint = '/memberships/memberships/';
+
+  // Feedback
+  static const String feedbackEndpoint = '/feedback/feedback/';
+
   /// Storage keys.
   static const String authTokenKey = 'auth_token';
   static const String userProfileKey = 'user_profile';
