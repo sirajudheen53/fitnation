@@ -1,39 +1,62 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { HealthProfileForm } from "@/features/customers/components/HealthProfileForm";
-import { Spinner, Alert, Card, CardBody, CardHeader, Button } from "@/components/ui";
-import { fetchCustomer, updateHealthProfile, errorMessage } from "@/lib/api";
+import { CustomerTabs, type CustomerTabKey } from "@/features/customers/components/CustomerTabs";
+import { OverviewTab } from "@/features/customers/components/OverviewTab";
+import { FitnessGoalsTab } from "@/features/customers/components/FitnessGoalsTab";
+import { BodyMeasurementsTab } from "@/features/customers/components/BodyMeasurementsTab";
+import { HealthProfileTab } from "@/features/customers/components/HealthProfileTab";
+import { ProgressPhotosTab } from "@/features/customers/components/ProgressPhotosTab";
+import { PaymentHistoryTab } from "@/features/customers/components/PaymentHistoryTab";
+import { Spinner, Alert, Button, Badge } from "@/components/ui";
 import { getToken } from "@/lib/auth";
-import type { Customer, HealthProfileFormData } from "@/types/customer";
 import {
-  getCustomerDisplayName,
-  getCustomerMembershipStatus,
-} from "@/features/customers/components/CustomerTable";
-
-type Tab = "profile" | "health" | "measurements" | "goals";
-
-const TABS: { value: Tab; label: string }[] = [
-  { value: "profile", label: "Profile" },
-  { value: "health", label: "Health" },
-  { value: "measurements", label: "Measurements" },
-  { value: "goals", label: "Goals" },
-];
+  fetchCustomer,
+  fetchProgressSummary,
+  fetchFitnessGoals,
+  fetchBodyMeasurements,
+  fetchHealthProfile,
+  fetchProgressPhotos,
+  createFitnessGoal,
+  createBodyMeasurement,
+  updateCustomerHealthProfile,
+  createProgressPhoto,
+  errorMessage,
+} from "@/lib/api";
+import { getCustomerDisplayName, getCustomerMembershipStatus } from "@/features/customers/components/CustomerTable";
+import type { Customer } from "@/types/customer";
+import type {
+  BodyMeasurement,
+  BodyMeasurementFormData,
+  CustomerFitnessGoal,
+  FitnessGoalFormData,
+  HealthProfile,
+  HealthProfileUpdate,
+  ProgressPhoto,
+  ProgressPhotoFormData,
+  ProgressSummary,
+} from "@/types/customer-detail";
 
 export default function CustomerDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const id = Number(params.id);
-  const initialTab = (searchParams.get("tab") as Tab) || "profile";
-  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+
+  const [activeTab, setActiveTab] = useState<CustomerTabKey>("overview");
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [summary, setSummary] = useState<ProgressSummary | null>(null);
+  const [goals, setGoals] = useState<CustomerFitnessGoal[]>([]);
+  const [measurements, setMeasurements] = useState<BodyMeasurement[]>([]);
+  const [healthProfile, setHealthProfile] = useState<HealthProfile | null>(null);
+  const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [healthLoading, setHealthLoading] = useState(false);
-  const [healthError, setHealthError] = useState<unknown>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<unknown>(null);
 
   useEffect(() => {
     const token = getToken();
@@ -41,13 +64,25 @@ export default function CustomerDetailPage() {
       router.replace("/login?next=/customers/" + id);
       return;
     }
-
     const authToken: string = token;
 
     async function load() {
       try {
-        const data = await fetchCustomer(id, authToken);
-        setCustomer(data);
+        const [cust, sum] = await Promise.all([
+          fetchCustomer(id, authToken),
+          fetchProgressSummary(id, authToken),
+        ]);
+        setCustomer(cust);
+        setSummary(sum);
+        setGoals(sum.fitness_goals ?? []);
+        setHealthProfile(sum.health_profile ?? null);
+        if (sum.latest_measurement) {
+          setMeasurements((prev) =>
+            prev.some((m) => m.id === sum.latest_measurement!.id)
+              ? prev
+              : [sum.latest_measurement as BodyMeasurement, ...prev],
+          );
+        }
       } catch (err) {
         setError(errorMessage(err));
       } finally {
@@ -57,18 +92,118 @@ export default function CustomerDetailPage() {
     load();
   }, [id, router]);
 
-  const handleHealthSubmit = async (data: HealthProfileFormData) => {
+  // Lazy-load full tab data on first visit (the summary only includes the latest measurement).
+  useEffect(() => {
+    if (!customer) return;
     const token = getToken();
-    if (!token || !customer) return;
-    setHealthLoading(true);
-    setHealthError(null);
+    if (!token) return;
+    const authToken: string = token;
+
+    async function loadGoals() {
+      try {
+        const list = await fetchFitnessGoals(id, authToken);
+        setGoals(list);
+      } catch {
+        /* summary already seeded goals; ignore list errors here */
+      }
+    }
+    async function loadMeasurements() {
+      try {
+        const list = await fetchBodyMeasurements(id, authToken);
+        setMeasurements(list);
+      } catch {
+        /* noop */
+      }
+    }
+    async function loadHealth() {
+      try {
+        const profile = await fetchHealthProfile(id, authToken);
+        setHealthProfile(profile);
+      } catch {
+        setHealthProfile(null);
+      }
+    }
+    async function loadPhotos() {
+      try {
+        const list = await fetchProgressPhotos(id, authToken);
+        setPhotos(list);
+      } catch {
+        /* noop */
+      }
+    }
+
+    if (activeTab === "goals" && !summary) loadGoals();
+    if (activeTab === "measurements" && !summary) loadMeasurements();
+    if (activeTab === "health" && !summary) loadHealth();
+    if (activeTab === "photos") loadPhotos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, customer, summary]);
+
+  const addGoal = async (data: FitnessGoalFormData) => {
+    const token = getToken();
+    if (!token) return;
+    setSaving(true);
+    setSaveError(null);
     try {
-      const updated = await updateHealthProfile(customer.id, data, token);
-      setCustomer(updated);
+      const created = await createFitnessGoal(id, data, token);
+      setGoals((prev) => [created, ...prev]);
+      toast.success("Goal added");
     } catch (err) {
-      setHealthError(err);
+      setSaveError(err);
+      toast.error(errorMessage(err));
     } finally {
-      setHealthLoading(false);
+      setSaving(false);
+    }
+  };
+
+  const addMeasurement = async (data: BodyMeasurementFormData) => {
+    const token = getToken();
+    if (!token) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const created = await createBodyMeasurement(id, data, token);
+      setMeasurements((prev) => [...prev, created]);
+      toast.success("Measurement saved");
+    } catch (err) {
+      setSaveError(err);
+      toast.error(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveHealthProfile = async (data: HealthProfileUpdate) => {
+    const token = getToken();
+    if (!token) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const updated = await updateCustomerHealthProfile(id, data, token);
+      setHealthProfile(updated);
+      toast.success("Health profile saved");
+    } catch (err) {
+      setSaveError(err);
+      toast.error(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addPhoto = async (data: ProgressPhotoFormData) => {
+    const token = getToken();
+    if (!token) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const created = await createProgressPhoto(id, data, token);
+      setPhotos((prev) => [...prev, created]);
+      toast.success("Photo uploaded");
+    } catch (err) {
+      setSaveError(err);
+      toast.error(errorMessage(err));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -81,7 +216,7 @@ export default function CustomerDetailPage() {
       title={customer ? getCustomerDisplayName(customer) : "Customer detail"}
       actions={
         customer ? (
-          <Button variant="outline" size="sm" onClick={() => router.push(`/customers/${customer.id}/edit`)} >
+          <Button variant="outline" size="sm" onClick={() => router.push(`/customers/${customer.id}/edit`)}>
             Edit
           </Button>
         ) : null
@@ -92,7 +227,7 @@ export default function CustomerDetailPage() {
           <Spinner />
         </div>
       )}
-      {error && <Alert variant="error">{error}</Alert>}
+      {error && !customer && <Alert variant="error">{error}</Alert>}
       {customer && (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -102,108 +237,50 @@ export default function CustomerDetailPage() {
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-500">Status</p>
-              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                statusBadge.variant === "success"
-                  ? "bg-green-100 text-green-800"
-                  : statusBadge.variant === "danger"
-                  ? "bg-red-100 text-red-800"
-                  : "bg-gray-100 text-gray-800"
-              }`}>
-                {statusBadge.label}
-              </span>
+              <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
             </div>
           </div>
 
           <div className="border-b border-gray-200">
-            <nav className="-mb-px flex gap-6" aria-label="Customer tabs">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.value}
-                  onClick={() => setActiveTab(tab.value)}
-                  className={`border-b-2 px-1 pb-3 text-sm font-medium ${
-                    activeTab === tab.value
-                      ? "border-brand-600 text-brand-600"
-                      : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
-                  }`}
-                  aria-current={activeTab === tab.value ? "page" : undefined}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
+            <CustomerTabs active={activeTab} onChange={setActiveTab} />
           </div>
 
-          {activeTab === "profile" && (
-            <Card>
-              <CardHeader>
-                <h3 className="text-base font-semibold text-gray-900">Profile</h3>
-              </CardHeader>
-              <CardBody className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <p className="text-sm text-gray-500">First name</p>
-                  <p className="font-medium text-gray-900">{customer.first_name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Last name</p>
-                  <p className="font-medium text-gray-900">{customer.last_name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Date of birth</p>
-                  <p className="font-medium text-gray-900">{customer.date_of_birth || "—"}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Gender</p>
-                  <p className="font-medium text-gray-900">{customer.gender || "—"}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Emergency contact</p>
-                  <p className="font-medium text-gray-900">
-                    {customer.emergency_contact_name || "—"}
-                  </p>
-                  <p className="text-sm text-gray-500">{customer.emergency_contact_phone || "—"}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Branch ID</p>
-                  <p className="font-medium text-gray-900">{customer.branch_id || "—"}</p>
-                </div>
-              </CardBody>
-            </Card>
-          )}
-
-          {activeTab === "health" && (
-            <HealthProfileForm
-              customer={customer}
-              onSubmit={handleHealthSubmit}
-              error={healthError}
-              loading={healthLoading}
-            />
-          )}
-
-          {activeTab === "measurements" && (
-            <Card>
-              <CardHeader>
-                <h3 className="text-base font-semibold text-gray-900">Measurements</h3>
-              </CardHeader>
-              <CardBody>
-                <p className="text-sm text-gray-500">
-                  Body measurements tracking will be available here.
-                </p>
-              </CardBody>
-            </Card>
-          )}
-
-          {activeTab === "goals" && (
-            <Card>
-              <CardHeader>
-                <h3 className="text-base font-semibold text-gray-900">Goals</h3>
-              </CardHeader>
-              <CardBody>
-                <p className="text-sm text-gray-500">
-                  Fitness goals and milestones will be available here.
-                </p>
-              </CardBody>
-            </Card>
-          )}
+          <div>
+            {activeTab === "overview" && <OverviewTab customer={customer} summary={summary} />}
+            {activeTab === "goals" && (
+              <FitnessGoalsTab
+                goals={goals}
+                saving={saving}
+                error={saveError}
+                onAdd={addGoal}
+              />
+            )}
+            {activeTab === "measurements" && (
+              <BodyMeasurementsTab
+                measurements={measurements}
+                saving={saving}
+                error={saveError}
+                onAdd={addMeasurement}
+              />
+            )}
+            {activeTab === "health" && (
+              <HealthProfileTab
+                profile={healthProfile}
+                saving={saving}
+                error={saveError}
+                onSave={saveHealthProfile}
+              />
+            )}
+            {activeTab === "photos" && (
+              <ProgressPhotosTab
+                photos={photos}
+                saving={saving}
+                error={saveError}
+                onAdd={addPhoto}
+              />
+            )}
+            {activeTab === "payments" && <PaymentHistoryTab customer={customer} />}
+          </div>
         </div>
       )}
     </DashboardLayout>
