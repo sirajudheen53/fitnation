@@ -14,7 +14,6 @@ from apps.customers.models import (
     Customer,
     FitnessGoal,
     HealthProfile,
-    ProgressPhoto,
 )
 from apps.customers.serializers import (
     BodyMeasurementSerializer,
@@ -198,6 +197,58 @@ class CustomerViewSet(ModelViewSet):
         return Response(
             ProgressPhotoSerializer(photo).data,
             status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["get"], url_path="progress-summary")
+    def progress_summary(self, request: Request, pk: int) -> Response:
+        """Return an aggregated progress summary for a customer.
+
+        Includes the latest health profile, active fitness goals with progress,
+        the latest body measurement, a weight-over-time trend, and the number
+        of progress photos recorded.
+        """
+        self.required_permission = "customers.view_customer"
+        customer = get_object_or_404(
+            Customer.objects.for_tenant(request.tenant),
+            id=pk,
+        )
+
+        health_profile = None
+        try:
+            health_profile = customer.health_profile
+        except HealthProfile.DoesNotExist:
+            health_profile = None
+
+        latest_measurement = customer.body_measurements.first()
+        weight_trend = list(customer.body_measurements.order_by("date_logged").values("date_logged", "weight_kg"))
+
+        goals = customer.fitness_goals.all()
+        active_goals = [
+            {
+                "id": g.id,
+                "goal_type": g.goal_type,
+                "status": g.status,
+                "target_value": g.target_value,
+                "target_unit": g.target_unit,
+                "target_date": g.target_date,
+                "current_value": g.current_value,
+                "progress_percentage": g.progress_percentage,
+            }
+            for g in goals
+        ]
+
+        return Response(
+            {
+                "customer_id": customer.id,
+                "customer_name": customer.name,
+                "health_profile": (HealthProfileSerializer(health_profile).data if health_profile else None),
+                "latest_measurement": (
+                    BodyMeasurementSerializer(latest_measurement).data if latest_measurement else None
+                ),
+                "weight_trend": weight_trend,
+                "fitness_goals": active_goals,
+                "progress_photo_count": customer.progress_photos.count(),
+            }
         )
 
 

@@ -1168,3 +1168,164 @@ export function generateMealPlan(
 export function fetchShoppingList(token: string): Promise<ShoppingListResponse> {
   return request<ShoppingListResponse>("/ai/nutrition/shopping-list/", { token });
 }
+
+/* ── Branches (FBOS-023) ──────────────────────────────────────── */
+
+import {
+  Branch,
+  BranchFormData,
+  BranchListResponse,
+} from "@/types/branch";
+
+/* The branch list endpoint returns a plain array (no pagination). */
+export function fetchBranches(token: string): Promise<BranchListResponse> {
+  return request<BranchListResponse>("/branches/", { token });
+}
+
+export function fetchBranch(id: number | string, token: string): Promise<Branch> {
+  return request<Branch>(`/branches/${id}/`, { token });
+}
+
+export function createBranch(
+  data: BranchFormData,
+  token: string,
+): Promise<Branch> {
+  return request<Branch>("/branches/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateBranch(
+  id: number | string,
+  data: Partial<BranchFormData>,
+  token: string,
+): Promise<Branch> {
+  return request<Branch>(`/branches/${id}/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/**
+ * Delete a branch.
+ * NOTE: The Sprint 1 backend does not yet expose a DELETE endpoint. This
+ * function targets `DELETE /branches/{id}/` and will surface a 405 until
+ * Forge adds it. Flagged as an open gap for FBOS-023.
+ */
+export function deleteBranch(
+  id: number | string,
+  token: string,
+): Promise<void> {
+  return request<void>(`/branches/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/* ── Trainer performance (FBOS-024) ───────────────────────────── */
+
+import {
+  TrainerMetrics,
+  TrainerPerformanceDetail,
+  TrainerPerformanceListResponse,
+} from "@/types/trainer-performance";
+
+/** List monthly trainer performance snapshots (plain array, no pagination). */
+export function fetchTrainerPerformance(
+  token: string,
+): Promise<TrainerPerformanceListResponse> {
+  return request<TrainerPerformanceListResponse>("/trainer-performance/", {
+    token,
+  });
+}
+
+/** Fetch aggregated performance + monthly series for a single trainer. */
+export function fetchTrainerPerformanceDetail(
+  id: number | string,
+  token: string,
+): Promise<TrainerPerformanceDetail> {
+  return request<TrainerPerformanceDetail>(`/trainers/${id}/performance/`, {
+    token,
+  });
+}
+
+/** Fetch live metrics (active clients, utilization) for a single trainer. */
+export function fetchTrainerMetrics(
+  id: number | string,
+  token: string,
+): Promise<TrainerMetrics> {
+  return request<TrainerMetrics>(`/users/trainers/${id}/metrics/`, {
+    token,
+  });
+}
+
+/* ── Wati notifications (FBOS-022) ────────────────────────────── */
+
+import {
+  NotificationLog,
+  NotificationLogListResponse,
+  NotificationStatus,
+  NotificationType,
+  TestNotificationResult,
+  WatiSettings,
+  WatiSettingsUpdate,
+} from "@/types/notification";
+
+/** Fetch the tenant's current Wati configuration. */
+export function fetchNotificationSettings(
+  token: string,
+): Promise<WatiSettings> {
+  return request<WatiSettings>("/notifications/settings/", { token });
+}
+
+/** Update the tenant's Wati configuration. */
+export function updateNotificationSettings(
+  data: WatiSettingsUpdate,
+  token: string,
+): Promise<WatiSettings> {
+  return request<WatiSettings>("/notifications/settings/", {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/** Send a test WhatsApp message to verify Wati connectivity. */
+export function sendTestNotification(
+  data: { to: string; message?: string; notification_type?: NotificationType },
+  token: string,
+): Promise<TestNotificationResult> {
+  return request<TestNotificationResult>("/notifications/test/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/** List notification logs, optionally filtered by status and/or type. */
+export function fetchNotificationLogs(
+  token: string,
+  params?: { status?: NotificationStatus; notification_type?: NotificationType },
+): Promise<NotificationLogListResponse> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.notification_type) query.set("notification_type", params.notification_type);
+  const qs = query.toString();
+  return request<NotificationLogListResponse>(
+    `/notifications/logs/${qs ? `?${qs}` : ""}`,
+    { token },
+  );
+}
+
+/**
+ * Helper that normalises a raw paginated response into an array, tolerating
+ * plain-array responses from endpoints that skip DRF pagination.
+ */
+export function unwrapNotificationLogs(
+  res: NotificationLogListResponse | NotificationLog[],
+): NotificationLog[] {
+  return Array.isArray(res) ? res : (res.results ?? []);
+}

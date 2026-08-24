@@ -71,11 +71,16 @@ class HealthProfileSerializer(serializers.ModelSerializer):
             "height_cm",
             "weight_kg",
             "bmi",
+            "blood_group",
             "injuries",
+            "current_injuries",
+            "past_injuries",
             "medical_info",
             "medical_conditions",
             "allergies",
+            "food_allergies",
             "medications",
+            "dietary_restrictions",
             "created_at",
             "updated_at",
         ]
@@ -84,6 +89,8 @@ class HealthProfileSerializer(serializers.ModelSerializer):
 
 class FitnessGoalSerializer(serializers.ModelSerializer):
     """Serialize fitness goal details."""
+
+    progress_percentage = serializers.SerializerMethodField()
 
     class Meta:
         """Serializer metadata."""
@@ -94,12 +101,21 @@ class FitnessGoalSerializer(serializers.ModelSerializer):
             "customer",
             "goal_type",
             "is_active",
+            "status",
             "target_value",
+            "target_unit",
+            "target_date",
+            "current_value",
+            "progress_percentage",
             "notes",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_progress_percentage(self, obj: FitnessGoal) -> float | None:
+        """Return the computed goal progress percentage."""
+        return obj.progress_percentage
 
 
 class BodyMeasurementSerializer(serializers.ModelSerializer):
@@ -112,18 +128,24 @@ class BodyMeasurementSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "customer",
+            "date_logged",
             "weight_kg",
+            "height_cm",
+            "bmi",
+            "body_fat_percentage",
             "chest_cm",
             "waist_cm",
             "hips_cm",
+            "biceps_cm",
+            "thighs_cm",
+            "neck_cm",
             "arms_cm",
             "legs_cm",
-            "date_logged",
             "notes",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "date_logged", "created_at", "updated_at"]
+        read_only_fields = ["id", "bmi", "date_logged", "created_at", "updated_at"]
 
 
 class ProgressPhotoSerializer(serializers.ModelSerializer):

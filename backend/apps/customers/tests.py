@@ -296,7 +296,8 @@ class CustomerAPITests(APITestCase):
             {
                 "customer": customer.id,
                 "goal_type": "lose_weight",
-                "target_value": "5 kg",
+                "target_value": "5",
+                "target_unit": "kg",
                 "notes": "In 3 months",
             },
             format="json",
@@ -392,10 +393,13 @@ class FitnessGoalModelTests(TestCase):
             tenant=self.tenant,
             customer=self.customer,
             goal_type=FitnessGoal.GoalType.BUILD_MUSCLE,
-            target_value="+3 kg muscle",
+            target_value="3",
+            target_unit="kg muscle",
+            current_value="1.5",
         )
         self.assertEqual(goal.customer, self.customer)
         self.assertEqual(goal.goal_type, "build_muscle")
+        self.assertEqual(goal.target_unit, "kg muscle")
 
 
 class BodyMeasurementModelTests(TestCase):
@@ -403,9 +407,7 @@ class BodyMeasurementModelTests(TestCase):
 
     def setUp(self) -> None:
         """Create a tenant and customer."""
-        self.tenant = provision_tenant(
-            name="Measure Gym", contact_email="owner@local.test"
-        )
+        self.tenant = provision_tenant(name="Measure Gym", contact_email="owner@local.test")
         self.user = User.objects.create_user(
             email="measure@local.test",
             password="F1tNati0n!",
@@ -585,8 +587,10 @@ class ProgressPhotoModelTests(TestCase):
 
     def test_progress_photo_requires_tenant(self) -> None:
         """Saving a progress photo without a tenant raises ValueError."""
-        from django.core.files.uploadedfile import SimpleUploadedFile
         from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
         from PIL import Image
 
         img = Image.new("RGB", (1, 1), color="red")
@@ -607,8 +611,10 @@ class ProgressPhotoModelTests(TestCase):
 
     def test_progress_photo_tenant_isolation(self) -> None:
         """Progress photos are scoped to their tenant."""
-        from django.core.files.uploadedfile import SimpleUploadedFile
         from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
         from PIL import Image
 
         img = Image.new("RGB", (1, 1), color="red")
@@ -616,7 +622,7 @@ class ProgressPhotoModelTests(TestCase):
         img.save(img_bytes, format="JPEG")
         img_bytes.seek(0)
 
-        photo = ProgressPhoto.objects.create(
+        ProgressPhoto.objects.create(
             tenant=self.tenant,
             customer=self.customer,
             image=SimpleUploadedFile(
@@ -632,8 +638,10 @@ class ProgressPhotoModelTests(TestCase):
 
     def test_progress_photo_ordering(self) -> None:
         """Progress photos are ordered by most recent taken_at first."""
-        from django.core.files.uploadedfile import SimpleUploadedFile
         from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
         from PIL import Image
 
         def make_image(name: str) -> SimpleUploadedFile:
@@ -666,8 +674,10 @@ class ProgressPhotoModelTests(TestCase):
 
     def test_progress_photo_str(self) -> None:
         """ProgressPhoto __str__ includes customer name."""
-        from django.core.files.uploadedfile import SimpleUploadedFile
         from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
         from PIL import Image
 
         img = Image.new("RGB", (1, 1), color="red")
@@ -773,9 +783,7 @@ class CustomerFilterAPITests(APITestCase):
 
     def test_filter_by_branch(self) -> None:
         """Customers can be filtered by branch."""
-        response = self.client.get(
-            f"/api/v1/customers/customers/?branch={self.branch.id}"
-        )
+        response = self.client.get(f"/api/v1/customers/customers/?branch={self.branch.id}")
         self.assertEqual(response.status_code, 200)
         names = [r["name"] for r in response.data["results"]]
         self.assertIn("Alice Wonder", names)
@@ -784,45 +792,35 @@ class CustomerFilterAPITests(APITestCase):
 
     def test_filter_by_status(self) -> None:
         """Customers can be filtered by status."""
-        response = self.client.get(
-            "/api/v1/customers/customers/?status=inactive"
-        )
+        response = self.client.get("/api/v1/customers/customers/?status=inactive")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["name"], "Bob Builder")
 
     def test_filter_by_gender(self) -> None:
         """Customers can be filtered by gender."""
-        response = self.client.get(
-            "/api/v1/customers/customers/?gender=female"
-        )
+        response = self.client.get("/api/v1/customers/customers/?gender=female")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["name"], "Alice Wonder")
 
     def test_search_by_name(self) -> None:
         """Customers can be searched by name."""
-        response = self.client.get(
-            "/api/v1/customers/customers/?search=Bob"
-        )
+        response = self.client.get("/api/v1/customers/customers/?search=Bob")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["name"], "Bob Builder")
 
     def test_search_by_phone(self) -> None:
         """Customers can be searched by phone."""
-        response = self.client.get(
-            "/api/v1/customers/customers/?search=3333333333"
-        )
+        response = self.client.get("/api/v1/customers/customers/?search=3333333333")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["name"], "Carol Singer")
 
     def test_search_by_email(self) -> None:
         """Customers can be searched by email."""
-        response = self.client.get(
-            "/api/v1/customers/customers/?search=alice@local.test"
-        )
+        response = self.client.get("/api/v1/customers/customers/?search=alice@local.test")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["name"], "Alice Wonder")
@@ -1038,16 +1036,16 @@ class ProgressPhotoAPITests(APITestCase):
 
     def test_list_progress_photos_empty(self) -> None:
         """Listing progress photos returns empty list when none exist."""
-        response = self.client.get(
-            f"/api/v1/customers/customers/{self.customer.id}/progress-photos/"
-        )
+        response = self.client.get(f"/api/v1/customers/customers/{self.customer.id}/progress-photos/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, [])
 
     def test_create_progress_photo(self) -> None:
         """A progress photo can be created for a customer."""
-        from django.core.files.uploadedfile import SimpleUploadedFile
         from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
         from PIL import Image
 
         # Create a minimal valid image
@@ -1072,8 +1070,10 @@ class ProgressPhotoAPITests(APITestCase):
 
     def test_list_progress_photos_after_create(self) -> None:
         """Listing progress photos returns photos after creation."""
-        from django.core.files.uploadedfile import SimpleUploadedFile
         from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
         from PIL import Image
 
         # Create minimal valid images
@@ -1098,9 +1098,7 @@ class ProgressPhotoAPITests(APITestCase):
             {"image": make_image("p2.jpg"), "caption": "Photo 2"},
             format="multipart",
         )
-        response = self.client.get(
-            f"/api/v1/customers/customers/{self.customer.id}/progress-photos/"
-        )
+        response = self.client.get(f"/api/v1/customers/customers/{self.customer.id}/progress-photos/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 2)
 
@@ -1127,7 +1125,300 @@ class ProgressPhotoAPITests(APITestCase):
             name="Other Photo Customer",
             email="other-photo@local.test",
         )
-        response = self.client.get(
-            f"/api/v1/customers/customers/{other_customer.id}/progress-photos/"
-        )
+        response = self.client.get(f"/api/v1/customers/customers/{other_customer.id}/progress-photos/")
         self.assertEqual(response.status_code, 404)
+
+
+class FitnessGoalEnhancementTests(TestCase):
+    """Tests for enhanced FitnessGoal fields."""
+
+    def setUp(self) -> None:
+        """Create a tenant, user, and customer."""
+        self.tenant = provision_tenant(name="Goal Gym", contact_email="owner@local.test")
+        self.user = User.objects.create_user(
+            email="goal2@local.test",
+            password="***",
+            first_name="Goal",
+            last_name="Two",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Goal Two",
+            email="goal2@local.test",
+        )
+
+    def test_progress_percentage_computed(self) -> None:
+        """Progress percentage is computed from current vs target value."""
+        goal = FitnessGoal.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            goal_type=FitnessGoal.GoalType.LOSE_WEIGHT,
+            target_value="10",
+            current_value="5",
+        )
+        self.assertEqual(goal.progress_percentage, 50.0)
+
+    def test_progress_percentage_clamped(self) -> None:
+        """Progress percentage is clamped to 100."""
+        goal = FitnessGoal.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            goal_type=FitnessGoal.GoalType.LOSE_WEIGHT,
+            target_value="10",
+            current_value="15",
+        )
+        self.assertEqual(goal.progress_percentage, 100.0)
+
+    def test_progress_percentage_none_without_target(self) -> None:
+        """Progress percentage is None when there is no target value."""
+        goal = FitnessGoal.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            goal_type=FitnessGoal.GoalType.LOSE_WEIGHT,
+        )
+        self.assertIsNone(goal.progress_percentage)
+
+    def test_status_and_sport_specific_goal_type(self) -> None:
+        """Goals support achieved/abandoned status and sport_specific type."""
+        goal = FitnessGoal.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            goal_type=FitnessGoal.GoalType.SPORT_SPECIFIC,
+            status=FitnessGoal.Status.ACHIEVED,
+        )
+        self.assertEqual(goal.goal_type, "sport_specific")
+        self.assertEqual(goal.status, "achieved")
+
+
+class BodyMeasurementEnhancementTests(TestCase):
+    """Tests for enhanced BodyMeasurement BMI auto-calc."""
+
+    def setUp(self) -> None:
+        """Create a tenant, user, and customer."""
+        self.tenant = provision_tenant(name="Measure Gym", contact_email="owner@local.test")
+        self.user = User.objects.create_user(
+            email="measure@local.test",
+            password="***",
+            first_name="Measure",
+            last_name="Customer",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Measure Customer",
+            email="measure@local.test",
+        )
+
+    def test_bmi_auto_calc_from_measurement_height(self) -> None:
+        """BMI is computed from the measurement's own height and weight."""
+        measurement = BodyMeasurement.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            weight_kg="70",
+            height_cm="175",
+        )
+        # 70 / (1.75^2) = 22.86
+        self.assertEqual(float(measurement.bmi), 22.86)
+
+    def test_bmi_fallback_to_health_profile_height(self) -> None:
+        """BMI falls back to the health profile height when not on the measurement."""
+        HealthProfile.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            height_cm="180",
+            weight_kg="80",
+        )
+        measurement = BodyMeasurement.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            weight_kg="80",
+        )
+        # 80 / (1.8^2) = 24.69
+        self.assertEqual(float(measurement.bmi), 24.69)
+
+    def test_bmi_none_without_height(self) -> None:
+        """BMI is None when no height is available."""
+        measurement = BodyMeasurement.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            weight_kg="70",
+        )
+        self.assertIsNone(measurement.bmi)
+
+    def test_measurement_extra_fields(self) -> None:
+        """Measurements store biceps, thighs, neck, and body fat percentage."""
+        measurement = BodyMeasurement.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            weight_kg="70",
+            height_cm="175",
+            biceps_cm="35",
+            thighs_cm="55",
+            neck_cm="38",
+            body_fat_percentage="18",
+        )
+        self.assertEqual(float(measurement.biceps_cm), 35.0)
+        self.assertEqual(float(measurement.thighs_cm), 55.0)
+        self.assertEqual(float(measurement.neck_cm), 38.0)
+        self.assertEqual(float(measurement.body_fat_percentage), 18.0)
+
+
+class HealthProfileEnhancementTests(TestCase):
+    """Tests for enhanced HealthProfile fields."""
+
+    def setUp(self) -> None:
+        """Create a tenant, user, and customer."""
+        self.tenant = provision_tenant(name="Health Gym", contact_email="owner@local.test")
+        self.user = User.objects.create_user(
+            email="health@local.test",
+            password="***",
+            first_name="Health",
+            last_name="Customer",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Health Customer",
+            email="health@local.test",
+        )
+
+    def test_blood_group_and_enhanced_fields(self) -> None:
+        """Health profile supports blood group, dietary, and injury fields."""
+        profile = HealthProfile.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            height_cm="170",
+            weight_kg="65",
+            blood_group=HealthProfile.BloodGroup.O_POS,
+            dietary_restrictions=["vegetarian"],
+            food_allergies=["peanuts"],
+            current_injuries=["knee sprain"],
+            past_injuries=["ankle fracture"],
+        )
+        self.assertEqual(profile.blood_group, "O+")
+        self.assertEqual(profile.dietary_restrictions, ["vegetarian"])
+        self.assertEqual(profile.food_allergies, ["peanuts"])
+        self.assertEqual(profile.current_injuries, ["knee sprain"])
+        self.assertEqual(profile.past_injuries, ["ankle fracture"])
+
+    def test_blood_group_default_unknown(self) -> None:
+        """Blood group defaults to unknown."""
+        profile = HealthProfile.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            height_cm="170",
+            weight_kg="65",
+        )
+        self.assertEqual(profile.blood_group, "unknown")
+
+
+class ProgressSummaryAPITests(APITestCase):
+    """Tests for the progress-summary endpoint."""
+
+    def setUp(self) -> None:
+        """Create a tenant, owner, and customer with data."""
+        self.tenant = provision_tenant(name="Progress Gym", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+        self.user = User.objects.create_user(
+            email="progress@local.test",
+            password="***",
+            first_name="Progress",
+            last_name="Customer",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Progress Customer",
+            email="progress@local.test",
+        )
+
+    def test_progress_summary_empty(self) -> None:
+        """An empty progress summary returns nulls and empty lists."""
+        response = self.client.get(f"/api/v1/customers/customers/{self.customer.id}/progress-summary/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["health_profile"])
+        self.assertIsNone(response.data["latest_measurement"])
+        self.assertEqual(response.data["weight_trend"], [])
+        self.assertEqual(response.data["fitness_goals"], [])
+        self.assertEqual(response.data["progress_photo_count"], 0)
+
+    def test_progress_summary_with_data(self) -> None:
+        """The progress summary aggregates profile, measurements, and goals."""
+        HealthProfile.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            height_cm="175",
+            weight_kg="70",
+        )
+        BodyMeasurement.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            weight_kg="70",
+            height_cm="175",
+        )
+        FitnessGoal.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            goal_type=FitnessGoal.GoalType.LOSE_WEIGHT,
+            target_value="10",
+            current_value="5",
+        )
+        response = self.client.get(f"/api/v1/customers/customers/{self.customer.id}/progress-summary/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.data["health_profile"])
+        self.assertIsNotNone(response.data["latest_measurement"])
+        self.assertEqual(len(response.data["weight_trend"]), 1)
+        self.assertEqual(len(response.data["fitness_goals"]), 1)
+        self.assertEqual(response.data["fitness_goals"][0]["progress_percentage"], 50.0)
+
+    def test_progress_summary_tenant_isolation(self) -> None:
+        """Another tenant's customer is not accessible via progress-summary."""
+        other = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_user = User.objects.create_user(
+            email="other-progress@local.test",
+            password="***",
+            first_name="Other",
+            last_name="Progress",
+            role=User.Role.CUSTOMER,
+            tenant=other,
+        )
+        other_customer = Customer.objects.create(
+            tenant=other,
+            user=other_user,
+            name="Other Progress",
+            email="other-progress@local.test",
+        )
+        response = self.client.get(f"/api/v1/customers/customers/{other_customer.id}/progress-summary/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_fitness_goal_serializer_exposes_progress(self) -> None:
+        """The fitness goals endpoint exposes progress_percentage."""
+        FitnessGoal.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            goal_type=FitnessGoal.GoalType.BUILD_MUSCLE,
+            target_value="5",
+            current_value="2.5",
+            target_unit="kg",
+        )
+        response = self.client.get(f"/api/v1/customers/customers/{self.customer.id}/fitness-goals/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["progress_percentage"], 50.0)
+        self.assertEqual(response.data[0]["target_unit"], "kg")
