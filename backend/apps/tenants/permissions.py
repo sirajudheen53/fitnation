@@ -26,6 +26,22 @@ class IsTenantMember(BasePermission):
         if not request.user.is_authenticated:
             return False
         if request.user.is_superuser:
+            # Still resolve tenant so views that read request.tenant work.
+            auth = getattr(request, "auth", None)
+            if auth is not None and hasattr(auth, "tenant_id"):
+                from apps.tenants.models import Tenant
+
+                try:
+                    request.tenant = Tenant.objects.get(id=auth.tenant_id)
+                except Tenant.DoesNotExist:
+                    pass
+            elif request.user.tenant_id:
+                from apps.tenants.models import Tenant
+
+                try:
+                    request.tenant = Tenant.objects.get(id=request.user.tenant_id)
+                except Tenant.DoesNotExist:
+                    pass
             return True
 
         tenant = getattr(request, "tenant", None)

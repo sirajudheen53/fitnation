@@ -185,6 +185,15 @@ class _HomeTab extends ConsumerWidget {
         ),
         const SizedBox(height: 24),
 
+        // AI Features
+        Text(
+          'AI Features',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 12),
+        const _AiFeaturesSection(),
+        const SizedBox(height: 24),
+
         // Today's workout summary
         const _TodayWorkoutCard(),
         const SizedBox(height: 16),
@@ -234,6 +243,96 @@ class _QuickAction extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// AI Features section with links to Coach, Body Analysis, and Nutrition.
+class _AiFeaturesSection extends StatelessWidget {
+  const _AiFeaturesSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _AiFeatureCard(
+          icon: Icons.smart_toy,
+          title: 'AI Coach',
+          subtitle: 'Chat for workout & nutrition advice',
+          color: AppTheme.primary,
+          onTap: () => context.push('/ai/coach'),
+        ),
+        const SizedBox(height: 12),
+        _AiFeatureCard(
+          icon: Icons.accessibility_new,
+          title: 'Body Analysis',
+          subtitle: 'BMI, body fat & posture insights',
+          color: const Color(0xFF00897B),
+          onTap: () => context.push('/body-analysis'),
+        ),
+        const SizedBox(height: 12),
+        _AiFeatureCard(
+          icon: Icons.auto_awesome,
+          title: 'AI Nutrition',
+          subtitle: 'Personalized meal plans & shopping list',
+          color: const Color(0xFFFB8C00),
+          onTap: () => context.push('/nutrition'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AiFeatureCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _AiFeatureCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+        ],
       ),
     );
   }

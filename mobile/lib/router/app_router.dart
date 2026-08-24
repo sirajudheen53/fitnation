@@ -3,9 +3,16 @@ import 'package:go_router/go_router.dart';
 
 import '../features/attendance/presentation/screens/attendance_history_screen.dart';
 import '../features/attendance/presentation/screens/qr_checkin_screen.dart';
+import '../features/ai_coach/presentation/screens/ai_chat_screen.dart';
+import '../features/ai_nutrition/models/meal_plan.dart';
+import '../features/ai_nutrition/presentation/screens/meal_plan_detail_screen.dart';
+import '../features/ai_nutrition/presentation/screens/meal_plan_screen.dart';
+import '../features/ai_nutrition/presentation/screens/nutrition_screen.dart';
 import '../features/auth/presentation/providers/auth_notifier.dart';
 import '../features/auth/presentation/screens/otp_verify_screen.dart';
 import '../features/auth/presentation/screens/phone_input_screen.dart';
+import '../features/body_analysis/presentation/screens/body_analysis_screen.dart';
+import '../features/body_analysis/presentation/screens/upload_photo_screen.dart';
 import '../features/dashboard/presentation/screens/dashboard_screen.dart';
 import '../features/diet/presentation/screens/diet_plan_screen.dart';
 import '../features/diet/presentation/screens/meal_detail_screen.dart';
@@ -139,6 +146,43 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/feedback',
         builder: (context, state) => const FeedbackFormScreen(),
+      ),
+      // AI Coach
+      GoRoute(
+        path: '/ai/coach',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return AiChatScreen(
+            conversationId: extra['conversationId'] as int?,
+          );
+        },
+      ),
+      // Body Analysis
+      GoRoute(
+        path: '/body-analysis',
+        builder: (context, state) => const BodyAnalysisScreen(),
+      ),
+      GoRoute(
+        path: '/body-analysis/upload',
+        builder: (context, state) => const UploadPhotoScreen(),
+      ),
+      // AI Nutrition
+      GoRoute(
+        path: '/nutrition',
+        builder: (context, state) => const NutritionScreen(),
+      ),
+      GoRoute(
+        path: '/nutrition/generate',
+        builder: (context, state) => const MealPlanScreen(),
+      ),
+      GoRoute(
+        path: '/nutrition/detail',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return MealPlanDetailScreen(
+            plan: extra['plan'] as MealPlan,
+          );
+        },
       ),
     ],
   );

@@ -58,11 +58,15 @@ INSTALLED_APPS = [
     "apps.exercises",
     "apps.workouts",
     "apps.diet",
+    "apps.ai_nutrition",
     # "payments",
     # "workouts",
     # "diets",
     "apps.permissions",
     "apps.vendors",
+    "apps.body_analysis",
+    "apps.marketplace",
+    "apps.ai_coach",
 ]
 
 MIDDLEWARE = [

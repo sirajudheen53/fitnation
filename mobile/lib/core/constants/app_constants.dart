@@ -41,6 +41,22 @@ class AppConstants {
   // Feedback
   static const String feedbackEndpoint = '/feedback/feedback/';
 
+  // AI Coach
+  static const String aiCoachChatEndpoint = '/ai/coach/chat/';
+  static const String aiCoachConversationsEndpoint = '/ai/coach/conversations/';
+  static const String aiCoachMessagesEndpoint = '/ai/coach/messages/';
+
+  // Body Analysis
+  static const String bodyAnalysisEndpoint = '/ai/body/analyses/';
+  static const String bodyAnalysisUploadEndpoint = '/ai/body/analyses/upload/';
+  static const String bodyAnalysisProgressEndpoint = '/ai/body/progress/';
+
+  // AI Nutrition
+  static const String nutritionMealPlansEndpoint = '/ai/nutrition/meal-plans/';
+  static const String nutritionGenerateEndpoint = '/ai/nutrition/generate/';
+  static const String nutritionShoppingListEndpoint = '/ai/nutrition/shopping-list/';
+  static const String nutritionMacrosEndpoint = '/ai/nutrition/macros/';
+
   /// Storage keys.
   static const String authTokenKey = 'auth_token';
   static const String userProfileKey = 'user_profile';

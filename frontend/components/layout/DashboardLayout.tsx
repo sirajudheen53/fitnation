@@ -12,6 +12,9 @@ import {
   CalendarCheck,
   Dumbbell,
   Apple,
+  ShoppingBag,
+  MessageCircle,
+  Utensils,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -33,6 +36,9 @@ const NAV_ITEMS = [
   { href: "/attendance", label: "Attendance", icon: CalendarCheck },
   { href: "/workouts", label: "Workouts", icon: Dumbbell },
   { href: "/diet", label: "Diets", icon: Apple },
+  { href: "/marketplace", label: "Marketplace", icon: ShoppingBag },
+  { href: "/ai-coach", label: "AI Coach", icon: MessageCircle },
+  { href: "/nutrition", label: "Nutrition", icon: Utensils },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

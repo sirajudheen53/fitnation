@@ -579,7 +579,7 @@ export function fetchDashboardPendingPayments(
 }
 
 export function login(data: LoginRequest): Promise<LoginResponse> {
-  return request<LoginResponse>("/auth/login/", {
+  return request<LoginResponse>("/users/auth/login/", {
     method: "POST",
     body: data,
   });
@@ -1051,4 +1051,120 @@ export function createWorkoutLog(
     body: data,
     token,
   });
+}
+/* ── Marketplace (FBOS-016) ───────────────────────────────────── */
+
+import {
+  Cart,
+  MarketplaceProduct,
+  MarketplaceProductListResponse,
+  Order,
+  OrderListResponse,
+} from "@/types/marketplace";
+
+export function fetchProducts(
+  token: string,
+  params?: { category?: string; search?: string },
+): Promise<MarketplaceProductListResponse> {
+  const query = new URLSearchParams();
+  if (params?.category) query.set("category", params.category);
+  if (params?.search) query.set("search", params.search);
+  const qs = query.toString();
+  return request<MarketplaceProductListResponse>(
+    `/marketplace/products/${qs ? `?${qs}` : ""}`,
+    { token },
+  );
+}
+
+export function fetchProduct(
+  id: number | string,
+  token: string,
+): Promise<MarketplaceProduct> {
+  return request<MarketplaceProduct>(`/marketplace/products/${id}/`, { token });
+}
+
+export function fetchCart(token: string): Promise<Cart> {
+  return request<Cart>("/marketplace/cart/", { token });
+}
+
+export function addToCart(
+  token: string,
+  productId: number,
+  quantity: number,
+): Promise<Cart> {
+  return request<Cart>("/marketplace/cart/items/", {
+    method: "POST",
+    body: { product: productId, quantity },
+    token,
+  });
+}
+
+export function fetchOrders(token: string): Promise<OrderListResponse> {
+  return request<OrderListResponse>("/marketplace/orders/", { token });
+}
+
+export function fetchOrder(id: number | string, token: string): Promise<Order> {
+  return request<Order>(`/marketplace/orders/${id}/`, { token });
+}
+
+/* ── AI Coach (FBOS-017) ────────────────────────────────────────── */
+
+import {
+  AiChatResponse,
+  Conversation,
+  ConversationListResponse,
+} from "@/types/ai-coach";
+
+export function aiChat(
+  token: string,
+  message: string,
+  conversationId?: number,
+): Promise<AiChatResponse> {
+  return request<AiChatResponse>("/ai/coach/chat/", {
+    method: "POST",
+    body: { message, conversation_id: conversationId },
+    token,
+  });
+}
+
+export function fetchConversations(
+  token: string,
+): Promise<ConversationListResponse> {
+  return request<ConversationListResponse>("/ai/coach/conversations/", { token });
+}
+
+/* ── AI Nutrition (FBOS-019) ────────────────────────────────────── */
+
+import {
+  GenerateMealPlanRequest,
+  MealPlan,
+  MealPlanListResponse,
+  ShoppingList,
+  ShoppingListResponse,
+} from "@/types/nutrition";
+
+export function fetchMealPlans(token: string): Promise<MealPlanListResponse> {
+  return request<MealPlanListResponse>("/ai/nutrition/meal-plan/", { token });
+}
+
+export function fetchMealPlan(
+  id: number | string,
+  token: string,
+): Promise<MealPlan> {
+  return request<MealPlan>(`/ai/nutrition/meal-plan/${id}/`, { token });
+}
+
+export function generateMealPlan(
+  token: string,
+  preferences: GenerateMealPlanRequest,
+): Promise<MealPlan> {
+  return request<MealPlan>("/ai/nutrition/meal-plan/", {
+    method: "POST",
+    body: preferences,
+    token,
+  });
+}
+
+export function fetchShoppingList(token: string): Promise<ShoppingListResponse> {
+  return request<ShoppingListResponse>("/ai/nutrition/shopping-list/", { token });
 }

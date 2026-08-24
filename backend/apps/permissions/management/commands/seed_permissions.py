@@ -66,6 +66,15 @@ class Command(BaseCommand):
             ("diets", "edit", "diet", "Edit diet plan"),
             ("reports", "view", "report", "View reports"),
             ("dashboard", "view", "dashboard", "View dashboard"),
+            ("marketplace", "view", "product", "View marketplace products"),
+            ("marketplace", "edit", "product", "Edit marketplace products"),
+            ("marketplace", "delete", "product", "Delete marketplace products"),
+            ("marketplace", "view", "cart", "View shopping cart"),
+            ("marketplace", "edit", "cart", "Edit shopping cart"),
+            ("marketplace", "view", "order", "View orders"),
+            ("marketplace", "create", "order", "Place orders"),
+            ("marketplace", "edit", "order", "Edit orders"),
+            ("marketplace", "delete", "order", "Delete orders"),
         ]
 
         for app_label, action, resource, name in permission_registry:
@@ -102,6 +111,15 @@ class Command(BaseCommand):
                 "attendance.log_attendance",
                 "dashboard.view_dashboard",
                 "reports.view_report",
+                "marketplace.view_product",
+                "marketplace.edit_product",
+                "marketplace.delete_product",
+                "marketplace.view_cart",
+                "marketplace.edit_cart",
+                "marketplace.view_order",
+                "marketplace.create_order",
+                "marketplace.edit_order",
+                "marketplace.delete_order",
             ],
             "trainer": [
                 "customers.view_customer",
@@ -118,6 +136,7 @@ class Command(BaseCommand):
                 "diets.view_diet",
                 "diets.create_diet",
                 "diets.edit_diet",
+                "marketplace.view_product",
             ],
             "customer": [
                 "memberships.view_membership",
@@ -126,6 +145,11 @@ class Command(BaseCommand):
                 "attendance.log_attendance",
                 "workouts.view_workout",
                 "diets.view_diet",
+                "marketplace.view_product",
+                "marketplace.view_cart",
+                "marketplace.edit_cart",
+                "marketplace.view_order",
+                "marketplace.create_order",
             ],
         }
 
