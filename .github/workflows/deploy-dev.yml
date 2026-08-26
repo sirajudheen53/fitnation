@@ -1,0 +1,145 @@
+# FBOS Deploy to Dev (yougetfitwithus)
+# Auto-deploy `develop` → GCP Cloud Run (backend) + Vercel (frontend)
+#
+# Backend:  build image → push to Artifact Registry → deploy to Cloud Run
+# Frontend: build → deploy to Vercel (uses Vercel token secret)
+
+name: Deploy Dev
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+  GCP_PROJECT: yougetfitwithus
+  GCP_REGION: asia-south1
+  BACKEND_IMAGE: asia-south1-docker.pkg.dev/yougetfitwithus/backend/fitnation-backend
+  CLOUD_RUN_SERVICE: fitnation-backend
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Backend: test, build, push, deploy to Cloud Run
+  # ─────────────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend Deploy (Cloud Run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # for Workload Identity Federation
+
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: fitnation_test
+          POSTGRES_USER: fitnation
+          POSTGRES_PASSWORD: testpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fitnation"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend deps
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests (80% coverage gate)
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.test
+          DATABASE_URL: postgres://fitnation:testpass@localhost:5432/fitnation_test
+          SECRET_KEY: ci-test-key
+          REDIS_URL: redis://localhost:6379/1
+        run: |
+          pytest --cov=. --cov-report=term-missing --cov-fail-under=80
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/35318880783/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: fitnation-deploy@yougetfitwithus.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push backend image
+        run: |
+          IMAGE="${{ env.BACKEND_IMAGE }}:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.CLOUD_RUN_SERVICE }} \
+            --image "$IMAGE" \
+            --project ${{ env.GCP_PROJECT }} \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars "DJANGO_SETTINGS_MODULE=config.settings.cloudrun,ALLOWED_HOSTS=*,CORS_ALLOWED_ORIGINS=https://dev.yougetfitwithus.com" \
+            --set-secrets "DATABASE_URL=DATABASE_URL:latest,SECRET_KEY=SECRET_KEY:latest" \
+            --port 8000 \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 3 \
+            --timeout 120
+
+  # ─────────────────────────────────────────────────────────────────────────
+  #  # Frontend: deploy to Vercel
+  # ─────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend Deploy (Vercel)
+    runs-on: ubuntu-latest
+    needs: backend
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Deploy to Vercel (Production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          NEXT_PUBLIC_API_URL: https://fitnation-backend-6qezqfxxla-el.a.run.app/api/v1
+        run: |
+          npx vercel deploy --prod --token $VERCEL_TOKEN --yes

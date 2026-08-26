@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local databases — NEVER ship local SQLite into the image
+db.sqlite3
+db_local.sqlite3
+*.sqlite3
+
+# Test / coverage artifacts
+.coverage
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage.*
+*.cover
+
+# Media uploads (dev)
+media/
+
+# Git / CI
+.git/
+.github/
+
+# OS / editor
+.DS_Store
+*.swp
