@@ -38,8 +38,6 @@ django-redis>=5.4,<8.0
 
 # Payments
 razorpay>=1.4,<2.0
-# razorpay SDK imports pkg_resources at runtime (needs setuptools)
-setuptools>=75.0,<81.0
 
 # Encryption (Fernet-backed EncryptedCharField)
 cryptography>=44.0,<51.0
