@@ -15,6 +15,9 @@ django-environ>=0.12,<1.0
 gunicorn>=23.0,<25.0
 whitenoise>=6.8,<7.0
 
+# Image fields (ImageField on customers/progress photos)
+Pillow>=11.0,<13.0
+
 # Code quality
 flake8>=7.3,<8.0
 # flake8-django==1.4.0  # incompatible with Python 3.14, re-add when fixed
