@@ -21,7 +21,10 @@ urlpatterns = [
     path("api/v1/exercises/", include("apps.exercises.urls")),
     path("api/v1/workouts/", include("apps.workouts.urls")),
     path("api/v1/", include("apps.diet.urls")),  # food-items/, diet-plans/, diet-days/, diet-meals/, diet-assignments/
-    path("api/v1/", include("apps.trainers.urls")),  # trainers/, trainer-assignments/, trainer-performance/, trainer-schedules/
+    path(
+        "api/v1/",
+        include("apps.trainers.urls"),
+    ),  # trainers/, trainer-assignments/, trainer-performance/, trainer-schedules/
     path("api/v1/", include("apps.payments.urls")),  # payments/ and invoices/
     path("api/v1/", include("apps.ai_nutrition.urls")),  # ai/nutrition/...
     path("api/v1/permissions/", include("apps.permissions.urls")),

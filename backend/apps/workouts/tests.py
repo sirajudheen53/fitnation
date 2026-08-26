@@ -1,6 +1,6 @@
 """Tests for the workouts app: models, serializers, APIs, permissions, isolation."""
 
-from datetime import date, timedelta
+from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -18,10 +18,8 @@ from apps.workouts.models import (
     WorkoutPlan,
 )
 from apps.workouts.serializers import (
-    WorkoutAssignmentSerializer,
     WorkoutDaySerializer,
     WorkoutExerciseSerializer,
-    WorkoutLogSerializer,
     WorkoutPlanSerializer,
 )
 

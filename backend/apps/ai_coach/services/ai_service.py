@@ -1,13 +1,18 @@
 """Mock AI service for FBOS-017."""
-from apps.users.models import User
 from apps.customers.models import Customer
-from apps.workouts.models import WorkoutPlan, WorkoutAssignment
-from apps.diet.models import DietPlan, DietAssignment
+from apps.workouts.models import WorkoutAssignment
+from apps.diet.models import DietAssignment
 
 
 def build_user_context(user):
     """Build context dict from user's fitness data."""
-    ctx = {"name": user.get_full_name() or user.email, "role": user.role, "goals": [], "workouts": [], "diet_plans": []}
+    ctx = {
+        "name": user.get_full_name() or user.email,
+        "role": user.role,
+        "goals": [],
+        "workouts": [],
+        "diet_plans": [],
+    }
     try:
         customer = Customer.objects.filter(user=user).first()
         if customer and customer.fitness_goals:
@@ -16,12 +21,18 @@ def build_user_context(user):
         pass
     try:
         assignments = WorkoutAssignment.objects.filter(user=user).select_related("plan")[:3]
-        ctx["workouts"] = [{"name": a.plan.name, "difficulty": a.plan.difficulty} for a in assignments if hasattr(a, "plan")]
+        ctx["workouts"] = [
+            {"name": a.plan.name, "difficulty": a.plan.difficulty}
+            for a in assignments
+            if hasattr(a, "plan")
+        ]
     except Exception:
         pass
     try:
         diet_assignments = DietAssignment.objects.filter(user=user).select_related("plan")[:3]
-        ctx["diet_plans"] = [{"name": a.plan.name} for a in diet_assignments if hasattr(a, "plan")]
+        ctx["diet_plans"] = [
+            {"name": a.plan.name} for a in diet_assignments if hasattr(a, "plan")
+        ]
     except Exception:
         pass
     return ctx
@@ -34,20 +45,49 @@ def generate_response(message, user, conversation=None):
     if "workout" in msg_lower or "exercise" in msg_lower:
         rec_type = "workout"
         if ctx["workouts"]:
-            response = f"Based on your current workout plan '{ctx['workouts'][0]['name']}', I recommend focusing on progressive overload. Increase weight by 5% each week."
+            response = (
+                "Based on your current workout plan "
+                f"'{ctx['workouts'][0]['name']}', I recommend focusing on "
+                "progressive overload. Increase weight by 5% each week."
+            )
         else:
-            response = "I recommend starting with a 3-day full-body split: squats, bench press, rows on day 1; deadlifts, overhead press, pull-ups on day 2; lunges, incline press, cables on day 3."
+            response = (
+                "I recommend starting with a 3-day full-body split: squats, bench press, "
+                "rows on day 1; deadlifts, overhead press, pull-ups on day 2; lunges, "
+                "incline press, cables on day 3."
+            )
     elif "diet" in msg_lower or "nutrition" in msg_lower or "food" in msg_lower:
         rec_type = "diet"
         if ctx["diet_plans"]:
-            response = f"You have an active diet plan '{ctx['diet_plans'][0]['name']}'. Make sure to hit your protein target and drink 3L of water daily."
+            response = (
+                "You have an active diet plan "
+                f"'{ctx['diet_plans'][0]['name']}'. Make sure to hit your "
+                "protein target and drink 3L of water daily."
+            )
         else:
-            response = "For a balanced diet, aim for 1.6g protein per kg bodyweight, 40% carbs, 30% protein, 30% fat. Include Indian staples like roti, dal, curd, and vegetables."
+            response = (
+                "For a balanced diet, aim for 1.6g protein per kg bodyweight, "
+                "40% carbs, 30% protein, 30% fat. Include Indian staples like "
+                "roti, dal, curd, and vegetables."
+            )
     elif "form" in msg_lower or "technique" in msg_lower:
         rec_type = "exercise_tips"
-        response = "Key form tips: keep your core braced, control the eccentric (lowering) phase for 2-3 seconds, and never round your lower back during lifts."
+        response = (
+            "Key form tips: keep your core braced, control the eccentric "
+            "(lowering) phase for 2-3 seconds, and never round your lower back "
+            "during lifts."
+        )
     else:
         rec_type = "general"
-        response = f"Hi {ctx['name']}! I'm your AI fitness coach. I can help with workout recommendations, diet advice, and exercise form tips. What would you like to know?"
-    recommendation = {"type": rec_type, "content": {"suggestion": response, "context": ctx}} if rec_type != "general" else None
+        response = (
+            "Hi "
+            f"{ctx['name']}! I'm your AI fitness coach. I can help with workout "
+            "recommendations, diet advice, and exercise form tips. "
+            "What would you like to know?"
+        )
+    recommendation = (
+        {"type": rec_type, "content": {"suggestion": response, "context": ctx}}
+        if rec_type != "general"
+        else None
+    )
     return response, recommendation

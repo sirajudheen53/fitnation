@@ -14,7 +14,6 @@ from apps.marketplace.models import (
     OrderItem,
     Product,
     ProductCategory,
-    ProductImage,
 )
 from apps.marketplace import services
 from apps.tenants.models import Tenant

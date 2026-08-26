@@ -8,7 +8,12 @@ from apps.users.authentication import TenantTokenAuthentication
 from apps.tenants.permissions import IsTenantMember
 from apps.permissions.permissions import RolePermission
 from .models import AIConversation, AIMessage, AIRecommendation
-from .serializers import AIConversationSerializer, AIMessageSerializer, AIRecommendationSerializer, ChatRequestSerializer
+from .serializers import (
+    AIConversationSerializer,
+    AIMessageSerializer,
+    AIRecommendationSerializer,
+    ChatRequestSerializer,
+)
 from .services.ai_service import generate_response
 
 
@@ -52,7 +57,14 @@ class ChatView(APIView):
                 content=recommendation_data["content"],
             )
             recommendation = {"id": rec.id, "type": rec.type, "content": rec.content}
-        return Response({"response": response_text, "conversation_id": conversation.id, "recommendation": recommendation}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "response": response_text,
+                "conversation_id": conversation.id,
+                "recommendation": recommendation,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ConversationMessagesView(APIView):

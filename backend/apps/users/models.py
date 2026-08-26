@@ -299,5 +299,3 @@ class AuthToken(models.Model):
         import uuid
 
         return uuid.uuid4().hex + uuid.uuid4().hex
-
-

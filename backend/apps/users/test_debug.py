@@ -1,4 +1,3 @@
-import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 from apps.tenants.services import provision_tenant
@@ -6,6 +5,7 @@ from apps.users.services import create_owner_user, issue_token
 from apps.users.trainer_services import create_trainer
 
 User = get_user_model()
+
 
 class DebugTest(APITestCase):
     def test_debug_create(self):
@@ -18,7 +18,7 @@ class DebugTest(APITestCase):
         )
         token = issue_token(owner, tenant)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
-        trainer = create_trainer(
+        create_trainer(
             tenant=tenant,
             email="trainer@local.test",
             first_name="John",

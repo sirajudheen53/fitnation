@@ -5,9 +5,9 @@ import django
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
 django.setup()
 
-from apps.tenants.models import Tenant
-from apps.users.models import User
-from apps.branches.models import Branch
+from apps.tenants.models import Tenant  # noqa: E402
+from apps.users.models import User  # noqa: E402
+from apps.branches.models import Branch  # noqa: E402
 
 # Create test tenant
 tenant, created = Tenant.objects.get_or_create(
@@ -54,7 +54,7 @@ branch, created = Branch.objects.get_or_create(
 print(f"Branch: {branch.name} ({'created' if created else 'already exists'})")
 
 # Now seed exercises
-from django.core.management import call_command
+from django.core.management import call_command  # noqa: E402
 call_command("seed_exercises")
 print("\n✅ Setup complete!")
 print("   Login: admin@fitnation.test / F1tNati0n!")

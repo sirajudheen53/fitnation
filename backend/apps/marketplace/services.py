@@ -5,8 +5,6 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from django.db import transaction
-
 from apps.marketplace.models import Cart, CartItem, Order, OrderItem
 from apps.marketplace.selectors import get_or_create_active_cart
 

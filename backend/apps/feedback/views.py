@@ -310,6 +310,3 @@ class FeedbackResponseViewSet(viewsets.ReadOnlyModelViewSet):
         if self.request.user.role == User.Role.CUSTOMER:
             queryset = queryset.filter(customer__user=self.request.user)
         return queryset
-
-
-

@@ -8,9 +8,6 @@ Populates 50+ common exercises across Strength, Cardio, Flexibility, and
 Mobility categories. Exercises are tenant-scoped.
 """
 
-import json
-from pathlib import Path
-
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 

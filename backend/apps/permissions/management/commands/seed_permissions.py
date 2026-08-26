@@ -1,5 +1,7 @@
 """Management command to seed roles, permissions, and role-permission mappings."""
 
+from typing import Any
+
 from django.core.management.base import BaseCommand
 
 from apps.permissions.models import Permission, Role, RolePermission

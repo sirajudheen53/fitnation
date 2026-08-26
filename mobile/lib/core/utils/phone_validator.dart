@@ -3,7 +3,7 @@ class PhoneValidator {
   PhoneValidator._();
 
   /// Validates a phone number and returns an error message if invalid.
-  /// Expects international format: +<country_code><number>, e.g. +919876543210
+  /// Expects international format: +`<country_code><number>`, e.g. +919876543210
   static String? validate(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Please enter your phone number';
@@ -31,7 +31,7 @@ class PhoneValidator {
     return null; // valid
   }
 
-  /// Normalizes a phone number to +<digits> format.
+  /// Normalizes a phone number to +`<digits>` format.
   static String normalize(String phone) {
     final trimmed = phone.trim();
     if (trimmed.startsWith('+')) return trimmed;

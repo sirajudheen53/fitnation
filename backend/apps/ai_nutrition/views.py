@@ -324,7 +324,7 @@ class MacroLogViewSet(ModelViewSet):
                 }
             )
 
-        from django.db.models import Avg, Sum
+        from django.db.models import Sum
 
         aggregation = logs.values("date").aggregate(
             calories=Sum("calories_consumed"),

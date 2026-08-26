@@ -10,8 +10,6 @@ DEBUG is False and hosts are locked down, but CORS is relaxed to a
 single QA domain and TLS is terminated by nginx (so no forced redirect).
 """
 
-import os
-
 from .base import *  # noqa: F401, F403
 from .base import env
 

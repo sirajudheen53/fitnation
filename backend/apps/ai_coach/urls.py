@@ -9,6 +9,10 @@ router.register(r"recommendations", AIRecommendationViewSet, basename="ai-recomm
 
 urlpatterns = [
     path("chat/", ChatView.as_view(), name="ai-chat"),
-    path("conversations/<int:conversation_id>/messages/", ConversationMessagesView.as_view(), name="ai-conversation-messages"),
+    path(
+        "conversations/<int:conversation_id>/messages/",
+        ConversationMessagesView.as_view(),
+        name="ai-conversation-messages",
+    ),
     *router.urls,
 ]

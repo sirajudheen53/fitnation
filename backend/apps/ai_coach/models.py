@@ -54,7 +54,13 @@ class AIRecommendation(models.Model):
 
     tenant_id = models.PositiveIntegerField(db_index=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="ai_recommendations")
-    conversation = models.ForeignKey(AIConversation, on_delete=models.SET_NULL, null=True, blank=True, related_name="recommendations")
+    conversation = models.ForeignKey(
+        AIConversation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="recommendations",
+    )
     type = models.CharField(max_length=20, choices=Type.choices)
     content = models.JSONField(default=dict)
     is_acted_on = models.BooleanField(default=False)

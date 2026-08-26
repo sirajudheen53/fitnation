@@ -11,7 +11,6 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from apps.marketplace.models import (
-    Cart,
     CartItem,
     Order,
     OrderItem,
@@ -19,7 +18,6 @@ from apps.marketplace.models import (
     ProductCategory,
 )
 from apps.marketplace.serializers import (
-    CartItemSerializer,
     CartSerializer,
     OrderDetailSerializer,
     OrderItemSerializer,
@@ -152,7 +150,7 @@ class CartView(APIView):
             Product.objects.for_tenant(request.tenant),
             id=product_id,
         )
-        item = services.add_item_to_cart(
+        services.add_item_to_cart(
             tenant=request.tenant,
             user=request.user,
             product=product,

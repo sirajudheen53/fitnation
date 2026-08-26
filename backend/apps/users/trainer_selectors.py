@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from django.db.models import Count, Q
+from django.db.models import Q
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -125,7 +125,7 @@ def trainer_metrics(tenant: "Tenant", trainer_id: int) -> dict:
     Returns:
         Dict with active_clients, rating, max_clients, utilization, total_assignments.
     """
-    from apps.users.models import Trainer, TrainerCustomerAssignment
+    from apps.users.models import TrainerCustomerAssignment
 
     trainer = trainer_get_by_id(tenant, trainer_id)
 

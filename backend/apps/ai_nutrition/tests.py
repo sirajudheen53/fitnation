@@ -1,6 +1,6 @@
 """Tests for the AI nutrition app: models, services, serializers, APIs, permissions."""
 
-from datetime import date, timedelta
+from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -12,11 +12,6 @@ from apps.ai_nutrition.models import (
     MacroLog,
     ShoppingList,
     ShoppingListItem,
-)
-from apps.ai_nutrition.serializers import (
-    AIMealPlanWriteSerializer,
-    MacroLogSerializer,
-    ShoppingListSerializer,
 )
 from apps.ai_nutrition.services.nutrition_service import (
     MEAL_SLOTS,
