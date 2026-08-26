@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Plus, Trash2, Apple, CalendarDays, UtensilsCrossed } from "lucide-react";
 import { Button, Input, Alert } from "@/components/ui";
 import type {
@@ -72,35 +72,39 @@ export function DietPlanForm({
   const [foodItemId, setFoodItemId] = useState<number | "">("");
   const [quantity, setQuantity] = useState(1);
 
-  // Pre-populate from existing plan
-  useEffect(() => {
-    if (!plan) return;
-    setName(plan.name);
-    setDescription(plan.description);
-    setGoal(plan.goal);
-    setDailyCalories(plan.daily_calories);
-    setProteinRatio(plan.protein_ratio);
-    setCarbRatio(plan.carb_ratio);
-    setFatRatio(plan.fat_ratio);
-    setDurationDays(plan.duration_days);
-    setIsTemplate(plan.is_template);
-    setDays(
-      plan.days.map((d: DietDay) => ({
-        day_number: d.day_number,
-        notes: d.notes ?? "",
-        meals: d.meals.map((m) => ({
-          meal_type: m.meal_type,
-          food_item: m.food_item,
-          food_item_name: m.food_item_name,
-          quantity: m.quantity,
-          calories: m.calories,
-          protein: m.protein,
-          carbs: m.carbs,
-          fat: m.fat,
+  // Pre-populate from existing plan (adjust state during render when the
+  // `plan` prop changes, instead of syncing it inside an effect).
+  const [prevPlan, setPrevPlan] = useState<DietPlan | undefined>(plan);
+  if (plan !== prevPlan) {
+    setPrevPlan(plan);
+    if (plan) {
+      setName(plan.name);
+      setDescription(plan.description);
+      setGoal(plan.goal);
+      setDailyCalories(plan.daily_calories);
+      setProteinRatio(plan.protein_ratio);
+      setCarbRatio(plan.carb_ratio);
+      setFatRatio(plan.fat_ratio);
+      setDurationDays(plan.duration_days);
+      setIsTemplate(plan.is_template);
+      setDays(
+        plan.days.map((d: DietDay) => ({
+          day_number: d.day_number,
+          notes: d.notes ?? "",
+          meals: d.meals.map((m) => ({
+            meal_type: m.meal_type,
+            food_item: m.food_item,
+            food_item_name: m.food_item_name,
+            quantity: m.quantity,
+            calories: m.calories,
+            protein: m.protein,
+            carbs: m.carbs,
+            fat: m.fat,
+          })),
         })),
-      })),
-    );
-  }, [plan]);
+      );
+    }
+  }
 
   const selectedFood = useMemo(
     () => foodItems.find((f) => f.id === Number(foodItemId)),

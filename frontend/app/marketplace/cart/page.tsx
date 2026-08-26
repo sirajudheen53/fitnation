@@ -16,22 +16,26 @@ export default function CartPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadCart = () => {
+  useEffect(() => {
+    let cancelled = false;
     const token = getToken();
     if (!token) {
       router.replace("/login?next=/marketplace/cart");
       return;
     }
-    setLoading(true);
-    setError(null);
     fetchCart(token)
-      .then(setCart)
-      .catch((err) => setError(errorMessage(err)))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    loadCart();
+      .then((cart) => {
+        if (!cancelled) setCart(cart);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

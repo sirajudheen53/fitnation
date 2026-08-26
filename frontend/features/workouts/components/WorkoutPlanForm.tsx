@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -82,37 +82,41 @@ export function WorkoutPlanForm({
   const [exerciseNotes, setExerciseNotes] = useState("");
   const [alternateExerciseId, setAlternateExerciseId] = useState<number | "">("");
 
-  // Pre-populate from existing plan
-  useEffect(() => {
-    if (!plan) return;
-    setName(plan.name);
-    setDescription(plan.description);
-    setGoal(plan.goal);
-    setDifficulty(plan.difficulty);
-    setDurationWeeks(plan.duration_weeks);
-    setIsTemplate(plan.is_template);
-    setDays(
-      plan.days.map((d: WorkoutDay) => ({
-        day_of_week: d.day_of_week,
-        day_number: d.day_number,
-        focus: d.focus,
-        notes: d.notes ?? "",
-        exercises: d.exercises.map((e: WorkoutExercise) => ({
-          exercise: e.exercise,
-          exercise_name: e.exercise_name,
-          sets: e.sets,
-          reps: e.reps,
-          rest_seconds: e.rest_seconds,
-          tempo: e.tempo ?? "",
-          rpe: e.rpe,
-          notes: e.notes ?? "",
-          order: e.order,
-          alternate_exercise: e.alternate_exercise,
-          alternate_exercise_name: e.alternate_exercise_name ?? undefined,
+  // Pre-populate from existing plan (adjust state during render when the
+  // `plan` prop changes, instead of syncing it inside an effect).
+  const [prevPlan, setPrevPlan] = useState<WorkoutPlan | undefined>(plan);
+  if (plan !== prevPlan) {
+    setPrevPlan(plan);
+    if (plan) {
+      setName(plan.name);
+      setDescription(plan.description);
+      setGoal(plan.goal);
+      setDifficulty(plan.difficulty);
+      setDurationWeeks(plan.duration_weeks);
+      setIsTemplate(plan.is_template);
+      setDays(
+        plan.days.map((d: WorkoutDay) => ({
+          day_of_week: d.day_of_week,
+          day_number: d.day_number,
+          focus: d.focus,
+          notes: d.notes ?? "",
+          exercises: d.exercises.map((e: WorkoutExercise) => ({
+            exercise: e.exercise,
+            exercise_name: e.exercise_name,
+            sets: e.sets,
+            reps: e.reps,
+            rest_seconds: e.rest_seconds,
+            tempo: e.tempo ?? "",
+            rpe: e.rpe,
+            notes: e.notes ?? "",
+            order: e.order,
+            alternate_exercise: e.alternate_exercise,
+            alternate_exercise_name: e.alternate_exercise_name ?? undefined,
+          })),
         })),
-      })),
-    );
-  }, [plan]);
+      );
+    }
+  }
 
   const selectedExercise = useMemo(
     () => exercises.find((e) => e.id === Number(exerciseId)),
