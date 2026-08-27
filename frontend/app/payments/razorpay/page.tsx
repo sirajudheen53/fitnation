@@ -47,6 +47,7 @@ export default function RazorpayPaymentsPage() {
       router.replace("/login?next=/payments/razorpay");
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentionally triggers data fetch on role/token change
     loadPayments();
   }, [router, userRole, loadPayments]);
 

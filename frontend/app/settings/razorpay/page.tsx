@@ -14,6 +14,7 @@ export default function RazorpaySettingsPage() {
 
   useEffect(() => {
     const u = getStoredUser();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from localStorage before auth redirect
     setUser(u);
     if (!u) {
       router.replace("/login?next=/settings/razorpay");
