@@ -93,6 +93,17 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
+      - name: Run database migrations
+        run: |
+          DATABASE_URL=$(gcloud secrets versions access latest --secret=DATABASE_URL --project=yougetfitwithus)
+          MIGRATION_IMAGE="${{ env.BACKEND_IMAGE }}:migration-${{ github.sha }}"
+          docker build -t "$MIGRATION_IMAGE" .
+          docker run --rm \
+            -e DJANGO_SETTINGS_MODULE=config.settings.cloudrun \
+            -e DATABASE_URL="$DATABASE_URL" \
+            "$MIGRATION_IMAGE" \
+            python manage.py migrate --no-input
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy ${{ env.CLOUD_RUN_SERVICE }} \
