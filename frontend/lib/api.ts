@@ -427,6 +427,74 @@ export function fetchInvoice(id: number | string, token: string): Promise<Invoic
   return request<Invoice>(`/invoices/invoices/${id}/`, { token });
 }
 
+/* ── Razorpay payments (FBOS-020) ─────────────────────────────── */
+
+import {
+  CreateRazorpayOrderRequest,
+  CreateRazorpayOrderResponse,
+  RazorpayConfig,
+  RazorpayConfigUpdate,
+  RazorpayPayment,
+  RazorpayPaymentListResponse,
+  VerifyRazorpayPaymentRequest,
+} from "@/types/razorpay";
+
+/** Create a Razorpay order before launching the checkout. */
+export function createRazorpayOrder(
+  data: CreateRazorpayOrderRequest,
+  token: string,
+): Promise<CreateRazorpayOrderResponse> {
+  return request<CreateRazorpayOrderResponse>("/payments/razorpay/create-order/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/** Verify the Razorpay signature after a successful payment. */
+export function verifyRazorpayPayment(
+  data: VerifyRazorpayPaymentRequest,
+  token: string,
+): Promise<RazorpayPayment> {
+  return request<RazorpayPayment>("/payments/razorpay/verify/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/** Fetch the public Razorpay config (api key + active flag). */
+export function fetchRazorpayConfig(token: string): Promise<RazorpayConfig> {
+  return request<RazorpayConfig>("/payments/razorpay/config/", { token });
+}
+
+/** Update the tenant Razorpay config (admin/owner only). */
+export function updateRazorpayConfig(
+  data: RazorpayConfigUpdate,
+  token: string,
+): Promise<{ is_active: boolean }> {
+  return request<{ is_active: boolean }>("/payments/razorpay/config/", {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/** List Razorpay-backed payment history (paginated). */
+export function fetchRazorpayPayments(
+  token: string,
+  params?: { customer?: string; status?: string },
+): Promise<RazorpayPaymentListResponse> {
+  const query = new URLSearchParams();
+  if (params?.customer) query.set("customer", params.customer);
+  if (params?.status) query.set("status", params.status);
+  const qs = query.toString();
+  return request<RazorpayPaymentListResponse>(
+    `/payments/payments/${qs ? `?${qs}` : ""}`,
+    { token },
+  );
+}
+
 /* ── Attendance ───────────────────────────────────────────────── */
 
 import {

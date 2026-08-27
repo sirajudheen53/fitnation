@@ -42,6 +42,11 @@ class CustomerViewSet(ModelViewSet):
     def get_queryset(self) -> Customer:
         """Return customers scoped to the request tenant with optional filters."""
         queryset = Customer.objects.for_tenant(self.request.tenant)
+
+        # Customers can only access their own record
+        if getattr(self.request.user, "role", None) == "customer":
+            queryset = queryset.filter(user=self.request.user)
+
         branch = self.request.query_params.get("branch")
         if branch:
             queryset = queryset.filter(branch_id=branch)
@@ -262,7 +267,15 @@ class HealthProfileViewSet(ModelViewSet):
 
     def get_queryset(self) -> HealthProfile:
         """Return health profiles scoped to the request tenant."""
-        return HealthProfile.objects.for_tenant(self.request.tenant)
+        queryset = HealthProfile.objects.for_tenant(self.request.tenant)
+
+        # Customers can only access their own health profile
+        if getattr(self.request.user, "role", None) == "customer":
+            queryset = queryset.filter(
+                customer__user=self.request.user,
+            )
+
+        return queryset
 
     def create(self, request: Request) -> Response:
         """Create a new health profile."""
@@ -301,7 +314,15 @@ class FitnessGoalViewSet(ModelViewSet):
 
     def get_queryset(self) -> FitnessGoal:
         """Return fitness goals scoped to the request tenant."""
-        return FitnessGoal.objects.for_tenant(self.request.tenant)
+        queryset = FitnessGoal.objects.for_tenant(self.request.tenant)
+
+        # Customers can only access their own fitness goals
+        if getattr(self.request.user, "role", None) == "customer":
+            queryset = queryset.filter(
+                customer__user=self.request.user,
+            )
+
+        return queryset
 
     def create(self, request: Request) -> Response:
         """Create a new fitness goal."""
@@ -340,7 +361,15 @@ class BodyMeasurementViewSet(ModelViewSet):
 
     def get_queryset(self) -> BodyMeasurement:
         """Return body measurements scoped to the request tenant."""
-        return BodyMeasurement.objects.for_tenant(self.request.tenant)
+        queryset = BodyMeasurement.objects.for_tenant(self.request.tenant)
+
+        # Customers can only access their own body measurements
+        if getattr(self.request.user, "role", None) == "customer":
+            queryset = queryset.filter(
+                customer__user=self.request.user,
+            )
+
+        return queryset
 
     def create(self, request: Request) -> Response:
         """Create a new body measurement."""
