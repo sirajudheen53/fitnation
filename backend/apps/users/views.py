@@ -1,6 +1,6 @@
 """User and authentication API views."""
 
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, get_user_model
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import AuthenticationFailed, NotFound, ValidationError
@@ -241,6 +241,7 @@ class ResendVerificationEmailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        User = get_user_model()
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
@@ -250,9 +251,10 @@ class ResendVerificationEmailView(APIView):
                 status=status.HTTP_200_OK,
             )
 
+        # Don't reveal whether email is verified (no account enumeration)
         if user.is_email_verified:
             return Response(
-                {"message": "This email is already verified."},
+                {"message": "If that email is registered, a verification link has been sent."},
                 status=status.HTTP_200_OK,
             )
 
@@ -318,6 +320,7 @@ class UserViewSet(ViewSet):
             actor=request.user,
         )
         # Send email verification for non-owner roles
+        User = get_user_model()
         if user.role != User.Role.GYM_OWNER and not user.is_owner:
             send_verification_email(user, request)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)

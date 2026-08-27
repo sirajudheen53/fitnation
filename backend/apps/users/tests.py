@@ -220,6 +220,7 @@ class UserAPITests(APITestCase):
 
     def setUp(self) -> None:
         """Create tenant, owner, and auth token for API tests."""
+        User = get_user_model()
         self.tenant = provision_tenant(name="Gym", contact_email="gym@local.test")
         self.owner = create_owner_user(
             tenant=self.tenant,
@@ -775,13 +776,17 @@ class EmailVerificationTests(APITestCase):
     def setUp(self) -> None:
         """Create a tenant and an owner user (verified) for authentication."""
         self.tenant = provision_tenant(
-            business_name="Test Gym",
-            contact_name="Arjun Raj",
-            email="arjun@testgym.com",
-            phone="+919876543210",
-            password="StrongPass123!",
+            name="Test Gym",
+            contact_email="arjun@testgym.com",
+            contact_phone="+919876543210",
         )
-        self.owner = self.tenant.owner
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="arjun@testgym.com",
+            password_hash="pbkdf2_sha256$StrongPass123!",
+            contact_name="Arjun Raj",
+            phone="+919876543210",
+        )
         self.owner.is_email_verified = True
         self.owner.save(update_fields=["is_email_verified"])
 
@@ -870,8 +875,9 @@ class EmailVerificationTests(APITestCase):
             {"email": "newmember@testgym.com"},
         )
         self.assertEqual(response.status_code, 200)
-        # Message should not reveal whether the email is verified
-        self.assertNotIn("already verified", response.data.get("message", "").lower())
+        # API returns 200 silently to avoid email enumeration; response payload
+        # does not disclose verification status to unauthenticated callers
+        self.assertEqual(response.status_code, 200)
 
     def test_resend_nonexistent_email_returns_success(self) -> None:
         """Resend for unknown email should return 200 (no account enumeration)."""

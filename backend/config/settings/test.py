@@ -61,3 +61,7 @@ REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] = [  # noqa: F405
 
 # Console email backend
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# SendGrid settings (provide dummy values for tests)
+SENDGRID_API_KEY = "SG.test-key-for-tests-only"
+DEFAULT_FROM_EMAIL = "test@fitnation.local"
