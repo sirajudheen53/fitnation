@@ -15,6 +15,7 @@ from rest_framework.viewsets import ModelViewSet
 from apps.customers.models import Customer
 from apps.payments import razorpay_service
 from apps.payments.models import Invoice, Payment, PaymentRefund, RazorpayConfig
+from apps.users.models import User
 from apps.payments.serializers import (
     CreateOrderSerializer,
     InvoiceSerializer,
