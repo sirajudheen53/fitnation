@@ -218,11 +218,17 @@ class PaymentViewSet(ModelViewSet):
     serializer_class = PaymentSerializer
 
     def get_queryset(self) -> Payment:
-        """Return payments scoped to the request tenant with optional filters."""
+        """Return payments scoped to the request tenant with optional filters.
+
+        Customer-role users see only their own payments.
+        """
         queryset = Payment.objects.for_tenant(self.request.tenant)
-        customer = self.request.query_params.get("customer")
-        if customer:
-            queryset = queryset.filter(customer_id=customer)
+        if self.request.user.role == User.Role.CUSTOMER:
+            queryset = queryset.filter(customer__user=self.request.user)
+        else:
+            customer = self.request.query_params.get("customer")
+            if customer:
+                queryset = queryset.filter(customer_id=customer)
         status_param = self.request.query_params.get("status")
         if status_param:
             queryset = queryset.filter(status=status_param)

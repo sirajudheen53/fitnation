@@ -19,6 +19,7 @@ from apps.attendance.serializers import (
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
+from apps.users.models import User
 
 PERIOD_TRUNC = {
     "daily": TruncDate,
@@ -51,17 +52,23 @@ class AttendanceRecordViewSet(ModelViewSet):
     serializer_class = AttendanceRecordSerializer
 
     def get_queryset(self) -> AttendanceRecord:
-        """Return attendance records scoped to the tenant with optional filters."""
+        """Return attendance records scoped to the tenant with optional filters.
+
+        Customer-role users see only their own attendance.
+        """
         queryset = AttendanceRecord.objects.for_tenant(self.request.tenant)
-        date = self.request.query_params.get("date")
-        if date:
-            queryset = queryset.filter(date=date)
-        customer = self.request.query_params.get("customer")
-        if customer:
-            queryset = queryset.filter(customer_id=customer)
-        branch = self.request.query_params.get("branch")
-        if branch:
-            queryset = queryset.filter(branch_id=branch)
+        if self.request.user.role == User.Role.CUSTOMER:
+            queryset = queryset.filter(customer__user=self.request.user)
+        else:
+            date = self.request.query_params.get("date")
+            if date:
+                queryset = queryset.filter(date=date)
+            customer = self.request.query_params.get("customer")
+            if customer:
+                queryset = queryset.filter(customer_id=customer)
+            branch = self.request.query_params.get("branch")
+            if branch:
+                queryset = queryset.filter(branch_id=branch)
         return queryset
 
     def create(self, request: Request) -> Response:

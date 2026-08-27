@@ -18,6 +18,7 @@ from apps.memberships.serializers import (
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
+from apps.users.models import User
 
 
 class MembershipPlanViewSet(ModelViewSet):
@@ -68,8 +69,14 @@ class MembershipViewSet(ModelViewSet):
     serializer_class = MembershipSerializer
 
     def get_queryset(self) -> Membership:
-        """Return memberships scoped to the request tenant."""
-        return Membership.objects.for_tenant(self.request.tenant)
+        """Return memberships scoped to the request tenant.
+
+        Customer-role users see only their own memberships.
+        """
+        queryset = Membership.objects.for_tenant(self.request.tenant)
+        if self.request.user.role == User.Role.CUSTOMER:
+            queryset = queryset.filter(customer__user=self.request.user)
+        return queryset
 
     def create(self, request: Request) -> Response:
         """Create a new membership, validating dates and status."""
