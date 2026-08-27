@@ -5,3 +5,7 @@ node_modules
 .env*.local
 .vercel
 tsconfig.tsbuildinfo
+
+# Playwright generated artifacts
+playwright-report/
+test-results/

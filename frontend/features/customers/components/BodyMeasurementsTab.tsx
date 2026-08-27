@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Ruler } from "lucide-react";
+import { Plus, Ruler, TrendingDown, TrendingUp, Minus } from "lucide-react";
 import {
   Line,
   LineChart,
@@ -45,21 +45,36 @@ export function formatNum(value: string | number | null | undefined): string {
   return String(value);
 }
 
+const optionalPositive = z.preprocess(
+  (v) => (v === "" || v === null || v === undefined ? undefined : v),
+  z.coerce.number().positive().optional(),
+);
+
 const measurementSchema = z.object({
   weight_kg: z.coerce.number().min(1, "Weight must be greater than 0").max(500),
-  body_fat_percentage: z.coerce.number().min(0).max(100).optional().or(z.nan().transform(() => undefined)),
-  chest_cm: z.coerce.number().positive().optional().or(z.nan().transform(() => undefined)),
-  waist_cm: z.coerce.number().positive().optional().or(z.nan().transform(() => undefined)),
-  hips_cm: z.coerce.number().positive().optional().or(z.nan().transform(() => undefined)),
-  biceps_cm: z.coerce.number().positive().optional().or(z.nan().transform(() => undefined)),
-  thighs_cm: z.coerce.number().positive().optional().or(z.nan().transform(() => undefined)),
-  neck_cm: z.coerce.number().positive().optional().or(z.nan().transform(() => undefined)),
+  body_fat_percentage: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : v),
+    z.coerce.number().min(0).max(100).optional(),
+  ),
+  chest_cm: optionalPositive,
+  waist_cm: optionalPositive,
+  hips_cm: optionalPositive,
+  biceps_cm: optionalPositive,
+  thighs_cm: optionalPositive,
+  neck_cm: optionalPositive,
 });
 
 type MeasurementSchemaData = z.infer<typeof measurementSchema>;
 
+export interface MeasurementComparison {
+  first: BodyMeasurement | null;
+  latest: BodyMeasurement | null;
+  diff: Record<string, string>;
+}
+
 interface BodyMeasurementsTabProps {
   measurements: BodyMeasurement[];
+  measurementComparison?: MeasurementComparison;
   loading?: boolean;
   saving?: boolean;
   error?: unknown;
@@ -68,6 +83,7 @@ interface BodyMeasurementsTabProps {
 
 export function BodyMeasurementsTab({
   measurements,
+  measurementComparison,
   loading = false,
   saving = false,
   error,
@@ -129,6 +145,76 @@ export function BodyMeasurementsTab({
         </div>
       )}
 
+      {/* First vs latest comparison */}
+      {!loading &&
+        measurementComparison &&
+        measurementComparison.first &&
+        measurementComparison.latest &&
+        measurementComparison.first.id !== measurementComparison.latest.id && (
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="mb-3 text-sm font-medium text-gray-700">
+              Progress:{" "}
+              <span className="text-xs text-gray-500">
+                {formatMeasurementDate(measurementComparison.first.date_logged)} →{" "}
+                {formatMeasurementDate(measurementComparison.latest.date_logged)}
+              </span>
+            </p>
+            <div className="grid grid-cols-3 gap-4 sm:grid-cols-5">
+              {[
+                { field: "weight_kg", label: "Weight", unit: "kg" },
+                { field: "bmi", label: "BMI", unit: "" },
+                { field: "waist_cm", label: "Waist", unit: "cm" },
+                { field: "chest_cm", label: "Chest", unit: "cm" },
+                { field: "body_fat_percentage", label: "Body fat", unit: "%" },
+              ].map(({ field, label, unit }) => {
+                const first = measurementComparison.first!;
+                const latest = measurementComparison.latest!;
+                const firstVal = first[field as keyof BodyMeasurement];
+                const latestVal = latest[field as keyof BodyMeasurement];
+                const delta = measurementComparison.diff[field];
+                if (firstVal == null && latestVal == null) return null;
+                return (
+                  <div key={field} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">{label}</p>
+                    <p className="mt-0.5 text-lg font-semibold text-gray-900">
+                      {formatNum(latestVal)}
+                      {unit && <span className="text-xs font-normal text-gray-500">{unit}</span>}
+                    </p>
+                    {delta ? (
+                      <p
+                        className={`mt-0.5 flex items-center gap-0.5 text-xs font-medium ${
+                          delta.startsWith("-")
+                            ? "text-green-600"
+                            : delta.startsWith("+")
+                              ? "text-red-500"
+                              : "text-gray-500"
+                        }`}
+                      >
+                        {delta.startsWith("-") ? (
+                          <TrendingDown className="h-3 w-3" />
+                        ) : delta.startsWith("+") ? (
+                          <TrendingUp className="h-3 w-3" />
+                        ) : (
+                          <Minus className="h-3 w-3" />
+                        )}
+                        {delta}
+                        {unit && <span className="text-gray-400">{unit}</span>}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-gray-400">No change</p>
+                    )}
+                    <p className="mt-0.5 text-xs text-gray-400">
+                      {formatMeasurementDate(first.date_logged)}: {formatNum(firstVal)}
+                      {unit && <span className="text-gray-400">{unit}</span>}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+      {/* Charts */}
       {chartData.length > 0 && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -177,6 +263,7 @@ export function BodyMeasurementsTab({
         </div>
       )}
 
+      {/* Measurements table */}
       {!loading && measurements.length > 0 && (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -191,31 +278,36 @@ export function BodyMeasurementsTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {measurements.map((m) => (
-                <tr key={m.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-900">
-                    {formatMeasurementDate(m.date_logged)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-700">
-                    {formatNum(m.weight_kg)} kg
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-700">{formatNum(m.bmi)}</td>
-                  <td className="px-4 py-3 text-right text-gray-700">
-                    {formatNum(m.waist_cm)} cm
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-700">
-                    {formatNum(m.chest_cm)} cm
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-700">
-                    {formatNum(m.body_fat_percentage)}%
-                  </td>
-                </tr>
-              ))}
+              {[...measurements]
+                .sort((a, b) => b.date_logged.localeCompare(a.date_logged))
+                .map((m) => (
+                  <tr key={m.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-gray-900">
+                      {formatMeasurementDate(m.date_logged)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {formatNum(m.weight_kg)} kg
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {formatNum(m.bmi)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {formatNum(m.waist_cm)} cm
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {formatNum(m.chest_cm)} cm
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {formatNum(m.body_fat_percentage)}%
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
       )}
 
+      {/* Add measurement form */}
       {!loading && showForm && (
         <form
           onSubmit={handleSubmit(handleAdd)}

@@ -198,6 +198,9 @@ export function ProgressPhotosTab({
 
       {selected && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={selected.caption || "Progress photo"}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={() => setSelected(null)}
         >

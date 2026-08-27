@@ -21,6 +21,7 @@ import {
   fetchHealthProfile,
   fetchProgressPhotos,
   createFitnessGoal,
+  updateFitnessGoal,
   createBodyMeasurement,
   updateCustomerHealthProfile,
   createProgressPhoto,
@@ -49,8 +50,11 @@ export default function CustomerDetailPage() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [summary, setSummary] = useState<ProgressSummary | null>(null);
   const [goals, setGoals] = useState<CustomerFitnessGoal[]>([]);
+  const [goalsLoaded, setGoalsLoaded] = useState(false);
   const [measurements, setMeasurements] = useState<BodyMeasurement[]>([]);
+  const [measurementsLoaded, setMeasurementsLoaded] = useState(false);
   const [healthProfile, setHealthProfile] = useState<HealthProfile | null>(null);
+  const [healthLoaded, setHealthLoaded] = useState(false);
   const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -103,6 +107,7 @@ export default function CustomerDetailPage() {
       try {
         const list = await fetchFitnessGoals(id, authToken);
         setGoals(list);
+        setGoalsLoaded(true);
       } catch {
         /* summary already seeded goals; ignore list errors here */
       }
@@ -111,6 +116,7 @@ export default function CustomerDetailPage() {
       try {
         const list = await fetchBodyMeasurements(id, authToken);
         setMeasurements(list);
+        setMeasurementsLoaded(true);
       } catch {
         /* noop */
       }
@@ -119,6 +125,7 @@ export default function CustomerDetailPage() {
       try {
         const profile = await fetchHealthProfile(id, authToken);
         setHealthProfile(profile);
+        setHealthLoaded(true);
       } catch {
         setHealthProfile(null);
       }
@@ -132,13 +139,29 @@ export default function CustomerDetailPage() {
       }
     }
 
-    if (activeTab === "goals" && !summary) loadGoals();
-    if (activeTab === "measurements" && !summary) loadMeasurements();
-    if (activeTab === "health" && !summary) loadHealth();
+    if (activeTab === "goals" && !goalsLoaded) loadGoals();
+    if (activeTab === "measurements" && !measurementsLoaded) loadMeasurements();
+    if (activeTab === "health" && !healthLoaded) loadHealth();
     if (activeTab === "photos") loadPhotos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, customer, summary]);
 
+  const updateGoal = async (goalId: number, data: Partial<FitnessGoalFormData>) => {
+    const token = getToken();
+    if (!token) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const updated = await updateFitnessGoal(id, goalId, data, token);
+      setGoals((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+      toast.success("Goal updated");
+    } catch (err) {
+      setSaveError(err);
+      toast.error(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
   const addGoal = async (data: FitnessGoalFormData) => {
     const token = getToken();
     if (!token) return;
@@ -211,6 +234,32 @@ export default function CustomerDetailPage() {
     ? getCustomerMembershipStatus(customer)
     : { label: "—", variant: "default" as const };
 
+  /** Build a first-vs-latest comparison for the measurements tab. */
+  function buildMeasurementComparison(
+    list: BodyMeasurement[],
+  ): { first: BodyMeasurement | null; latest: BodyMeasurement | null; diff: Record<string, string> } {
+    if (list.length === 0) return { first: null, latest: null, diff: {} };
+    const sorted = [...list].sort((a, b) => a.date_logged.localeCompare(b.date_logged));
+    const first = sorted[0];
+    const latest = sorted[sorted.length - 1];
+    const diff: Record<string, string> = {};
+    const fields: (keyof BodyMeasurement)[] = [
+      "weight_kg", "bmi", "body_fat_percentage",
+      "chest_cm", "waist_cm", "hips_cm", "biceps_cm", "thighs_cm", "neck_cm",
+    ];
+    for (const field of fields) {
+      const f = first[field];
+      const l = latest[field];
+      if (f != null && l != null) {
+        const delta = Number(l) - Number(f);
+        if (delta !== 0) {
+          diff[field] = `${delta > 0 ? "+" : ""}${Number(delta.toFixed(1))}`;
+        }
+      }
+    }
+    return { first, latest, diff };
+  }
+
   return (
     <DashboardLayout
       title={customer ? getCustomerDisplayName(customer) : "Customer detail"}
@@ -253,6 +302,7 @@ export default function CustomerDetailPage() {
                 saving={saving}
                 error={saveError}
                 onAdd={addGoal}
+                onUpdate={updateGoal}
               />
             )}
             {activeTab === "measurements" && (
@@ -261,6 +311,7 @@ export default function CustomerDetailPage() {
                 saving={saving}
                 error={saveError}
                 onAdd={addMeasurement}
+                measurementComparison={buildMeasurementComparison(measurements)}
               />
             )}
             {activeTab === "health" && (

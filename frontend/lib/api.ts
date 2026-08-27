@@ -1479,6 +1479,20 @@ export function updateCustomerHealthProfile(
   });
 }
 
+/** Update an existing fitness goal for a customer. */
+export function updateFitnessGoal(
+  id: number | string,
+  goalId: number | string,
+  data: Partial<FitnessGoalFormData>,
+  token: string,
+): Promise<CustomerFitnessGoal> {
+  return request<CustomerFitnessGoal>(`/customers/${id}/fitness-goals/${goalId}/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
 /** List progress photos for a customer (plain array). */
 export function fetchProgressPhotos(
   id: number | string,
