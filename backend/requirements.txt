@@ -1,3 +1,6 @@
+# Image handling (required by django.core.files.images and ImageField)
+Pillow>=11.0,<13.0
+
 # Django
 Django>=5.2,<7.0
 djangorestframework>=3.16,<4.0
