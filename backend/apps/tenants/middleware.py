@@ -37,9 +37,7 @@ class TenantMiddleware:
         if hasattr(user, "_tenant_from_token"):
             request.tenant = user._tenant_from_token
         elif user.is_superuser:
-            tenant_id = request.GET.get("tenant_id") or request.headers.get(
-                "X-Tenant-ID"
-            )
+            tenant_id = request.GET.get("tenant_id") or request.headers.get("X-Tenant-ID")
             if tenant_id:
                 try:
                     request.tenant = Tenant.objects.get(id=int(tenant_id))

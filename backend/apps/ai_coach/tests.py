@@ -134,9 +134,7 @@ class AICoachAPIBase(APITestCase):
         self.tenant, self.owner = _make_tenant_and_owner()
         self.token = issue_token(self.owner, self.tenant)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
-        self.conversation = AIConversation.objects.create(
-            tenant_id=self.tenant.id, user=self.owner, title="Test Chat"
-        )
+        self.conversation = AIConversation.objects.create(tenant_id=self.tenant.id, user=self.owner, title="Test Chat")
 
 
 class AICoachAPITests(AICoachAPIBase):
@@ -150,9 +148,7 @@ class AICoachAPITests(AICoachAPIBase):
 
     def test_chat_creates_conversation_and_messages(self) -> None:
         """Chat without conversation_id creates a conversation and messages."""
-        response = self.client.post(
-            "/api/v1/ai/coach/chat/", {"message": "hello coach"}, format="json"
-        )
+        response = self.client.post("/api/v1/ai/coach/chat/", {"message": "hello coach"}, format="json")
         self.assertEqual(response.status_code, 200)
         conv_id = response.data["conversation_id"]
         conv = AIConversation.objects.get(id=conv_id)
@@ -162,9 +158,7 @@ class AICoachAPITests(AICoachAPIBase):
 
     def test_chat_returns_recommendation_for_workout(self) -> None:
         """Chat with a workout keyword returns a recommendation."""
-        response = self.client.post(
-            "/api/v1/ai/coach/chat/", {"message": "recommend a workout"}, format="json"
-        )
+        response = self.client.post("/api/v1/ai/coach/chat/", {"message": "recommend a workout"}, format="json")
         self.assertEqual(response.status_code, 200)
         self.assertIsNotNone(response.data["recommendation"])
         self.assertEqual(response.data["recommendation"]["type"], "workout")
@@ -183,9 +177,7 @@ class AICoachAPITests(AICoachAPIBase):
     def test_chat_requires_auth(self) -> None:
         """Unauthenticated requests are rejected."""
         self.client.credentials()
-        response = self.client.post(
-            "/api/v1/ai/coach/chat/", {"message": "hi"}, format="json"
-        )
+        response = self.client.post("/api/v1/ai/coach/chat/", {"message": "hi"}, format="json")
         self.assertEqual(response.status_code, 401)
 
     def test_chat_requires_valid_message(self) -> None:
@@ -196,9 +188,7 @@ class AICoachAPITests(AICoachAPIBase):
     def test_conversation_messages_endpoint(self) -> None:
         """Messages endpoint returns messages for a conversation."""
         AIMessage.objects.create(conversation=self.conversation, role="user", content="hello")
-        response = self.client.get(
-            f"/api/v1/ai/coach/conversations/{self.conversation.id}/messages/"
-        )
+        response = self.client.get(f"/api/v1/ai/coach/conversations/{self.conversation.id}/messages/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["role"], "user")
@@ -206,9 +196,7 @@ class AICoachAPITests(AICoachAPIBase):
     def test_conversation_messages_requires_auth(self) -> None:
         """Unauthenticated message fetch is rejected."""
         self.client.credentials()
-        response = self.client.get(
-            f"/api/v1/ai/coach/conversations/{self.conversation.id}/messages/"
-        )
+        response = self.client.get(f"/api/v1/ai/coach/conversations/{self.conversation.id}/messages/")
         self.assertEqual(response.status_code, 401)
 
     def test_list_recommendations(self) -> None:
@@ -263,10 +251,6 @@ class AICoachIsolationTests(AICoachAPIBase):
             role=User.Role.CUSTOMER,
             tenant=self.tenant,
         )
-        foreign_conv = AIConversation.objects.create(
-            tenant_id=self.tenant.id, user=other_user
-        )
-        response = self.client.get(
-            f"/api/v1/ai/coach/conversations/{foreign_conv.id}/messages/"
-        )
+        foreign_conv = AIConversation.objects.create(tenant_id=self.tenant.id, user=other_user)
+        response = self.client.get(f"/api/v1/ai/coach/conversations/{foreign_conv.id}/messages/")
         self.assertEqual(response.status_code, 404)

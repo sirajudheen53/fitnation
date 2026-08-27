@@ -7,8 +7,8 @@ from apps.branches.models import Branch
 from apps.permissions.models import Permission, Role, RolePermission
 from apps.permissions.permissions import (
     IsPlatformAdmin,
-    RolePermission as RolePermissionClass,
 )
+from apps.permissions.permissions import RolePermission as RolePermissionClass
 from apps.tenants.services import provision_tenant
 from apps.users.models import User
 from apps.users.services import create_owner_user, create_user, issue_token
@@ -81,9 +81,7 @@ class RolePermissionMatrixTests(TestCase):
         perm_class = RolePermissionClass()
         request = self._build_request(role=User.Role.MANAGER)
 
-        view_create = type(
-            "View", (), {"required_permission": "branches.create_branch"}
-        )()
+        view_create = type("View", (), {"required_permission": "branches.create_branch"})()
         view_view = type("View", (), {"required_permission": "branches.view_branch"})()
 
         self.assertFalse(perm_class.has_permission(request, view_create))
@@ -113,9 +111,7 @@ class RolePermissionMatrixTests(TestCase):
         )
 
         perm_class = RolePermissionClass()
-        request = self._build_request(
-            role=User.Role.GYM_OWNER, tenant=tenant_a, user=owner_a
-        )
+        request = self._build_request(role=User.Role.GYM_OWNER, tenant=tenant_a, user=owner_a)
         view = type("View", (), {"required_permission": "branches.view_branch"})()
         self.assertFalse(perm_class.has_object_permission(request, view, branch_b))
 

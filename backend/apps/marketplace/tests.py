@@ -1,11 +1,12 @@
 """Tests for the marketplace app."""
 
 from django.contrib.auth import get_user_model
-from django.core.management import call_command, CommandError
+from django.core.management import CommandError, call_command
 from django.test import TestCase
 from django.test.utils import captured_stdout
 from rest_framework.test import APITestCase
 
+from apps.marketplace import services
 from apps.marketplace.models import (
     Cart,
     CartItem,
@@ -15,7 +16,6 @@ from apps.marketplace.models import (
     Product,
     ProductCategory,
 )
-from apps.marketplace import services
 from apps.tenants.models import Tenant
 from apps.tenants.services import provision_tenant
 from apps.users.services import create_owner_user, issue_token
@@ -72,8 +72,12 @@ class ProductModelTests(TestCase):
         """Product slugs are unique within a tenant but reusable across tenants."""
         other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
         _product(self.tenant, self.category, slug="whey", name="Whey")
-        _product(other_tenant, ProductCategory.objects.create(
-            tenant=other_tenant, name="Supplements", slug="supplements"), slug="whey", name="Whey")
+        _product(
+            other_tenant,
+            ProductCategory.objects.create(tenant=other_tenant, name="Supplements", slug="supplements"),
+            slug="whey",
+            name="Whey",
+        )
         self.assertEqual(Product.objects.for_tenant(self.tenant).count(), 1)
         self.assertEqual(Product.objects.for_tenant(other_tenant).count(), 1)
 
@@ -128,9 +132,7 @@ class ProductModelTests(TestCase):
         """Cart total aggregates line item totals."""
         product = _product(self.tenant, self.category, name="Whey", slug="whey", price="100.00")
         cart = Cart.objects.create(tenant=self.tenant, user=_make_user(self.tenant))
-        CartItem.objects.create(
-            tenant=self.tenant, cart=cart, product=product, quantity=3, unit_price="100.00"
-        )
+        CartItem.objects.create(tenant=self.tenant, cart=cart, product=product, quantity=3, unit_price="100.00")
         item = cart.items.first()
         self.assertEqual(item.total_price, 300.00)
         self.assertEqual(cart.total, 300.00)
@@ -139,9 +141,7 @@ class ProductModelTests(TestCase):
         """CartItem copies the product price if no unit price is supplied."""
         product = _product(self.tenant, self.category, name="Whey", slug="whey", price="99.50")
         cart = Cart.objects.create(tenant=self.tenant, user=_make_user(self.tenant))
-        item = CartItem.objects.create(
-            tenant=self.tenant, cart=cart, product=product, quantity=2
-        )
+        item = CartItem.objects.create(tenant=self.tenant, cart=cart, product=product, quantity=2)
         self.assertEqual(float(item.unit_price), 99.50)
 
     def test_order_item_autocomputes_total(self) -> None:
@@ -170,8 +170,7 @@ class ProductModelTests(TestCase):
 
 def _make_user(tenant: Tenant) -> User:
     """Create a simple customer user for a tenant."""
-    user = User(tenant=tenant, email="cust@local.test", first_name="C", last_name="U",
-                role=User.Role.CUSTOMER)
+    user = User(tenant=tenant, email="cust@local.test", first_name="C", last_name="U", role=User.Role.CUSTOMER)
     user.set_unusable_password()
     user.save()
     return user
@@ -195,16 +194,12 @@ class ServiceTests(TestCase):
         """Create a tenant, user, category, and product."""
         self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
         self.user = _make_user(self.tenant)
-        self.category = ProductCategory.objects.create(
-            tenant=self.tenant, name="Supplements", slug="supplements"
-        )
+        self.category = ProductCategory.objects.create(tenant=self.tenant, name="Supplements", slug="supplements")
         self.product = _product(self.tenant, self.category, name="Whey", slug="whey")
 
     def test_add_item_creates_cart_and_item(self) -> None:
         """add_item_to_cart creates a cart and line item on first add."""
-        item = services.add_item_to_cart(
-            tenant=self.tenant, user=self.user, product=self.product, quantity=2
-        )
+        item = services.add_item_to_cart(tenant=self.tenant, user=self.user, product=self.product, quantity=2)
         cart = Cart.objects.for_tenant(self.tenant).get(user=self.user, status=Cart.Status.ACTIVE)
         self.assertEqual(item.cart.id, cart.id)
         self.assertEqual(item.quantity, 2)
@@ -296,9 +291,7 @@ class MarketplaceAPIBase(APITestCase):
         )
         self.token = issue_token(self.owner, self.tenant)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
-        self.category = ProductCategory.objects.create(
-            tenant=self.tenant, name="Supplements", slug="supplements"
-        )
+        self.category = ProductCategory.objects.create(tenant=self.tenant, name="Supplements", slug="supplements")
         self.product = Product.objects.create(
             tenant=self.tenant,
             category=self.category,
@@ -330,9 +323,7 @@ class ProductCategoryAPITests(MarketplaceAPIBase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["name"], "Apparel")
-        self.assertEqual(
-            ProductCategory.objects.for_tenant(self.tenant).count(), 2
-        )
+        self.assertEqual(ProductCategory.objects.for_tenant(self.tenant).count(), 2)
 
     def test_retrieve_category(self) -> None:
         """Owner can retrieve a category by id."""
@@ -354,9 +345,7 @@ class ProductCategoryAPITests(MarketplaceAPIBase):
         """Owner can delete a category."""
         response = self.client.delete(f"{self.url}categories/{self.category.id}/")
         self.assertEqual(response.status_code, 204)
-        self.assertEqual(
-            ProductCategory.objects.for_tenant(self.tenant).count(), 0
-        )
+        self.assertEqual(ProductCategory.objects.for_tenant(self.tenant).count(), 0)
 
 
 class ProductAPITests(MarketplaceAPIBase):
@@ -432,12 +421,8 @@ class ProductAPITests(MarketplaceAPIBase):
 
     def test_filter_products_by_category(self) -> None:
         """Products can be filtered by category."""
-        other = ProductCategory.objects.create(
-            tenant=self.tenant, name="Apparel", slug="apparel"
-        )
-        Product.objects.create(
-            tenant=self.tenant, category=other, name="Tee", slug="tee", price="500.00"
-        )
+        other = ProductCategory.objects.create(tenant=self.tenant, name="Apparel", slug="apparel")
+        Product.objects.create(tenant=self.tenant, category=other, name="Tee", slug="tee", price="500.00")
         response = self.client.get(f"{self.url}products/?category={self.category.id}")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 1)
@@ -467,33 +452,23 @@ class CartAPITests(MarketplaceAPIBase):
 
     def test_add_item_increments_quantity(self) -> None:
         """POST cart with an existing product increments quantity."""
-        self.client.post(
-            f"{self.url}cart/", {"product": self.product.id, "quantity": 2}, format="json"
-        )
-        response = self.client.post(
-            f"{self.url}cart/", {"product": self.product.id, "quantity": 3}, format="json"
-        )
+        self.client.post(f"{self.url}cart/", {"product": self.product.id, "quantity": 2}, format="json")
+        response = self.client.post(f"{self.url}cart/", {"product": self.product.id, "quantity": 3}, format="json")
         self.assertEqual(response.data["items"][0]["quantity"], 5)
 
     def test_add_item_requires_valid_product(self) -> None:
         """POST cart with a non-existent product returns 404."""
-        response = self.client.post(
-            f"{self.url}cart/", {"product": 99999, "quantity": 1}, format="json"
-        )
+        response = self.client.post(f"{self.url}cart/", {"product": 99999, "quantity": 1}, format="json")
         self.assertEqual(response.status_code, 404)
 
     def test_add_item_rejects_zero_quantity(self) -> None:
         """POST cart with quantity zero returns 400."""
-        response = self.client.post(
-            f"{self.url}cart/", {"product": self.product.id, "quantity": 0}, format="json"
-        )
+        response = self.client.post(f"{self.url}cart/", {"product": self.product.id, "quantity": 0}, format="json")
         self.assertEqual(response.status_code, 400)
 
     def test_clear_cart(self) -> None:
         """DELETE cart clears all items."""
-        self.client.post(
-            f"{self.url}cart/", {"product": self.product.id, "quantity": 2}, format="json"
-        )
+        self.client.post(f"{self.url}cart/", {"product": self.product.id, "quantity": 2}, format="json")
         response = self.client.delete(f"{self.url}cart/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["items"], [])
@@ -504,26 +479,20 @@ class CartItemAPITests(MarketplaceAPIBase):
 
     def _add_item(self) -> int:
         """Add the product to the cart and return the cart item id."""
-        response = self.client.post(
-            f"{self.url}cart/", {"product": self.product.id, "quantity": 2}, format="json"
-        )
+        response = self.client.post(f"{self.url}cart/", {"product": self.product.id, "quantity": 2}, format="json")
         return response.data["items"][0]["id"]
 
     def test_patch_item_quantity(self) -> None:
         """PATCH updates a cart item quantity."""
         item_id = self._add_item()
-        response = self.client.patch(
-            f"{self.url}cart/items/{item_id}/", {"quantity": 5}, format="json"
-        )
+        response = self.client.patch(f"{self.url}cart/items/{item_id}/", {"quantity": 5}, format="json")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["items"][0]["quantity"], 5)
 
     def test_patch_item_invalid_quantity(self) -> None:
         """PATCH with quantity zero returns 400."""
         item_id = self._add_item()
-        response = self.client.patch(
-            f"{self.url}cart/items/{item_id}/", {"quantity": 0}, format="json"
-        )
+        response = self.client.patch(f"{self.url}cart/items/{item_id}/", {"quantity": 0}, format="json")
         self.assertEqual(response.status_code, 400)
 
     def test_delete_item(self) -> None:
@@ -537,9 +506,7 @@ class CartItemAPITests(MarketplaceAPIBase):
         """A cart item from another user's cart is not accessible."""
         other = _make_user(self.tenant)
         other_cart = Cart.objects.create(tenant=self.tenant, user=other)
-        other_item = CartItem.objects.create(
-            tenant=self.tenant, cart=other_cart, product=self.product, quantity=1
-        )
+        other_item = CartItem.objects.create(tenant=self.tenant, cart=other_cart, product=self.product, quantity=1)
         response = self.client.delete(f"{self.url}cart/items/{other_item.id}/")
         self.assertEqual(response.status_code, 404)
 
@@ -549,9 +516,7 @@ class OrderAPITests(MarketplaceAPIBase):
 
     def _set_up_cart(self) -> None:
         """Populate the current user's active cart."""
-        self.client.post(
-            f"{self.url}cart/", {"product": self.product.id, "quantity": 3}, format="json"
-        )
+        self.client.post(f"{self.url}cart/", {"product": self.product.id, "quantity": 3}, format="json")
 
     def test_create_order_from_cart(self) -> None:
         """POST orders converts the cart into an order."""

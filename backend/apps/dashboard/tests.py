@@ -83,12 +83,8 @@ class DashboardCacheModelTests(TestCase):
             metric_name="overview",
             metric_value={"total_members": 5},
         )
-        self.assertEqual(
-            DashboardCache.objects.for_tenant(self.tenant_a).count(), 1
-        )
-        self.assertEqual(
-            DashboardCache.objects.for_tenant(self.tenant_b).count(), 0
-        )
+        self.assertEqual(DashboardCache.objects.for_tenant(self.tenant_a).count(), 1)
+        self.assertEqual(DashboardCache.objects.for_tenant(self.tenant_b).count(), 0)
 
 
 class DashboardAPITests(APITestCase):
@@ -182,9 +178,7 @@ class DashboardAPITests(APITestCase):
     def test_revenue_endpoint(self) -> None:
         """GET revenue/ returns a series for daily/weekly/monthly."""
         for period in ("daily", "weekly", "monthly"):
-            response = self.client.get(
-                f"/api/v1/dashboard/revenue/?period={period}"
-            )
+            response = self.client.get(f"/api/v1/dashboard/revenue/?period={period}")
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data["period"], period)
             total = sum(r["amount"] for r in response.data["results"])
@@ -224,9 +218,7 @@ class DashboardAPITests(APITestCase):
 
     def test_tenant_isolation(self) -> None:
         """Tenant B sees none of tenant A's dashboard data."""
-        other_tenant = provision_tenant(
-            name="Other Gym", contact_email="other@local.test"
-        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
         other_owner = create_user(
             tenant=other_tenant,
             email="other-owner@local.test",
@@ -235,9 +227,7 @@ class DashboardAPITests(APITestCase):
             role=User.Role.GYM_OWNER,
         )
         other_token = issue_token(other_owner, other_tenant)
-        self.client.credentials(
-            HTTP_AUTHORIZATION=f"Token {other_token.key}"
-        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {other_token.key}")
 
         response = self.client.get("/api/v1/dashboard/overview/")
         self.assertEqual(response.status_code, 200)

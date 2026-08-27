@@ -19,7 +19,8 @@ Creates:
 """
 
 import random
-from datetime import date, datetime, timedelta, timezone as dt_tz
+from datetime import date, datetime, timedelta
+from datetime import timezone as dt_tz
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
@@ -36,12 +37,12 @@ from apps.diet.models import DietAssignment, DietDay, DietMeal, DietPlan, FoodIt
 from apps.exercises.models import Exercise, ExerciseCategory
 from apps.memberships.models import Coupon, Membership, MembershipPlan
 from apps.payments.models import Payment
-from apps.workouts.models import WorkoutAssignment, WorkoutDay, WorkoutExercise, WorkoutPlan
 from apps.tenants.models import Tenant, TenantSettings
 from apps.users.models import User
-
+from apps.workouts.models import WorkoutAssignment, WorkoutDay, WorkoutExercise, WorkoutPlan
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
+
 
 def pk(obj):
     return obj.pk
@@ -368,6 +369,7 @@ _DIET_PLANS = [
 
 # ─── Command ────────────────────────────────────────────────────────────────
 
+
 class Command(BaseCommand):
     help = "Seed rich linked dummy data for local development."
 
@@ -449,10 +451,7 @@ class Command(BaseCommand):
 
     def _reset(self, tenant):
         """Delete all seeded data (anything with email containing @fitnation.test EXCEPT admin)."""
-        seeded_emails = [
-            u["email"]
-            for u in _USERS
-        ] + [c["email"] for c in _CUSTOMERS]
+        seeded_emails = [u["email"] for u in _USERS] + [c["email"] for c in _CUSTOMERS]
 
         for email in seeded_emails:
             try:
@@ -670,9 +669,7 @@ class Command(BaseCommand):
             membership = customer.memberships.order_by("-id").first()
             for p in range(random.randint(1, 3)):
                 p_date = today - timedelta(days=random.randint(0, 30))
-                p_date_tz = datetime(
-                    p_date.year, p_date.month, p_date.day, 10 + p, 0, 0, tzinfo=dt_tz.utc
-                )
+                p_date_tz = datetime(p_date.year, p_date.month, p_date.day, 10 + p, 0, 0, tzinfo=dt_tz.utc)
                 method = random.choice(methods)
                 Payment.objects.get_or_create(
                     tenant=tenant,
@@ -698,6 +695,7 @@ class Command(BaseCommand):
                     check_in = datetime.combine(att_date, datetime.min.time().replace(hour=7 + random.randint(0, 2)))
                     check_out = check_in + timedelta(hours=random.randint(1, 2))
                     from apps.attendance.models import AttendanceRecord
+
                     AttendanceRecord.objects.get_or_create(
                         tenant=tenant,
                         customer=customer,
@@ -769,6 +767,7 @@ class Command(BaseCommand):
     def _seed_workout_assignments(self, tenant, customers, workout_plans, owner):
         today = date.today()
         from apps.workouts.models import WorkoutAssignment
+
         for customer in customers:
             if random.random() < 0.8:  # 80% have workout plans
                 plan = random.choice(workout_plans)

@@ -574,9 +574,7 @@ class WorkoutAssignmentAPITests(WorkoutAPIBase):
             customer=self.customer,
             workout_plan=self.plan,
         )
-        response = self.client.get(
-            f"/api/v1/workouts/workout-assignments/?customer={self.customer.id}"
-        )
+        response = self.client.get(f"/api/v1/workouts/workout-assignments/?customer={self.customer.id}")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
 
@@ -588,9 +586,7 @@ class WorkoutAssignmentAPITests(WorkoutAPIBase):
             workout_plan=self.plan,
             is_active=True,
         )
-        response = self.client.get(
-            f"/api/v1/workouts/workout-assignments/active/?customer={self.customer.id}"
-        )
+        response = self.client.get(f"/api/v1/workouts/workout-assignments/active/?customer={self.customer.id}")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
 
@@ -678,8 +674,7 @@ class WorkoutLogAPITests(WorkoutAPIBase):
             actual_reps=12,
         )
         response = self.client.get(
-            f"/api/v1/workouts/workout-logs/?customer={self.customer.id}"
-            "&date_from=2026-01-01&date_to=2026-01-31"
+            f"/api/v1/workouts/workout-logs/?customer={self.customer.id}" "&date_from=2026-01-01&date_to=2026-01-31"
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)

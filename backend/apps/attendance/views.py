@@ -163,9 +163,7 @@ class AttendanceRecordViewSet(ModelViewSet):
                 for row in rows
             ]
 
-        return Response(
-            {"period": period, "group_by": group_by, "results": payload}
-        )
+        return Response({"period": period, "group_by": group_by, "results": payload})
 
 
 class TrainerAttendanceViewSet(ModelViewSet):

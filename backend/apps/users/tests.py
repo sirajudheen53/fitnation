@@ -277,9 +277,7 @@ class UserAPITests(APITestCase):
             {"branch_id": branch.id, "role_at_branch": "manager"},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(
-            UserRoleAssignment.objects.filter(user=user, branch=branch).exists()
-        )
+        self.assertTrue(UserRoleAssignment.objects.filter(user=user, branch=branch).exists())
 
 
 class CustomerByPhoneTests(TestCase):
@@ -555,9 +553,7 @@ class TrainerAPITests(APITestCase):
 
     def test_list_trainers_filter_specialization(self) -> None:
         """List trainers filtered by specialization."""
-        response = self.client.get(
-            "/api/v1/users/trainers/?specialization=Strength"
-        )
+        response = self.client.get("/api/v1/users/trainers/?specialization=Strength")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
 
@@ -620,9 +616,7 @@ class TrainerAPITests(APITestCase):
             start_time="06:00",
             end_time="12:00",
         )
-        response = self.client.get(
-            f"/api/v1/users/trainers/{self.trainer.id}/schedule/"
-        )
+        response = self.client.get(f"/api/v1/users/trainers/{self.trainer.id}/schedule/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["day_of_week"], "monday")
@@ -691,9 +685,7 @@ class TrainerAPITests(APITestCase):
             trainer=self.trainer,
             customer_id=customer.id,
         )
-        response = self.client.get(
-            f"/api/v1/users/trainers/{self.trainer.id}/assignments/"
-        )
+        response = self.client.get(f"/api/v1/users/trainers/{self.trainer.id}/assignments/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["customer_name"], "Cust One")
@@ -739,9 +731,7 @@ class TrainerAPITests(APITestCase):
             if i == 2:
                 unassign_customer_from_trainer(assignment)
 
-        response = self.client.get(
-            f"/api/v1/users/trainers/{self.trainer.id}/metrics/"
-        )
+        response = self.client.get(f"/api/v1/users/trainers/{self.trainer.id}/metrics/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["trainer_id"], self.trainer.id)
         self.assertEqual(response.data["active_clients"], 2)
@@ -752,9 +742,7 @@ class TrainerAPITests(APITestCase):
 
     def test_trainer_metrics_no_clients(self) -> None:
         """Metrics for trainer with no clients returns zeros."""
-        response = self.client.get(
-            f"/api/v1/users/trainers/{self.trainer.id}/metrics/"
-        )
+        response = self.client.get(f"/api/v1/users/trainers/{self.trainer.id}/metrics/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["active_clients"], 0)
         self.assertEqual(response.data["total_assignments"], 0)

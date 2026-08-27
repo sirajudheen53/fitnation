@@ -169,9 +169,7 @@ class Command(BaseCommand):
                     try:
                         perm = Permission.objects.get(code=code)
                     except Permission.DoesNotExist:
-                        self.stdout.write(
-                            self.style.WARNING(f"Permission not found: {code}")
-                        )
+                        self.stdout.write(self.style.WARNING(f"Permission not found: {code}"))
                         continue
                     RolePermission.objects.get_or_create(
                         role=role,

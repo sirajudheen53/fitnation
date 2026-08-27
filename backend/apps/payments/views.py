@@ -15,7 +15,6 @@ from rest_framework.viewsets import ModelViewSet
 from apps.customers.models import Customer
 from apps.payments import razorpay_service
 from apps.payments.models import Invoice, Payment, PaymentRefund, RazorpayConfig
-from apps.users.models import User
 from apps.payments.serializers import (
     CreateOrderSerializer,
     InvoiceSerializer,
@@ -27,6 +26,7 @@ from apps.payments.serializers import (
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
+from apps.users.models import User
 
 
 class RazorpayOrderView(APIView):

@@ -42,15 +42,12 @@ def user_list(
         qs = qs.filter(is_active=is_active)
     if search:
         qs = qs.filter(
-            Q(email__icontains=search)
-            | Q(first_name__icontains=search)
-            | Q(last_name__icontains=search),
+            Q(email__icontains=search) | Q(first_name__icontains=search) | Q(last_name__icontains=search),
         )
 
     if branch_id is not None:
         qs = qs.filter(
-            Q(customer_profile__branch_id=branch_id)
-            | Q(trainer_profile__branch_assignments__branch_id=branch_id),
+            Q(customer_profile__branch_id=branch_id) | Q(trainer_profile__branch_assignments__branch_id=branch_id),
         ).distinct()
 
     return qs.order_by("-created_at")

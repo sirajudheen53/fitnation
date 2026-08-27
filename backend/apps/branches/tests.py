@@ -101,12 +101,8 @@ class BranchAPITests(APITestCase):
     def test_list_branches_tenant_scoped(self) -> None:
         """Branch list is filtered to the authenticated user's tenant."""
         other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
-        Branch.objects.create(
-            tenant=self.tenant, name="Owned Branch", address_line1="A"
-        )
-        Branch.objects.create(
-            tenant=other_tenant, name="Other Branch", address_line1="B"
-        )
+        Branch.objects.create(tenant=self.tenant, name="Owned Branch", address_line1="A")
+        Branch.objects.create(tenant=other_tenant, name="Other Branch", address_line1="B")
 
         response = self.client.get("/api/v1/branches/")
         self.assertEqual(response.status_code, 200)

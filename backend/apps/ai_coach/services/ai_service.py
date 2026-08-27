@@ -1,7 +1,8 @@
 """Mock AI service for FBOS-017."""
+
 from apps.customers.models import Customer
-from apps.workouts.models import WorkoutAssignment
 from apps.diet.models import DietAssignment
+from apps.workouts.models import WorkoutAssignment
 
 
 def build_user_context(user):
@@ -22,17 +23,13 @@ def build_user_context(user):
     try:
         assignments = WorkoutAssignment.objects.filter(user=user).select_related("plan")[:3]
         ctx["workouts"] = [
-            {"name": a.plan.name, "difficulty": a.plan.difficulty}
-            for a in assignments
-            if hasattr(a, "plan")
+            {"name": a.plan.name, "difficulty": a.plan.difficulty} for a in assignments if hasattr(a, "plan")
         ]
     except Exception:
         pass
     try:
         diet_assignments = DietAssignment.objects.filter(user=user).select_related("plan")[:3]
-        ctx["diet_plans"] = [
-            {"name": a.plan.name} for a in diet_assignments if hasattr(a, "plan")
-        ]
+        ctx["diet_plans"] = [{"name": a.plan.name} for a in diet_assignments if hasattr(a, "plan")]
     except Exception:
         pass
     return ctx
@@ -86,8 +83,6 @@ def generate_response(message, user, conversation=None):
             "What would you like to know?"
         )
     recommendation = (
-        {"type": rec_type, "content": {"suggestion": response, "context": ctx}}
-        if rec_type != "general"
-        else None
+        {"type": rec_type, "content": {"suggestion": response, "context": ctx}} if rec_type != "general" else None
     )
     return response, recommendation

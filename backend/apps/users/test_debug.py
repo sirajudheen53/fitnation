@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
+
 from apps.tenants.services import provision_tenant
 from apps.users.services import create_owner_user, issue_token
 from apps.users.trainer_services import create_trainer

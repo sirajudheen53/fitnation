@@ -9,7 +9,7 @@ from django.utils import timezone
 
 if TYPE_CHECKING:
     from apps.tenants.models import Tenant
-    from apps.users.models import Trainer, TrainerSchedule, TrainerCustomerAssignment
+    from apps.users.models import Trainer, TrainerCustomerAssignment, TrainerSchedule
 
 
 def create_trainer(

@@ -40,9 +40,7 @@ class MembershipPlanModelTests(TestCase):
             price="1500.00",
             duration_days=30,
         )
-        other_tenant = provision_tenant(
-            name="Other Gym", contact_email="other@local.test"
-        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
         MembershipPlan.objects.create(
             tenant=other_tenant,
             name="Monthly",
@@ -65,9 +63,7 @@ class MembershipPlanModelTests(TestCase):
             price="15000.00",
             duration_days=365,
         )
-        other_tenant = provision_tenant(
-            name="Other Gym", contact_email="other@local.test"
-        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
         self.assertEqual(
             MembershipPlan.objects.for_tenant(self.tenant).first().id,
             plan.id,
@@ -150,9 +146,7 @@ class MembershipModelTests(TestCase):
             start_date=date.today(),
             end_date=date.today() + timedelta(days=30),
         )
-        other_tenant = provision_tenant(
-            name="Other Gym", contact_email="other@local.test"
-        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
         self.assertEqual(
             Membership.objects.for_tenant(self.tenant).first().id,
             membership.id,
@@ -179,9 +173,7 @@ class CouponModelTests(TestCase):
             code="SAVE10",
             discount_percent="10.00",
         )
-        other_tenant = provision_tenant(
-            name="Other Gym", contact_email="other@local.test"
-        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
         Coupon.objects.create(
             tenant=other_tenant,
             code="SAVE10",
@@ -201,9 +193,7 @@ class CouponModelTests(TestCase):
             code="WELCOME",
             discount_percent="5.00",
         )
-        other_tenant = provision_tenant(
-            name="Other Gym", contact_email="other@local.test"
-        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
         self.assertEqual(
             Coupon.objects.for_tenant(self.tenant).first().id,
             coupon.id,
@@ -377,9 +367,7 @@ class MembershipAPITests(APITestCase):
         self.assertEqual(list_response.status_code, 200)
         self.assertEqual(len(list_response.data["results"]), 1)
 
-        retrieve_response = self.client.get(
-            f"/api/v1/memberships/coupons/{coupon_id}/"
-        )
+        retrieve_response = self.client.get(f"/api/v1/memberships/coupons/{coupon_id}/")
         self.assertEqual(retrieve_response.status_code, 200)
         self.assertEqual(retrieve_response.data["code"], "SAVE10")
 
@@ -427,7 +415,5 @@ class MembershipAPITests(APITestCase):
             start_date=date.today(),
             end_date=date.today() + timedelta(days=30),
         )
-        response = self.client.get(
-            f"/api/v1/memberships/memberships/{other_membership.id}/"
-        )
+        response = self.client.get(f"/api/v1/memberships/memberships/{other_membership.id}/")
         self.assertEqual(response.status_code, 404)

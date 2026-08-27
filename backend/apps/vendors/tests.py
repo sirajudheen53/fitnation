@@ -157,9 +157,7 @@ class VendorSignupFlowTests(APITestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(
-            Branch.objects.filter(tenant=result["tenant"], name="Main Branch").exists()
-        )
+        self.assertTrue(Branch.objects.filter(tenant=result["tenant"], name="Main Branch").exists())
         reg.refresh_from_db()
         self.assertEqual(reg.current_step, VendorRegistration.Step.ONBOARDED)
 

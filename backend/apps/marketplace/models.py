@@ -101,11 +101,7 @@ class Product(TenantModelMixin):
     def is_low_stock(self) -> bool:
         """Return whether the tracked inventory is at or below the low-stock threshold."""
         inventory = getattr(self, "inventory", None)
-        if (
-            inventory is None
-            or not inventory.track_inventory
-            or inventory.low_stock_threshold is None
-        ):
+        if inventory is None or not inventory.track_inventory or inventory.low_stock_threshold is None:
             return False
         return inventory.stock_quantity <= inventory.low_stock_threshold
 

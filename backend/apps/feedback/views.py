@@ -44,11 +44,7 @@ class FeedbackObjectPermission(RolePermission):
         """Enforce tenant scoping but relax the customer-ownership rule for surveys."""
         if not request.user.is_authenticated or request.user.is_superuser:
             return True
-        if (
-            hasattr(obj, "tenant_id")
-            and obj.tenant_id is not None
-            and obj.tenant_id != request.user.tenant_id
-        ):
+        if hasattr(obj, "tenant_id") and obj.tenant_id is not None and obj.tenant_id != request.user.tenant_id:
             return False
         if request.user.role == "customer":
             return isinstance(obj, (FeedbackSurvey, FeedbackResponse))
@@ -91,13 +87,9 @@ class FeedbackViewSet(viewsets.ModelViewSet):
 
         Customers only see their own feedback; staff roles see all tenant feedback.
         """
-        queryset = Feedback.objects.for_tenant(self.request.tenant).select_related(
-            "customer", "response_by"
-        )
+        queryset = Feedback.objects.for_tenant(self.request.tenant).select_related("customer", "response_by")
         if self.request.user.role == User.Role.CUSTOMER:
-            queryset = queryset.filter(
-                customer__user=self.request.user
-            )
+            queryset = queryset.filter(customer__user=self.request.user)
         category = self.request.query_params.get("category")
         if category:
             queryset = queryset.filter(category=category)
@@ -107,13 +99,9 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         """Persist feedback scoped to the tenant and the requesting customer."""
         customer = None
         if self.request.user.role == User.Role.CUSTOMER:
-            customer = Customer.objects.filter(
-                tenant=self.request.tenant, user=self.request.user
-            ).first()
+            customer = Customer.objects.filter(tenant=self.request.tenant, user=self.request.user).first()
         elif self.request.data.get("customer"):
-            customer = Customer.objects.filter(
-                tenant=self.request.tenant, id=self.request.data["customer"]
-            ).first()
+            customer = Customer.objects.filter(tenant=self.request.tenant, id=self.request.data["customer"]).first()
         serializer.save(tenant=self.request.tenant, customer=customer)
 
     def update(self, request, *args, **kwargs):
@@ -159,17 +147,11 @@ class FeedbackAnalyticsViewSet(viewsets.GenericViewSet):
         queryset = self.get_queryset()
 
         total = queryset.count()
-        distribution = list(
-            queryset.values("rating").annotate(count=Count("id")).order_by("rating")
-        )
+        distribution = list(queryset.values("rating").annotate(count=Count("id")).order_by("rating"))
         rating_counts = {row["rating"]: row["count"] for row in distribution}
-        distribution = [
-            {"rating": r, "count": rating_counts.get(r, 0)} for r in range(1, 6)
-        ]
+        distribution = [{"rating": r, "count": rating_counts.get(r, 0)} for r in range(1, 6)]
 
-        category_breakdown = list(
-            queryset.values("category").annotate(count=Count("id")).order_by("category")
-        )
+        category_breakdown = list(queryset.values("category").annotate(count=Count("id")).order_by("category"))
         average_rating = queryset.aggregate(avg=Avg("rating"))["avg"]
 
         # Sentiment summary based on the rating scale.
@@ -193,9 +175,7 @@ class FeedbackAnalyticsViewSet(viewsets.GenericViewSet):
         recent = queryset.filter(created_at__date__gte=start)
         day_counts = {
             row["day"]: row["count"]
-            for row in recent.extra(select={"day": "date(created_at)"})
-            .values("day")
-            .annotate(count=Count("id"))
+            for row in recent.extra(select={"day": "date(created_at)"}).values("day").annotate(count=Count("id"))
         }
         for offset in range(days):
             day = start + timedelta(days=offset)
@@ -272,9 +252,7 @@ class FeedbackSurveyViewSet(viewsets.ModelViewSet):
                 {"detail": "This survey is not active."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        customer = Customer.objects.filter(
-            tenant=self.request.tenant, user=self.request.user
-        ).first()
+        customer = Customer.objects.filter(tenant=self.request.tenant, user=self.request.user).first()
         if customer is None:
             return Response(
                 {"detail": "Customer profile required to submit a survey response."},
@@ -304,9 +282,7 @@ class FeedbackResponseViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         """Return responses scoped to the tenant."""
-        queryset = FeedbackResponse.objects.for_tenant(self.request.tenant).select_related(
-            "survey", "customer"
-        )
+        queryset = FeedbackResponse.objects.for_tenant(self.request.tenant).select_related("survey", "customer")
         if self.request.user.role == User.Role.CUSTOMER:
             queryset = queryset.filter(customer__user=self.request.user)
         return queryset

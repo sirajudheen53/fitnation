@@ -79,9 +79,7 @@ class AIMealPlanWriteSerializer(serializers.ModelSerializer):
         start = attrs.get("start_date")
         end = attrs.get("end_date")
         if start and end and end < start:
-            raise serializers.ValidationError(
-                {"end_date": "end_date cannot be before start_date."}
-            )
+            raise serializers.ValidationError({"end_date": "end_date cannot be before start_date."})
         return attrs
 
 

@@ -252,8 +252,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Seeded {created} products for tenant '{tenant.name}' "
-                f"across {len(categories)} categories.",
+                f"Seeded {created} products for tenant '{tenant.name}' " f"across {len(categories)} categories.",
             )
         )
 

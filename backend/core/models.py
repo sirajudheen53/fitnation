@@ -3,6 +3,7 @@ from django.db import models
 
 class Tenant(models.Model):
     """Tenant model with essential fields for multi‑tenant architecture."""
+
     class SubscriptionPlan(models.TextChoices):
         STARTER = "starter", "Starter"
         PROFESSIONAL = "professional", "Professional"

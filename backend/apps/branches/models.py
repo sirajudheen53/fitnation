@@ -16,9 +16,7 @@ class Branch(TenantModelMixin):
         MAIN = "main", "Main"
         SUB = "sub", "Sub-branch"
 
-    uuid = models.UUIDField(
-        default=uuid.uuid4, editable=False, unique=True, db_index=True
-    )
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
     name = models.CharField(max_length=200)
     branch_type = models.CharField(
         max_length=10,

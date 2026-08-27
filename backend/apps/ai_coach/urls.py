@@ -1,7 +1,9 @@
 """AI Coach URL configuration."""
+
 from django.urls import path
 from rest_framework.routers import DefaultRouter
-from .views import ChatView, ConversationMessagesView, AIConversationViewSet, AIRecommendationViewSet
+
+from .views import AIConversationViewSet, AIRecommendationViewSet, ChatView, ConversationMessagesView
 
 router = DefaultRouter()
 router.register(r"conversations", AIConversationViewSet, basename="ai-conversation")

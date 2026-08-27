@@ -434,9 +434,7 @@ class FeedbackSurveyAPITests(APITestCase):
     def test_responses_list_scoped_to_tenant(self) -> None:
         """Survey responses list is tenant-scoped."""
         survey = FeedbackSurvey.objects.create(tenant=self.tenant, name="S1")
-        FeedbackResponse.objects.create(
-            tenant=self.tenant, survey=survey, customer=self.customer, answers={}
-        )
+        FeedbackResponse.objects.create(tenant=self.tenant, survey=survey, customer=self.customer, answers={})
         self._auth(self.owner_token)
         response = self.client.get("/api/v1/feedback/feedback-responses/")
         self.assertEqual(response.status_code, 200)
@@ -472,8 +470,6 @@ class FeedbackSerializerTests(TestCase):
         """Customers cannot set the response fields through the write serializer."""
         from apps.feedback.serializers import FeedbackWriteSerializer
 
-        serializer = FeedbackWriteSerializer(
-            data={"rating": 5, "category": "workout", "response": "hacked"}
-        )
+        serializer = FeedbackWriteSerializer(data={"rating": 5, "category": "workout", "response": "hacked"})
         self.assertTrue(serializer.is_valid())
         self.assertNotIn("response", serializer.validated_data)

@@ -219,11 +219,7 @@ class DietPlanSerializer(serializers.ModelSerializer):
             Rounded average daily calorie total, or 0 when there are no days
             with a non-zero total.
         """
-        totals = [
-            day.total_calories
-            for day in plan.days.all()
-            if day.total_calories
-        ]
+        totals = [day.total_calories for day in plan.days.all() if day.total_calories]
         if not totals:
             return 0
         return round(sum(totals) / len(totals))

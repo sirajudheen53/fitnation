@@ -22,6 +22,12 @@ from apps.users.serializers import (
     LoginSerializer,
     OTPRequestSerializer,
     OTPVerifySerializer,
+    TrainerCreateSerializer,
+    TrainerCustomerAssignmentSerializer,
+    TrainerMetricsSerializer,
+    TrainerScheduleSerializer,
+    TrainerSerializer,
+    TrainerUpdateSerializer,
     UserCreateSerializer,
     UserSerializer,
     UserUpdateSerializer,
@@ -46,14 +52,6 @@ from apps.users.trainer_services import (
     unassign_customer_from_trainer,
     update_schedule,
     update_trainer,
-)
-from apps.users.serializers import (
-    TrainerCreateSerializer,
-    TrainerCustomerAssignmentSerializer,
-    TrainerSerializer,
-    TrainerUpdateSerializer,
-    TrainerScheduleSerializer,
-    TrainerMetricsSerializer,
 )
 
 
@@ -350,9 +348,7 @@ class TrainerViewSet(ViewSet):
             profile_photo=data.get("profile_photo", ""),
             actor=request.user,
         )
-        return Response(
-            TrainerSerializer(trainer).data, status=status.HTTP_201_CREATED
-        )
+        return Response(TrainerSerializer(trainer).data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request: Request, pk: int) -> Response:
         """Retrieve a single trainer."""
@@ -422,9 +418,7 @@ class TrainerViewSet(ViewSet):
         except TrainerSchedule.DoesNotExist as exc:
             raise NotFound("Schedule entry not found") from exc
 
-        serializer = TrainerScheduleSerializer(
-            schedule, data=request.data, partial=True
-        )
+        serializer = TrainerScheduleSerializer(schedule, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         schedule = update_schedule(schedule, **data)

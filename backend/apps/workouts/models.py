@@ -173,10 +173,7 @@ class WorkoutExercise(TenantModelMixin):
 
         if self.rpe is not None and not (1 <= self.rpe <= 10):
             raise ValidationError({"rpe": "RPE must be between 1 and 10."})
-        if (
-            self.alternate_exercise_id
-            and self.alternate_exercise.tenant_id != self.tenant_id
-        ):
+        if self.alternate_exercise_id and self.alternate_exercise.tenant_id != self.tenant_id:
             raise ValidationError(
                 {"alternate_exercise": "Alternate exercise must belong to the same tenant."},
             )

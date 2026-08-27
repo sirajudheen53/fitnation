@@ -37,9 +37,7 @@ class TrainerViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Return trainers belonging to the request's tenant."""
-        return Trainer.objects.select_related("user").filter(
-            user__tenant=self.request.tenant
-        ).order_by("-created_at")
+        return Trainer.objects.select_related("user").filter(user__tenant=self.request.tenant).order_by("-created_at")
 
     @action(detail=True, methods=["get"], url_path="performance")
     def performance(self, request: Request, pk: int) -> Response:
@@ -64,9 +62,7 @@ class TrainerViewSet(viewsets.ModelViewSet):
                 "average_rating": aggregate["avg_rating"],
                 "average_customer_count": aggregate["avg_customers"] or 0,
                 "latest_month": latest.month if latest else None,
-                "monthly_records": TrainerPerformanceSerializer(
-                    records, many=True
-                ).data,
+                "monthly_records": TrainerPerformanceSerializer(records, many=True).data,
             }
         )
 
@@ -122,9 +118,7 @@ class TrainerPerformanceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Return performance records belonging to the request's tenant."""
-        return TrainerPerformance.objects.for_tenant(self.request.tenant).select_related(
-            "trainer__user"
-        )
+        return TrainerPerformance.objects.for_tenant(self.request.tenant).select_related("trainer__user")
 
     def perform_create(self, serializer):
         """Create a performance record, scoped to the request's tenant."""
@@ -143,9 +137,7 @@ class TrainerScheduleViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Return schedules belonging to the request's tenant."""
-        return TrainerSchedule.objects.for_tenant(self.request.tenant).select_related(
-            "trainer__user"
-        )
+        return TrainerSchedule.objects.for_tenant(self.request.tenant).select_related("trainer__user")
 
     def perform_create(self, serializer):
         """Create a schedule entry, scoped to the request's tenant."""

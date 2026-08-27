@@ -1,12 +1,15 @@
 """AI Coach views — FBOS-017."""
+
 from rest_framework import status
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import IsAuthenticated
-from apps.users.authentication import TenantTokenAuthentication
-from apps.tenants.permissions import IsTenantMember
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.viewsets import ModelViewSet
+
 from apps.permissions.permissions import RolePermission
+from apps.tenants.permissions import IsTenantMember
+from apps.users.authentication import TenantTokenAuthentication
+
 from .models import AIConversation, AIMessage, AIRecommendation
 from .serializers import (
     AIConversationSerializer,
@@ -43,7 +46,8 @@ class ChatView(APIView):
             conversation = AIConversation.objects.get(id=conversation_id, user=request.user)
         else:
             conversation = AIConversation.objects.create(
-                tenant_id=request.user.tenant_id, user=request.user,
+                tenant_id=request.user.tenant_id,
+                user=request.user,
                 title=data["message"][:50],
             )
         AIMessage.objects.create(conversation=conversation, role="user", content=data["message"])
@@ -52,8 +56,10 @@ class ChatView(APIView):
         recommendation = None
         if recommendation_data:
             rec = AIRecommendation.objects.create(
-                tenant_id=request.user.tenant_id, user=request.user,
-                conversation=conversation, type=recommendation_data["type"],
+                tenant_id=request.user.tenant_id,
+                user=request.user,
+                conversation=conversation,
+                type=recommendation_data["type"],
                 content=recommendation_data["content"],
             )
             recommendation = {"id": rec.id, "type": rec.type, "content": rec.content}

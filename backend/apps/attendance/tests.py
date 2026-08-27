@@ -77,12 +77,8 @@ class AttendanceModelTests(TestCase):
             customer=self.customer_a,
             check_in_time=timezone.now(),
         )
-        self.assertEqual(
-            AttendanceRecord.objects.for_tenant(self.tenant_a).count(), 1
-        )
-        self.assertEqual(
-            AttendanceRecord.objects.for_tenant(self.tenant_b).count(), 0
-        )
+        self.assertEqual(AttendanceRecord.objects.for_tenant(self.tenant_a).count(), 1)
+        self.assertEqual(AttendanceRecord.objects.for_tenant(self.tenant_b).count(), 0)
 
     def test_trainer_attendance_date_auto_set(self) -> None:
         """Trainer attendance date defaults to check_in_time's local date."""
@@ -136,9 +132,7 @@ class AttendanceAPITests(APITestCase):
             "method": "qr",
         }
         payload.update(overrides)
-        return self.client.post(
-            "/api/v1/attendance/attendance/", payload, format="json"
-        )
+        return self.client.post("/api/v1/attendance/attendance/", payload, format="json")
 
     def test_log_attendance(self) -> None:
         """Owners can log attendance for a customer."""
@@ -150,21 +144,15 @@ class AttendanceAPITests(APITestCase):
     def test_list_and_filter_attendance(self) -> None:
         """Attendance can be listed and filtered by customer and date."""
         self._log()
-        response = self.client.get(
-            f"/api/v1/attendance/attendance/?customer={self.customer.id}"
-        )
+        response = self.client.get(f"/api/v1/attendance/attendance/?customer={self.customer.id}")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 1)
 
-        response = self.client.get(
-            "/api/v1/attendance/attendance/?date=2026-08-23"
-        )
+        response = self.client.get("/api/v1/attendance/attendance/?date=2026-08-23")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 1)
 
-        response = self.client.get(
-            "/api/v1/attendance/attendance/?date=2026-08-24"
-        )
+        response = self.client.get("/api/v1/attendance/attendance/?date=2026-08-24")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 0)
 
@@ -183,9 +171,7 @@ class AttendanceAPITests(APITestCase):
     def test_reports_daily(self) -> None:
         """The reports action aggregates daily attendance counts."""
         self._log()
-        response = self.client.get(
-            "/api/v1/attendance/attendance/reports/?period=daily"
-        )
+        response = self.client.get("/api/v1/attendance/attendance/reports/?period=daily")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["period"], "daily")
         total = sum(r["count"] for r in response.data["results"])
@@ -193,12 +179,8 @@ class AttendanceAPITests(APITestCase):
 
     def test_tenant_isolation(self) -> None:
         """A user cannot see another tenant's attendance records."""
-        other_tenant = provision_tenant(
-            name="Other Gym", contact_email="other@local.test"
-        )
-        other_branch = Branch.objects.create(
-            tenant=other_tenant, name="Other Branch", address_line1="Other"
-        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_branch = Branch.objects.create(tenant=other_tenant, name="Other Branch", address_line1="Other")
         other_customer = _make_customer(other_tenant, "other@local.test")
         AttendanceRecord.objects.create(
             tenant=other_tenant,
@@ -259,9 +241,7 @@ class TrainerAttendanceAPITests(APITestCase):
             },
             format="json",
         )
-        response = self.client.get(
-            "/api/v1/attendance/trainer-attendance/reports/?period=weekly"
-        )
+        response = self.client.get("/api/v1/attendance/trainer-attendance/reports/?period=weekly")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["period"], "weekly")
         total = sum(r["count"] for r in response.data["results"])

@@ -1,5 +1,6 @@
 from django.core.exceptions import PermissionDenied
 from django.utils.deprecation import MiddlewareMixin
+
 from core.models import Tenant
 
 

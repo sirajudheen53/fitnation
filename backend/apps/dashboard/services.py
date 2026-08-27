@@ -38,33 +38,19 @@ def get_overview(tenant: Any) -> dict:
     today = timezone.localdate()
 
     total_members = Customer.objects.for_tenant(tenant).count()
-    active_memberships = Membership.objects.for_tenant(tenant).filter(
-        status=Membership.Status.ACTIVE
-    ).count()
+    active_memberships = Membership.objects.for_tenant(tenant).filter(status=Membership.Status.ACTIVE).count()
 
     # Revenue summary (completed payments only).
-    paid_qs = Payment.objects.for_tenant(tenant).filter(
-        status=Payment.Status.COMPLETED
-    )
+    paid_qs = Payment.objects.for_tenant(tenant).filter(status=Payment.Status.COMPLETED)
     total_revenue = _sum(paid_qs.values_list("amount", flat=True))
-    month_start = timezone.make_aware(
-        datetime.combine(today.replace(day=1), datetime.min.time())
-    )
-    this_month = _sum(
-        paid_qs.filter(paid_at__gte=month_start).values_list("amount", flat=True)
-    )
+    month_start = timezone.make_aware(datetime.combine(today.replace(day=1), datetime.min.time()))
+    this_month = _sum(paid_qs.filter(paid_at__gte=month_start).values_list("amount", flat=True))
 
-    today_attendance = AttendanceRecord.objects.for_tenant(tenant).filter(
-        date=today
-    ).count()
+    today_attendance = AttendanceRecord.objects.for_tenant(tenant).filter(date=today).count()
 
-    trainer_count = User.objects.filter(
-        tenant=tenant, role=User.Role.TRAINER, trainer_profile__isnull=False
-    ).count()
+    trainer_count = User.objects.filter(tenant=tenant, role=User.Role.TRAINER, trainer_profile__isnull=False).count()
 
-    pending_payments = Payment.objects.for_tenant(tenant).filter(
-        status=Payment.Status.PENDING
-    ).count()
+    pending_payments = Payment.objects.for_tenant(tenant).filter(status=Payment.Status.PENDING).count()
 
     data = {
         "total_members": total_members,
@@ -90,10 +76,7 @@ def get_revenue_breakdown(tenant: Any, period: str = "monthly") -> dict:
     if period not in {"daily", "weekly", "monthly"}:
         period = "monthly"
 
-    paid = (
-        Payment.objects.for_tenant(tenant)
-        .filter(status=Payment.Status.COMPLETED, paid_at__isnull=False)
-    )
+    paid = Payment.objects.for_tenant(tenant).filter(status=Payment.Status.COMPLETED, paid_at__isnull=False)
 
     buckets: dict[str, Decimal] = {}
     for payment in paid.iterator(chunk_size=500):
@@ -101,10 +84,7 @@ def get_revenue_breakdown(tenant: Any, period: str = "monthly") -> dict:
         key = _bucket_key(day, period)
         buckets[key] = buckets.get(key, Decimal(0)) + payment.amount
 
-    series = [
-        {"period": key, "amount": round(float(amount), 2)}
-        for key, amount in sorted(buckets.items())
-    ]
+    series = [{"period": key, "amount": round(float(amount), 2)} for key, amount in sorted(buckets.items())]
     return {"period": period, "results": series}
 
 
@@ -129,10 +109,7 @@ def get_attendance_analytics(tenant: Any) -> dict:
         .annotate(count=Count("id"))
         .order_by("-count", "hour")
     )
-    peak_hours = [
-        {"hour": int(row["hour"] or 0), "count": row["count"]}
-        for row in peak_qs
-    ]
+    peak_hours = [{"hour": int(row["hour"] or 0), "count": row["count"]} for row in peak_qs]
 
     # Weekly counts: bucket by ISO week start date.
     weekly: dict[str, int] = {}
@@ -141,10 +118,7 @@ def get_attendance_analytics(tenant: Any) -> dict:
         week_start = day - timedelta(days=day.weekday())
         weekly[week_start.isoformat()] = weekly.get(week_start.isoformat(), 0) + 1
 
-    weekly_counts = [
-        {"week": key, "count": value}
-        for key, value in sorted(weekly.items())
-    ]
+    weekly_counts = [{"week": key, "count": value} for key, value in sorted(weekly.items())]
 
     return {
         "peak_hours": peak_hours,
@@ -162,11 +136,7 @@ def get_membership_stats(tenant: Any) -> dict:
         "cancelled": qs.filter(status=Membership.Status.CANCELLED).count(),
     }
 
-    plan_distribution = list(
-        qs.values("plan__name", "plan__plan_type")
-        .annotate(count=Count("id"))
-        .order_by("-count")
-    )
+    plan_distribution = list(qs.values("plan__name", "plan__plan_type").annotate(count=Count("id")).order_by("-count"))
     plan_distribution = [
         {
             "plan": row["plan__name"],
@@ -189,9 +159,7 @@ def get_trainer_performance(tenant: Any) -> dict:
     ``TrainerAssignment`` counts to give a rounded performance view.
     """
     perf = TrainerPerformance.objects.for_tenant(tenant)
-    assignments = TrainerAssignment.objects.for_tenant(tenant).filter(
-        is_active=True
-    )
+    assignments = TrainerAssignment.objects.for_tenant(tenant).filter(is_active=True)
 
     revenue_by_trainer: dict[int, Decimal] = {}
     rating_by_trainer: dict[int, Decimal] = {}
@@ -202,21 +170,23 @@ def get_trainer_performance(tenant: Any) -> dict:
         if row["rating_avg"] is not None:
             current = rating_by_trainer.get(tid)
             rating_by_trainer[tid] = max(current or Decimal(0), row["rating_avg"])
-        sessions_by_trainer[tid] = sessions_by_trainer.get(tid, 0) + (
-            row["sessions_completed"] or 0
-        )
+        sessions_by_trainer[tid] = sessions_by_trainer.get(tid, 0) + (row["sessions_completed"] or 0)
 
     client_count_by_trainer: dict[int, int] = {}
     for row in assignments.values("trainer_id").annotate(count=Count("id")):
         client_count_by_trainer[row["trainer_id"]] = row["count"]
 
     trainer_ids = set(revenue_by_trainer) | set(client_count_by_trainer)
-    names = {
-        t.id: (t.user.get_full_name() or t.user.email)
-        for t in User.objects.filter(
-            id__in=trainer_ids, trainer_profile__isnull=False
-        ).select_related("trainer_profile", "trainer_profile__user")
-    } if trainer_ids else {}
+    names = (
+        {
+            t.id: (t.user.get_full_name() or t.user.email)
+            for t in User.objects.filter(id__in=trainer_ids, trainer_profile__isnull=False).select_related(
+                "trainer_profile", "trainer_profile__user"
+            )
+        }
+        if trainer_ids
+        else {}
+    )
 
     rows = []
     for tid in trainer_ids:
@@ -225,11 +195,7 @@ def get_trainer_performance(tenant: Any) -> dict:
                 "trainer_id": tid,
                 "name": names.get(tid, f"Trainer #{tid}"),
                 "revenue": round(float(revenue_by_trainer.get(tid, Decimal(0))), 2),
-                "rating_avg": (
-                    round(float(rating_by_trainer[tid]), 2)
-                    if tid in rating_by_trainer
-                    else None
-                ),
+                "rating_avg": (round(float(rating_by_trainer[tid]), 2) if tid in rating_by_trainer else None),
                 "client_count": client_count_by_trainer.get(tid, 0),
                 "sessions_completed": sessions_by_trainer.get(tid, 0),
             }
@@ -253,12 +219,7 @@ def _sum(values: Any) -> Decimal:
 def _read(tenant: Any, name: str) -> dict | None:
     """Read a cached metric for the tenant, if fresh."""
     try:
-        cache = (
-            DashboardCache.objects.for_tenant(tenant)
-            .filter(metric_name=name)
-            .order_by("-date")
-            .first()
-        )
+        cache = DashboardCache.objects.for_tenant(tenant).filter(metric_name=name).order_by("-date").first()
         if cache is not None and cache.date >= timezone.localdate():
             return cache.metric_value
     except DashboardCache.DoesNotExist:

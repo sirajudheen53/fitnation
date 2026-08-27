@@ -28,7 +28,6 @@ from apps.workouts.serializers import (
     WorkoutPlanSerializer,
 )
 
-
 # Map write HTTP methods to workout permissions for request-time checks.
 _METHOD_PERMISSIONS: dict[str, str] = {
     "POST": "workouts.create_workout",

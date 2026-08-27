@@ -55,9 +55,7 @@ class BranchRetrieveUpdateView(APIView):
         try:
             branch = Branch.objects.for_tenant(request.tenant).get(id=pk)
         except Branch.DoesNotExist:
-            return Response(
-                {"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         serializer = BranchSerializer(branch)
         return Response(serializer.data)
 
@@ -66,9 +64,7 @@ class BranchRetrieveUpdateView(APIView):
         try:
             branch = Branch.objects.for_tenant(request.tenant).get(id=pk)
         except Branch.DoesNotExist:
-            return Response(
-                {"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         serializer = BranchSerializer(branch, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()

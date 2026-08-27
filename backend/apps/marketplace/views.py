@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
+from apps.marketplace import services
 from apps.marketplace.models import (
     CartItem,
     Order,
@@ -17,6 +18,7 @@ from apps.marketplace.models import (
     Product,
     ProductCategory,
 )
+from apps.marketplace.selectors import get_or_create_active_cart
 from apps.marketplace.serializers import (
     CartSerializer,
     OrderDetailSerializer,
@@ -28,8 +30,6 @@ from apps.marketplace.serializers import (
     ProductListSerializer,
     ProductWriteSerializer,
 )
-from apps.marketplace import services
-from apps.marketplace.selectors import get_or_create_active_cart
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -56,11 +56,7 @@ class ProductCategoryViewSet(ModelViewSet):
 
     def get_queryset(self) -> ProductCategory:
         """Return categories scoped to the tenant with product counts."""
-        return (
-            ProductCategory.objects.for_tenant(self.request.tenant)
-            .annotate(product_count=Count("products"))
-            .all()
-        )
+        return ProductCategory.objects.for_tenant(self.request.tenant).annotate(product_count=Count("products")).all()
 
     def perform_create(self, serializer: ProductCategorySerializer) -> None:
         """Persist the new category scoped to the request tenant."""

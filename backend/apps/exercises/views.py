@@ -1,10 +1,11 @@
 """Exercise library API views."""
 
 from django.db.models import Count
-from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ModelViewSet
+
+from django_filters.rest_framework import DjangoFilterBackend
 
 from apps.exercises.models import Exercise, ExerciseCategory
 from apps.exercises.serializers import (
@@ -38,9 +39,7 @@ class ExerciseCategoryViewSet(ModelViewSet):
     def get_queryset(self):
         """Return categories scoped to the tenant with exercise counts."""
         return (
-            ExerciseCategory.objects.for_tenant(self.request.tenant)
-            .annotate(exercise_count=Count("exercises"))
-            .all()
+            ExerciseCategory.objects.for_tenant(self.request.tenant).annotate(exercise_count=Count("exercises")).all()
         )
 
     def perform_create(self, serializer) -> None:

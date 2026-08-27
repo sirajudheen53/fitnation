@@ -78,7 +78,4 @@ def build_progress_trend(
     for log in qs.order_by("date", "created_at", "id"):
         by_date[log.date] = float(log.value)
 
-    return [
-        {"date": d.isoformat(), "value": v}
-        for d, v in sorted(by_date.items())
-    ]
+    return [{"date": d.isoformat(), "value": v} for d, v in sorted(by_date.items())]

@@ -84,10 +84,7 @@ class FeedbackSurvey(TenantModelMixin):
     questions = models.JSONField(
         default=list,
         blank=True,
-        help_text=(
-            "Array of {question_text, question_type: rating|text|choice, "
-            "choices: [..]} objects."
-        ),
+        help_text=("Array of {question_text, question_type: rating|text|choice, " "choices: [..]} objects."),
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -7,6 +7,7 @@ DJANGO_SETTINGS_MODULE=config.settings.prod
 """
 
 import os
+
 from .base import *  # noqa: F401, F403
 from .base import env
 

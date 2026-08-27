@@ -172,9 +172,7 @@ class SelectPlanView(APIView):
         data = serializer.validated_data
 
         try:
-            result = select_plan_and_provision(
-                data["registration_id"], data["plan_code"]
-            )
+            result = select_plan_and_provision(data["registration_id"], data["plan_code"])
         except VendorRegistration.DoesNotExist:
             return Response(
                 {"error": "Invalid registration or already provisioned"},

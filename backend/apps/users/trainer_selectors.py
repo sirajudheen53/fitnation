@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from django.db.models import QuerySet
 
     from apps.tenants.models import Tenant
-    from apps.users.models import Trainer, TrainerSchedule, TrainerCustomerAssignment
+    from apps.users.models import Trainer, TrainerCustomerAssignment, TrainerSchedule
 
 
 def trainer_list(
@@ -65,11 +65,7 @@ def trainer_get_by_id(tenant: "Tenant", trainer_id: int) -> "Trainer":
     """
     from apps.users.models import Trainer
 
-    return (
-        Trainer.objects.select_related("user")
-        .filter(user__tenant=tenant)
-        .get(id=trainer_id)
-    )
+    return Trainer.objects.select_related("user").filter(user__tenant=tenant).get(id=trainer_id)
 
 
 def trainer_schedule_list(

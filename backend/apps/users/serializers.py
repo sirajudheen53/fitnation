@@ -76,9 +76,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
             User.Role.GYM_OWNER,
             User.Role.MANAGER,
         }:
-            raise serializers.ValidationError(
-                "Managers cannot create owners or other managers."
-            )
+            raise serializers.ValidationError("Managers cannot create owners or other managers.")
         return value
 
 
@@ -111,9 +109,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             and instance.role != value
             and value in {User.Role.GYM_OWNER, User.Role.MANAGER}
         ):
-            raise serializers.ValidationError(
-                "Managers cannot change users to owner or manager."
-            )
+            raise serializers.ValidationError("Managers cannot change users to owner or manager.")
         return value
 
 
@@ -238,13 +234,12 @@ class TrainerCreateSerializer(serializers.Serializer):
         certifications = data.get("certifications")
         if isinstance(certifications, str):
             import json
+
             try:
                 data = data.copy()
                 data["certifications"] = json.loads(certifications)
             except (json.JSONDecodeError, ValueError):
-                raise serializers.ValidationError(
-                    {"certifications": "Value must be valid JSON."}
-                )
+                raise serializers.ValidationError({"certifications": "Value must be valid JSON."})
         return super().to_internal_value(data)
 
 
@@ -271,9 +266,7 @@ class TrainerCustomerAssignmentSerializer(serializers.ModelSerializer):
 
     customer_name = serializers.CharField(source="customer.name", read_only=True)
     customer_email = serializers.CharField(source="customer.email", read_only=True)
-    trainer_email = serializers.CharField(
-        source="trainer.user.email", read_only=True
-    )
+    trainer_email = serializers.CharField(source="trainer.user.email", read_only=True)
 
     class Meta:
         """Serializer metadata."""

@@ -30,7 +30,6 @@ from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 
-
 _METHOD_PERMISSIONS: dict[str, str] = {
     "POST": "ai_nutrition.create",
     "PUT": "ai_nutrition.edit",
@@ -124,9 +123,7 @@ class AIMealPlanViewSet(ModelViewSet):
             )
 
         return Response(
-            AIMealPlanReadSerializer(
-                plan, context=self.get_serializer_context()
-            ).data,
+            AIMealPlanReadSerializer(plan, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -211,9 +208,7 @@ class ShoppingListViewSet(ModelViewSet):
             )
 
         return Response(
-            ShoppingListSerializer(
-                shopping_list, context=self.get_serializer_context()
-            ).data,
+            ShoppingListSerializer(shopping_list, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
         )
 

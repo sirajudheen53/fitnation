@@ -81,9 +81,7 @@ def _pick_food(
     """
     exclude_ids = set(exclude or [])
     for group in group_preferences:
-        candidates = [
-            c for c in _filtered_foods(group, dietary_restrictions) if c.id not in exclude_ids
-        ]
+        candidates = [c for c in _filtered_foods(group, dietary_restrictions) if c.id not in exclude_ids]
         if candidates:
             return rng.choice(candidates)
 
@@ -92,9 +90,7 @@ def _pick_food(
     if any_food:
         return rng.choice(any_food)
 
-    raise NutritionServiceError(
-        "No food items available to build a meal plan. Seed the diet catalog first."
-    )
+    raise NutritionServiceError("No food items available to build a meal plan. Seed the diet catalog first.")
 
 
 def generate_meal_plan(

@@ -36,9 +36,7 @@ class TenantTokenAuthentication(BaseAuthentication):
 
         token_key = auth_header[len(self.keyword) :].strip()
         try:
-            token = AuthToken.objects.select_related("user", "tenant").get(
-                key=token_key, is_active=True
-            )
+            token = AuthToken.objects.select_related("user", "tenant").get(key=token_key, is_active=True)
         except AuthToken.DoesNotExist as exc:
             raise AuthenticationFailed("Invalid or expired token") from exc
 

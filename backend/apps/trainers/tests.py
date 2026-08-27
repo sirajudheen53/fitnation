@@ -94,12 +94,8 @@ class TrainerModelTests(TestCase):
             trainer=self.trainer_b,
             customer=self.customer_b,
         )
-        self.assertEqual(
-            TrainerAssignment.objects.for_tenant(self.tenant_a).count(), 1
-        )
-        self.assertEqual(
-            TrainerAssignment.objects.for_tenant(self.tenant_b).count(), 1
-        )
+        self.assertEqual(TrainerAssignment.objects.for_tenant(self.tenant_a).count(), 1)
+        self.assertEqual(TrainerAssignment.objects.for_tenant(self.tenant_b).count(), 1)
 
     def test_performance_unique_within_tenant(self) -> None:
         """A tenant cannot have duplicate (trainer, month) performance records."""
@@ -144,12 +140,8 @@ class TrainerModelTests(TestCase):
             month="2026-01-01",
             revenue=Decimal("5000.00"),
         )
-        self.assertEqual(
-            TrainerPerformance.objects.for_tenant(self.tenant_a).count(), 1
-        )
-        self.assertEqual(
-            TrainerPerformance.objects.for_tenant(self.tenant_b).count(), 1
-        )
+        self.assertEqual(TrainerPerformance.objects.for_tenant(self.tenant_a).count(), 1)
+        self.assertEqual(TrainerPerformance.objects.for_tenant(self.tenant_b).count(), 1)
 
 
 class TrainerScheduleModelTests(TestCase):
@@ -285,9 +277,7 @@ class TrainerAPITests(APITestCase):
         self.assertEqual(list_resp.status_code, 200)
         self.assertEqual(len(list_resp.data), 1)
 
-        unassign_resp = self.client.post(
-            f"/api/v1/trainer-assignments/{assignment_id}/unassign/"
-        )
+        unassign_resp = self.client.post(f"/api/v1/trainer-assignments/{assignment_id}/unassign/")
         self.assertEqual(unassign_resp.status_code, 200)
         self.assertFalse(unassign_resp.data["is_active"])
         self.assertIsNotNone(unassign_resp.data["unassigned_at"])
@@ -296,15 +286,11 @@ class TrainerAPITests(APITestCase):
         """Assignments are scoped to the authenticated tenant."""
         trainer = _make_trainer(self.tenant, email="a@trainer.test")
         customer = _make_customer(self.tenant, "a@customer.test")
-        TrainerAssignment.objects.create(
-            tenant=self.tenant, trainer=trainer, customer=customer
-        )
+        TrainerAssignment.objects.create(tenant=self.tenant, trainer=trainer, customer=customer)
         other_tenant = provision_tenant(name="Other", contact_email="other@local.test")
         other_trainer = _make_trainer(other_tenant, "b@trainer.test")
         other_customer = _make_customer(other_tenant, "b@customer.test")
-        TrainerAssignment.objects.create(
-            tenant=other_tenant, trainer=other_trainer, customer=other_customer
-        )
+        TrainerAssignment.objects.create(tenant=other_tenant, trainer=other_trainer, customer=other_customer)
 
         response = self.client.get("/api/v1/trainer-assignments/")
         self.assertEqual(response.status_code, 200)

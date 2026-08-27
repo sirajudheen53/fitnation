@@ -59,15 +59,9 @@ class TenantProvisioningTests(TestCase):
                 contact_email=f"{plan_code}@local",
                 subscription_plan=plan_code,
             )
-            self.assertEqual(
-                tenant.config.max_branches, expected_limits["max_branches"]
-            )
-            self.assertEqual(
-                tenant.config.max_customers, expected_limits["max_customers"]
-            )
-            self.assertEqual(
-                tenant.config.max_trainers, expected_limits["max_trainers"]
-            )
+            self.assertEqual(tenant.config.max_branches, expected_limits["max_branches"])
+            self.assertEqual(tenant.config.max_customers, expected_limits["max_customers"])
+            self.assertEqual(tenant.config.max_trainers, expected_limits["max_trainers"])
 
     def test_unknown_plan_falls_back_to_starter(self) -> None:
         """An unrecognized plan code falls back to starter limits."""

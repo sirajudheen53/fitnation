@@ -1,5 +1,7 @@
 """AI Coach serializers."""
+
 from rest_framework import serializers
+
 from .models import AIConversation, AIMessage, AIRecommendation
 
 

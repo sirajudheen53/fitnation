@@ -29,7 +29,6 @@ from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 
-
 # Map write HTTP methods to diet permissions for request-time checks.
 # RolePermission reads ``view.method_permissions`` *before* the view method body
 # runs, so writes are correctly denied for customers.

@@ -134,9 +134,7 @@ class ShoppingListModelTests(TestCase):
         self.user = User.objects.create_user(
             email="u@ai.test", password="x", role=User.Role.CUSTOMER, tenant=self.tenant
         )
-        self.plan = AIMealPlan.objects.create(
-            tenant=self.tenant, user=self.user, name="P", target_calories=2000
-        )
+        self.plan = AIMealPlan.objects.create(tenant=self.tenant, user=self.user, name="P", target_calories=2000)
 
     def test_shopping_list_status_defaults_active(self) -> None:
         """New shopping list defaults to active."""
@@ -150,14 +148,10 @@ class ShoppingListModelTests(TestCase):
 
     def test_item_requires_tenant(self) -> None:
         """ShoppingListItem without tenant raises."""
-        sl = ShoppingList.objects.create(
-            tenant=self.tenant, user=self.user, meal_plan=self.plan, name="Groceries"
-        )
+        sl = ShoppingList.objects.create(tenant=self.tenant, user=self.user, meal_plan=self.plan, name="Groceries")
         food = _make_food()
         with self.assertRaises(ValueError):
-            ShoppingListItem.objects.create(
-                shopping_list=sl, food_item=food, quantity=1.0, unit="serving"
-            )
+            ShoppingListItem.objects.create(shopping_list=sl, food_item=food, quantity=1.0, unit="serving")
 
 
 class MacroLogModelTests(TestCase):
@@ -172,19 +166,13 @@ class MacroLogModelTests(TestCase):
 
     def test_unique_per_tenant_user_date(self) -> None:
         """Only one macro log per user per day within a tenant."""
-        MacroLog.objects.create(
-            tenant=self.tenant, user=self.user, date=date(2026, 1, 1), calories_consumed=100
-        )
+        MacroLog.objects.create(tenant=self.tenant, user=self.user, date=date(2026, 1, 1), calories_consumed=100)
         with self.assertRaises(Exception):
-            MacroLog.objects.create(
-                tenant=self.tenant, user=self.user, date=date(2026, 1, 1)
-            )
+            MacroLog.objects.create(tenant=self.tenant, user=self.user, date=date(2026, 1, 1))
 
     def test_macro_log_str(self) -> None:
         """String representation shows user and date."""
-        log = MacroLog.objects.create(
-            tenant=self.tenant, user=self.user, date=date(2026, 1, 1)
-        )
+        log = MacroLog.objects.create(tenant=self.tenant, user=self.user, date=date(2026, 1, 1))
         self.assertEqual(str(log), "u@ai.test — 2026-01-01")
 
 
@@ -249,12 +237,26 @@ class NutritionServiceTests(TestCase):
     def test_deterministic_with_seed(self) -> None:
         """Same seed yields the same plan."""
         a = generate_meal_plan(
-            tenant=self.tenant, user=self.user, name="A", target_calories=1,
-            target_protein_g=0, target_carbs_g=0, target_fat_g=0, days=1, seed=99,
+            tenant=self.tenant,
+            user=self.user,
+            name="A",
+            target_calories=1,
+            target_protein_g=0,
+            target_carbs_g=0,
+            target_fat_g=0,
+            days=1,
+            seed=99,
         )
         b = generate_meal_plan(
-            tenant=self.tenant, user=self.user, name="B", target_calories=1,
-            target_protein_g=0, target_carbs_g=0, target_fat_g=0, days=1, seed=99,
+            tenant=self.tenant,
+            user=self.user,
+            name="B",
+            target_calories=1,
+            target_protein_g=0,
+            target_carbs_g=0,
+            target_fat_g=0,
+            days=1,
+            seed=99,
         )
         self.assertEqual(
             [i["food_item_id"] for i in a["items"]],
@@ -290,15 +292,8 @@ class NutritionServiceTests(TestCase):
             days=1,
             seed=5,
         )
-        plan = AIMealPlan.objects.create(
-            tenant=self.tenant, user=self.user, name="Week", target_calories=2000
-        )
-        items = [
-            AIMealPlanItem.objects.create(
-                tenant=self.tenant, meal_plan=plan, **i
-            )
-            for i in result["items"]
-        ]
+        plan = AIMealPlan.objects.create(tenant=self.tenant, user=self.user, name="Week", target_calories=2000)
+        items = [AIMealPlanItem.objects.create(tenant=self.tenant, meal_plan=plan, **i) for i in result["items"]]
         shopping = generate_shopping_list(meal_plan_items=items, name="Shop")
         self.assertTrue(shopping)
         self.assertIn("food_item_id", shopping[0])
@@ -380,9 +375,7 @@ class MealPlanAPITests(AINutritionAPIBase):
             "cuisine_preference": "indian",
             "dietary_restrictions": ["vegetarian"],
         }
-        response = self.client.post(
-            "/api/v1/ai/nutrition/meal-plan/", payload, format="json"
-        )
+        response = self.client.post("/api/v1/ai/nutrition/meal-plan/", payload, format="json")
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(len(response.data["items"]), 28)
         self.assertEqual(response.data["status"], "active")
@@ -427,9 +420,7 @@ class MealPlanAPITests(AINutritionAPIBase):
     def test_tenant_isolation(self) -> None:
         """A different tenant cannot access the plan."""
         other = provision_tenant(name="Other", contact_email="other@ai.api")
-        other_owner = create_owner_user(
-            tenant=other, email="other@ai.api", password_hash="x", contact_name="Other"
-        )
+        other_owner = create_owner_user(tenant=other, email="other@ai.api", password_hash="x", contact_name="Other")
         token = issue_token(other_owner, other)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
         response = self.client.get(f"/api/v1/ai/nutrition/meal-plan/{self.plan.id}/")
@@ -459,9 +450,7 @@ class ShoppingListAPITests(AINutritionAPIBase):
 
     def test_generate_requires_meal_plan(self) -> None:
         """POST without meal_plan returns 400."""
-        response = self.client.post(
-            "/api/v1/ai/nutrition/shopping-list/", {}, format="json"
-        )
+        response = self.client.post("/api/v1/ai/nutrition/shopping-list/", {}, format="json")
         self.assertEqual(response.status_code, 400)
 
     def test_patch_marks_items_purchased(self) -> None:
@@ -487,9 +476,7 @@ class ShoppingListAPITests(AINutritionAPIBase):
 
     def test_delete_shopping_list(self) -> None:
         """DELETE removes the shopping list."""
-        response = self.client.delete(
-            f"/api/v1/ai/nutrition/shopping-list/{self.shopping_list.id}/"
-        )
+        response = self.client.delete(f"/api/v1/ai/nutrition/shopping-list/{self.shopping_list.id}/")
         self.assertEqual(response.status_code, 204)
 
 
@@ -525,12 +512,8 @@ class MacroLogAPITests(AINutritionAPIBase):
 
     def test_trend_weekly(self) -> None:
         """GET /track/trend/ returns weekly aggregates."""
-        MacroLog.objects.create(
-            tenant=self.tenant, user=self.owner, date=date(2026, 8, 24), calories_consumed=1800
-        )
-        MacroLog.objects.create(
-            tenant=self.tenant, user=self.owner, date=date(2026, 8, 25), calories_consumed=2000
-        )
+        MacroLog.objects.create(tenant=self.tenant, user=self.owner, date=date(2026, 8, 24), calories_consumed=1800)
+        MacroLog.objects.create(tenant=self.tenant, user=self.owner, date=date(2026, 8, 25), calories_consumed=2000)
         response = self.client.get("/api/v1/ai/nutrition/track/trend/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["period"], "weekly")

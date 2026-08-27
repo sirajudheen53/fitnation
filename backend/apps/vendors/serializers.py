@@ -28,9 +28,7 @@ class SignupSerializer(serializers.Serializer):
             serializers.ValidationError: If the email belongs to an existing owner.
         """
         if User.objects.filter(email=value, is_owner=True).exists():
-            raise serializers.ValidationError(
-                "This email is already registered as a gym owner."
-            )
+            raise serializers.ValidationError("This email is already registered as a gym owner.")
         return value
 
     def validate_password(self, value: str) -> str:
@@ -46,13 +44,9 @@ class SignupSerializer(serializers.Serializer):
             serializers.ValidationError: If the password is too weak.
         """
         if not any(char.isupper() for char in value):
-            raise serializers.ValidationError(
-                "Password must contain at least one uppercase letter."
-            )
+            raise serializers.ValidationError("Password must contain at least one uppercase letter.")
         if not any(char.isdigit() for char in value):
-            raise serializers.ValidationError(
-                "Password must contain at least one digit."
-            )
+            raise serializers.ValidationError("Password must contain at least one digit.")
         return value
 
 

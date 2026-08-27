@@ -21,11 +21,7 @@ def get_or_create_active_cart(tenant: Tenant, user: User) -> Cart:
     Returns:
         The active ``Cart`` instance (created if necessary).
     """
-    cart = (
-        Cart.objects.for_tenant(tenant)
-        .filter(user=user, status=Cart.Status.ACTIVE)
-        .first()
-    )
+    cart = Cart.objects.for_tenant(tenant).filter(user=user, status=Cart.Status.ACTIVE).first()
     if cart is None:
         cart = Cart.objects.create(tenant=tenant, user=user)
     return cart
