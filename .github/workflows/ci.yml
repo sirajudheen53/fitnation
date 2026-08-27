@@ -101,7 +101,9 @@ jobs:
         with:
           directory: backend
           files: ./backend/coverage.xml
-          fail_ci_if_error: true
+          # No CODECOV_TOKEN configured; coverage gate is already enforced by
+          # pytest --cov-fail-under=80, so don't let the upload block CI.
+          fail_ci_if_error: false
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Frontend: Lint + Test
@@ -162,7 +164,8 @@ jobs:
       - name: Analyze with dart analyze
         # Fail on warnings/errors; ignore info-level style suggestions
         # (use_null_aware_elements, doc-comment formatting) which are not defects.
-        run: dart analyze --no-fatal-infos --fatal-warnings=true
+        # Note: `--fatal-infos` cannot be negated; infos are non-fatal by default.
+        run: dart analyze --fatal-warnings
         continue-on-error: false
 
       - name: Run tests with coverage
