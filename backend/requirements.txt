@@ -44,3 +44,6 @@ razorpay>=1.4,<2.0
 
 # Encryption (Fernet-backed EncryptedCharField)
 cryptography>=44.0,<51.0
+
+# Email (SendGrid)
+sendgrid>=6.0,<7.0

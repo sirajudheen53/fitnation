@@ -9,8 +9,10 @@ from apps.users.views import (
     MeView,
     OTPRequestView,
     OTPVerifyView,
+    ResendVerificationEmailView,
     TrainerViewSet,
     UserViewSet,
+    VerifyEmailView,
 )
 
 router = DefaultRouter()
@@ -23,5 +25,11 @@ urlpatterns = [
     path("auth/me/", MeView.as_view(), name="me"),
     path("auth/otp/request/", OTPRequestView.as_view(), name="otp-request"),
     path("auth/otp/verify/", OTPVerifyView.as_view(), name="otp-verify"),
+    path("auth/verify-email/<str:token>/", VerifyEmailView.as_view(), name="verify-email"),
+    path(
+        "auth/resend-verification/",
+        ResendVerificationEmailView.as_view(),
+        name="resend-verification",
+    ),
     *router.urls,
 ]

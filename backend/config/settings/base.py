@@ -168,6 +168,8 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 # ── Custom User Model ──────────────────────────────────────────────────────────
 AUTH_USER_MODEL = "users.User"
 
+DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="noreply@fitnationapp.com")
+
 # ── Password Validation ─────────────────────────────────────────────────────────
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

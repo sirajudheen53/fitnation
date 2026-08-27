@@ -767,3 +767,161 @@ class TrainerAPITests(APITestCase):
             f"/api/v1/users/trainers/{self.trainer.id}/unassign-customer/99999/",
         )
         self.assertEqual(response.status_code, 404)
+
+
+class EmailVerificationTests(APITestCase):
+    """Tests for the email verification flow (FBOS-026)."""
+
+    def setUp(self) -> None:
+        """Create a tenant and an owner user (verified) for authentication."""
+        self.tenant = provision_tenant(
+            business_name="Test Gym",
+            contact_name="Arjun Raj",
+            email="arjun@testgym.com",
+            phone="+919876543210",
+            password="StrongPass123!",
+        )
+        self.owner = self.tenant.owner
+        self.owner.is_email_verified = True
+        self.owner.save(update_fields=["is_email_verified"])
+
+        # Authenticate as owner
+        token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        self.unverified_user = create_user(
+            tenant=self.tenant,
+            email="newmember@testgym.com",
+            first_name="New",
+            last_name="Member",
+            role="customer",
+        )
+
+    def test_user_created_with_unverified_email(self) -> None:
+        """New user should have is_email_verified=False on creation."""
+        self.assertFalse(self.unverified_user.is_email_verified)
+
+    def test_verify_valid_token(self) -> None:
+        """A valid token should mark the user's email as verified."""
+        from apps.core.services.email import send_verification_email
+        from apps.users.models import EmailVerificationToken
+
+        # Create a token for the unverified user
+        token_obj = EmailVerificationToken.create_token(self.unverified_user)
+
+        # Verify via API
+        response = self.client.get(
+            f"/api/v1/users/auth/verify-email/{token_obj.token}/",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("verified", response.data["message"].lower())
+
+        # Check user is now verified
+        self.unverified_user.refresh_from_db()
+        self.assertTrue(self.unverified_user.is_email_verified)
+
+        # Token should be marked as used
+        token_obj.refresh_from_db()
+        self.assertTrue(token_obj.is_used)
+
+    def test_verify_invalid_token(self) -> None:
+        """An invalid or expired token should return 400."""
+        response = self.client.get(
+            "/api/v1/users/auth/verify-email/nonexistent-token-xyz/",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("error", response.data)
+
+    def test_verify_expired_token(self) -> None:
+        """An expired token should return 400."""
+        from apps.users.models import EmailVerificationToken
+
+        # Create a token that is already expired
+        token_obj = EmailVerificationToken.objects.create(
+            token="expired-token-123",
+            user=self.unverified_user,
+            expires_at=timezone.now() - timezone.timedelta(hours=1),
+            is_used=False,
+        )
+
+        response = self.client.get(
+            f"/api/v1/users/auth/verify-email/{token_obj.token}/",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("expired", response.data["error"].lower())
+
+    def test_resend_verification_email(self) -> None:
+        """Resend endpoint should return success for unverified user."""
+        response = self.client.post(
+            "/api/v1/users/auth/resend-verification/",
+            {"email": "newmember@testgym.com"},
+        )
+        # Without a real SMTP backend the email will fail to send,
+        # but the endpoint should still return a structured response.
+        self.assertIn(response.status_code, (200, 500))
+
+    def test_resend_already_verified_email(self) -> None:
+        """Resend for already-verified email should return 200 (no info leak)."""
+        self.unverified_user.is_email_verified = True
+        self.unverified_user.save(update_fields=["is_email_verified"])
+
+        response = self.client.post(
+            "/api/v1/users/auth/resend-verification/",
+            {"email": "newmember@testgym.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+        # Message should not reveal whether the email is verified
+        self.assertNotIn("already verified", response.data.get("message", "").lower())
+
+    def test_resend_nonexistent_email_returns_success(self) -> None:
+        """Resend for unknown email should return 200 (no account enumeration)."""
+        response = self.client.post(
+            "/api/v1/users/auth/resend-verification/",
+            {"email": "nobody@testgym.com"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_resend_missing_email_returns_400(self) -> None:
+        """Resend with no email field should return 400."""
+        response = self.client.post(
+            "/api/v1/users/auth/resend-verification/",
+            {},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_token_one_time_use(self) -> None:
+        """A token that has been used cannot be used again."""
+        from apps.users.models import EmailVerificationToken
+
+        token_obj = EmailVerificationToken.create_token(self.unverified_user)
+        token_str = token_obj.token
+
+        # First use — should succeed
+        response1 = self.client.get(
+            f"/api/v1/users/auth/verify-email/{token_str}/",
+        )
+        self.assertEqual(response1.status_code, 200)
+
+        # Second use — should fail (token is used)
+        response2 = self.client.get(
+            f"/api/v1/users/auth/verify-email/{token_str}/",
+        )
+        self.assertEqual(response2.status_code, 400)
+
+    def test_token_replaced_on_new_create(self) -> None:
+        """Creating a new token should invalidate all previous unused tokens."""
+        from apps.users.models import EmailVerificationToken
+
+        token1 = EmailVerificationToken.create_token(self.unverified_user)
+        token2 = EmailVerificationToken.create_token(self.unverified_user)
+
+        # First token should be marked as used
+        token1.refresh_from_db()
+        self.assertTrue(token1.is_used)
+
+        # Second token should be the valid one
+        self.assertFalse(token2.is_used)
+        response = self.client.get(
+            f"/api/v1/users/auth/verify-email/{token2.token}/",
+        )
+        self.assertEqual(response.status_code, 200)

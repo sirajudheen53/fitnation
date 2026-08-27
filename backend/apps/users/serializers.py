@@ -26,6 +26,7 @@ class UserSerializer(serializers.ModelSerializer):
             "is_owner",
             "is_active",
             "is_staff",
+            "is_email_verified",
             "tenant_id",
             "tenant_name",
             "created_at",

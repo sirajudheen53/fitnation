@@ -11,12 +11,14 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
 from apps.branches.models import Branch
+from apps.core.services.email import send_verification_email
 from apps.permissions.models import Role, UserRoleAssignment
 from apps.permissions.permissions import RolePermission
 from apps.tenants.models import Tenant
 from apps.tenants.permissions import IsTenantMember
 from apps.users.auth import AuthToken
 from apps.users.authentication import TenantTokenAuthentication
+from apps.users.models import EmailVerificationToken
 from apps.users.selectors import user_get_by_id, user_list
 from apps.users.serializers import (
     LoginSerializer,
@@ -186,6 +188,87 @@ class OTPVerifyView(APIView):
         )
 
 
+class VerifyEmailView(APIView):
+    """Verify a user's email address using a token."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request: Request, token: str) -> Response:
+        """Verify the email token."""
+        try:
+            verification = EmailVerificationToken.objects.select_related("user").get(
+                token=token,
+                is_used=False,
+            )
+        except EmailVerificationToken.DoesNotExist:
+            return Response(
+                {"error": "Invalid or expired verification link."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not verification.is_valid():
+            return Response(
+                {"error": "This verification link has expired. Please request a new one."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = verification.user
+        user.is_email_verified = True
+        user.save(update_fields=["is_email_verified"])
+
+        verification.is_used = True
+        verification.save(update_fields=["is_used"])
+
+        return Response(
+            {"message": "Your email has been verified successfully!"},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ResendVerificationEmailView(APIView):
+    """Resend the verification email to the unverified user."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request: Request) -> Response:
+        """Send a new verification email."""
+        email = request.data.get("email", "").strip()
+        if not email:
+            return Response(
+                {"error": "Email is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # Don't reveal whether email exists
+            return Response(
+                {"message": "If that email is registered, a verification link has been sent."},
+                status=status.HTTP_200_OK,
+            )
+
+        if user.is_email_verified:
+            return Response(
+                {"message": "This email is already verified."},
+                status=status.HTTP_200_OK,
+            )
+
+        sent = send_verification_email(user, request)
+        if sent:
+            return Response(
+                {"message": "Verification email sent. Check your inbox (and spam)."},
+                status=status.HTTP_200_OK,
+            )
+        else:
+            return Response(
+                {"error": "Failed to send verification email. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
 class UserViewSet(ViewSet):
     """Tenant-scoped user management CRUD."""
 
@@ -234,6 +317,9 @@ class UserViewSet(ViewSet):
             branch_id=data.get("branch_id"),
             actor=request.user,
         )
+        # Send email verification for non-owner roles
+        if user.role != User.Role.GYM_OWNER and not user.is_owner:
+            send_verification_email(user, request)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request: Request, pk: int) -> Response:
@@ -348,6 +434,8 @@ class TrainerViewSet(ViewSet):
             profile_photo=data.get("profile_photo", ""),
             actor=request.user,
         )
+        # Send email verification to newly created trainer
+        send_verification_email(trainer.user, request)
         return Response(TrainerSerializer(trainer).data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request: Request, pk: int) -> Response:

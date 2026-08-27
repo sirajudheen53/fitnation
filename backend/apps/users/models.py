@@ -97,6 +97,7 @@ class User(AbstractUser):
     )
     phone = models.CharField(max_length=20, blank=True)
     is_owner = models.BooleanField(default=False)
+    is_email_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -113,6 +114,45 @@ class User(AbstractUser):
     def __str__(self) -> str:
         """Return user label."""
         return f"{self.email} ({self.role})"
+
+
+class EmailVerificationToken(models.Model):
+    """One-time email verification token for a user."""
+
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="verification_tokens",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+
+    def is_valid(self) -> bool:
+        """Check if token is still valid (not used, not expired)."""
+        from django.utils import timezone
+
+        return not self.is_used and self.expires_at > timezone.now()
+
+    @classmethod
+    def create_token(cls, user: "User", hours: int = 24) -> "EmailVerificationToken":
+        """Generate a unique verification token for the user."""
+        import secrets
+
+        from django.utils import timezone
+
+        token_str = secrets.token_urlsafe(48)
+        expires_at = timezone.now() + timezone.timedelta(hours=hours)
+
+        # Invalidate any existing unused tokens for this user
+        cls.objects.filter(user=user, is_used=False).update(is_used=True)
+
+        return cls.objects.create(
+            token=token_str,
+            user=user,
+            expires_at=expires_at,
+        )
 
 
 class Trainer(models.Model):

@@ -63,3 +63,8 @@ STORAGES = {
 
 # Whitenoise middleware for serving static files (no nginx/CDN on dev Cloud Run)
 MIDDLEWARE = ["whitenoise.middleware.WhiteNoiseMiddleware"] + MIDDLEWARE  # noqa: F405
+
+# ── Email (SendGrid) ────────────────────────────────────────────────────────────
+EMAIL_BACKEND = "sendgrid_backend.base.EmailBackend"
+SENDGRID_API_KEY = env.str("SENDGRID_API_KEY", default="")
+DEFAULT_FROM_EMAIL = env.str("DEFAULT_FROM_EMAIL", default="noreply@fitnationapp.com")
