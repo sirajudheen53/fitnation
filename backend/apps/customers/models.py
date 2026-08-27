@@ -48,8 +48,8 @@ class Customer(TenantModelMixin):
         choices=Gender.choices,
         default=Gender.PREFER_NOT_TO_SAY,
     )
-    emergency_contact_name = models.CharField(max_length=200, blank=True)
-    emergency_contact_phone = models.CharField(max_length=20, blank=True)
+    emergency_contact_name = models.CharField(max_length=200, blank=True, null=True)
+    emergency_contact_phone = models.CharField(max_length=20, blank=True, null=True)
     address_street = models.CharField(max_length=300, blank=True)
     address_city = models.CharField(max_length=100, blank=True)
     address_state = models.CharField(max_length=100, blank=True)
