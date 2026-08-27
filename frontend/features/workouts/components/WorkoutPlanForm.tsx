@@ -63,13 +63,35 @@ export function WorkoutPlanForm({
   error,
   loading = false,
 }: WorkoutPlanFormProps) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [goal, setGoal] = useState<WorkoutGoal>("general_fitness");
-  const [difficulty, setDifficulty] = useState<WorkoutDifficulty>("beginner");
-  const [durationWeeks, setDurationWeeks] = useState(4);
-  const [isTemplate, setIsTemplate] = useState(false);
-  const [days, setDays] = useState<DraftDay[]>([]);
+  const [name, setName] = useState(plan?.name ?? "");
+  const [description, setDescription] = useState(plan?.description ?? "");
+  const [goal, setGoal] = useState<WorkoutGoal>(plan?.goal ?? "general_fitness");
+  const [difficulty, setDifficulty] = useState<WorkoutDifficulty>(
+    plan?.difficulty ?? "beginner",
+  );
+  const [durationWeeks, setDurationWeeks] = useState(plan?.duration_weeks ?? 4);
+  const [isTemplate, setIsTemplate] = useState(plan?.is_template ?? false);
+  const [days, setDays] = useState<DraftDay[]>(
+    plan?.days.map((d: WorkoutDay) => ({
+      day_of_week: d.day_of_week,
+      day_number: d.day_number,
+      focus: d.focus,
+      notes: d.notes ?? "",
+      exercises: d.exercises.map((e: WorkoutExercise) => ({
+        exercise: e.exercise,
+        exercise_name: e.exercise_name,
+        sets: e.sets,
+        reps: e.reps,
+        rest_seconds: e.rest_seconds,
+        tempo: e.tempo ?? "",
+        rpe: e.rpe,
+        notes: e.notes ?? "",
+        order: e.order,
+        alternate_exercise: e.alternate_exercise,
+        alternate_exercise_name: e.alternate_exercise_name ?? undefined,
+      })),
+    })) ?? [],
+  );
 
   // Exercise draft state
   const [activeDay, setActiveDay] = useState<number>(0);
@@ -82,8 +104,8 @@ export function WorkoutPlanForm({
   const [exerciseNotes, setExerciseNotes] = useState("");
   const [alternateExerciseId, setAlternateExerciseId] = useState<number | "">("");
 
-  // Pre-populate from existing plan (adjust state during render when the
-  // `plan` prop changes, instead of syncing it inside an effect).
+  // Re-sync state when the `plan` prop changes (e.g. navigating between
+  // edit pages) without re-mounting the form.
   const [prevPlan, setPrevPlan] = useState<WorkoutPlan | undefined>(plan);
   if (plan !== prevPlan) {
     setPrevPlan(plan);

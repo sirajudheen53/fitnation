@@ -9,7 +9,11 @@ const config: Config = {
   coverageProvider: "v8",
   testEnvironment: "jsdom",
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
-  testPathIgnorePatterns: ["<rootDir>/.next/", "<rootDir>/node_modules/"],
+  testPathIgnorePatterns: [
+    "<rootDir>/.next/",
+    "<rootDir>/node_modules/",
+    "<rootDir>/e2e/", // Playwright specs run via `npm run test:e2e`, not Jest
+  ],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
   },

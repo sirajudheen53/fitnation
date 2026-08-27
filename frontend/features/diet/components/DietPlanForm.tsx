@@ -55,16 +55,31 @@ export function DietPlanForm({
   error,
   loading = false,
 }: DietPlanFormProps) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [goal, setGoal] = useState<DietGoal>("maintain");
-  const [dailyCalories, setDailyCalories] = useState(2000);
-  const [proteinRatio, setProteinRatio] = useState(30);
-  const [carbRatio, setCarbRatio] = useState(40);
-  const [fatRatio, setFatRatio] = useState(30);
-  const [durationDays, setDurationDays] = useState(7);
-  const [isTemplate, setIsTemplate] = useState(false);
-  const [days, setDays] = useState<DraftDay[]>([]);
+  const [name, setName] = useState(plan?.name ?? "");
+  const [description, setDescription] = useState(plan?.description ?? "");
+  const [goal, setGoal] = useState<DietGoal>(plan?.goal ?? "maintain");
+  const [dailyCalories, setDailyCalories] = useState(plan?.daily_calories ?? 2000);
+  const [proteinRatio, setProteinRatio] = useState(plan?.protein_ratio ?? 30);
+  const [carbRatio, setCarbRatio] = useState(plan?.carb_ratio ?? 40);
+  const [fatRatio, setFatRatio] = useState(plan?.fat_ratio ?? 30);
+  const [durationDays, setDurationDays] = useState(plan?.duration_days ?? 7);
+  const [isTemplate, setIsTemplate] = useState(plan?.is_template ?? false);
+  const [days, setDays] = useState<DraftDay[]>(
+    plan?.days.map((d: DietDay) => ({
+      day_number: d.day_number,
+      notes: d.notes ?? "",
+      meals: d.meals.map((m) => ({
+        meal_type: m.meal_type,
+        food_item: m.food_item,
+        food_item_name: m.food_item_name,
+        quantity: m.quantity,
+        calories: m.calories,
+        protein: m.protein,
+        carbs: m.carbs,
+        fat: m.fat,
+      })),
+    })) ?? [],
+  );
 
   // Meal draft state
   const [activeDay, setActiveDay] = useState<number>(0);
@@ -72,8 +87,8 @@ export function DietPlanForm({
   const [foodItemId, setFoodItemId] = useState<number | "">("");
   const [quantity, setQuantity] = useState(1);
 
-  // Pre-populate from existing plan (adjust state during render when the
-  // `plan` prop changes, instead of syncing it inside an effect).
+  // Re-sync state when the `plan` prop changes (e.g. navigating between
+  // edit pages) without re-mounting the form.
   const [prevPlan, setPrevPlan] = useState<DietPlan | undefined>(plan);
   if (plan !== prevPlan) {
     setPrevPlan(plan);

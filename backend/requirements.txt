@@ -14,6 +14,9 @@ dj-database-url>=2.3,<3.0
 python-dotenv>=1.1,<2.0
 django-environ>=0.12,<1.0
 
+# setuptools provides pkg_resources (required by razorpay on Python 3.12+)
+setuptools>=75.0,<80.0
+
 # Web server (Cloud Run / containers)
 gunicorn>=23.0,<25.0
 whitenoise>=6.8,<7.0

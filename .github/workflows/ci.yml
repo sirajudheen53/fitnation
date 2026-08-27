@@ -162,7 +162,7 @@ jobs:
       - name: Analyze with dart analyze
         # Fail on warnings/errors; ignore info-level style suggestions
         # (use_null_aware_elements, doc-comment formatting) which are not defects.
-        run: dart analyze --fatal-infos=false --fatal-warnings=true
+        run: dart analyze --no-fatal-infos --fatal-warnings=true
         continue-on-error: false
 
       - name: Run tests with coverage
