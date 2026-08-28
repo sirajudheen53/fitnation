@@ -125,6 +125,7 @@ def seed():
     payment_a = PaymentModel.objects.filter(customer=customer_profile).first()
     if not payment_a:
         payment_a = PaymentModel.objects.create(
+            tenant=tenant_a,
             customer=customer_profile,
             membership=membership_a,
             amount=15000.0,
@@ -252,6 +253,7 @@ def seed():
     payment_b = PaymentModel.objects.filter(customer=customer_profile_b).first()
     if not payment_b:
         payment_b = PaymentModel.objects.create(
+            tenant=tenant_b,
             customer=customer_profile_b,
             membership=membership_b,
             amount=2000.0,
