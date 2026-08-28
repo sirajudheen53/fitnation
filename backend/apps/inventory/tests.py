@@ -1,7 +1,5 @@
 """Tests for the inventory app."""
 
-from datetime import date
-
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.test import TestCase

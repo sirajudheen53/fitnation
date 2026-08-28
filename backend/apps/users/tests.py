@@ -220,7 +220,6 @@ class UserAPITests(APITestCase):
 
     def setUp(self) -> None:
         """Create tenant, owner, and auth token for API tests."""
-        User = get_user_model()
         self.tenant = provision_tenant(name="Gym", contact_email="gym@local.test")
         self.owner = create_owner_user(
             tenant=self.tenant,
@@ -808,7 +807,6 @@ class EmailVerificationTests(APITestCase):
 
     def test_verify_valid_token(self) -> None:
         """A valid token should mark the user's email as verified."""
-        from apps.core.services.email import send_verification_email
         from apps.users.models import EmailVerificationToken
 
         # Create a token for the unverified user

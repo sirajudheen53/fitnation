@@ -3,23 +3,23 @@ Seed QA database with test tenants and users for regression testing.
 Run: python seed_qa.py
 """
 import os
-import sys
 import uuid
 from datetime import date, datetime
 
 import django
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.cloudrun')
 django.setup()
 
-from django.contrib.auth.hashers import make_password
-from apps.tenants.models import Tenant
-from apps.tenants.services import provision_tenant
-from apps.users.models import User
-from apps.users.services import create_owner_user
-from apps.customers.models import Customer, BodyMeasurement, FitnessGoal
-from apps.memberships.models import Membership, MembershipPlan
-from apps.payments.models import Payment as PaymentModel
-from apps.branches.models import Branch
+from django.contrib.auth.hashers import make_password  # noqa: E402
+from apps.tenants.models import Tenant  # noqa: E402
+from apps.tenants.services import provision_tenant  # noqa: E402
+from apps.users.models import User  # noqa: E402
+from apps.users.services import create_owner_user  # noqa: E402
+from apps.customers.models import Customer, BodyMeasurement, FitnessGoal  # noqa: E402
+from apps.memberships.models import Membership, MembershipPlan  # noqa: E402
+from apps.payments.models import Payment as PaymentModel  # noqa: E402
+from apps.branches.models import Branch  # noqa: E402
 
 
 def seed():
@@ -158,7 +158,7 @@ def seed():
             height_cm=165.0,
             body_fat_percentage=28.0,
         )
-    print(f"  Customer A data seeded (goal, measurement, membership, payment)")
+    print("  Customer A data seeded (goal, measurement, membership, payment)")
 
     # ── Tenant B: FitGym B ──────────────────────────────────────────────────
     print("\n[2/2] Setting up Tenant B: FitGym B...")
@@ -259,28 +259,28 @@ def seed():
             status=PaymentModel.Status.COMPLETED,
             transaction_id=f"txn_fitgymb_{uuid.uuid4().hex[:8]}",
         )
-    print(f"  Tenant B data seeded")
+    print("  Tenant B data seeded")
 
     # ── Summary ─────────────────────────────────────────────────────────────
     print("\n=== Seed Complete ===")
     print(f"\nTenant A (FitGym A) — {tenant_a.id}")
-    print(f"  Owner:    owner_a@fitgyma.qa / FitQA!234  (tenant A)")
-    print(f"  Customer: customer_a@fitgyma.qa / FitQA!234  (tenant A)")
+    print("  Owner:    owner_a@fitgyma.qa / FitQA!234  (tenant A)")
+    print("  Customer: customer_a@fitgyma.qa / FitQA!234  (tenant A)")
     print(f"\nTenant B (FitGym B) — {tenant_b.id}")
-    print(f"  Owner:    owner_b@fitgymb.qa / FitQA!234  (tenant B)")
-    print(f"  Customer: customer_b@fitgymb.qa / FitQA!234  (tenant B)")
-    print(f"\n--- Regression instructions ---")
-    print(f"BUG-2026-08-27-01 (cross-tenant isolation):")
-    print(f"  1. Login as owner_a@fitgyma.qa / FitQA!234")
-    print(f"  2. List memberships/payments — should only see FitGym A data")
-    print(f"  3. Verify CANNOT see customer_b@fitgymb.qa's membership/payment")
-    print(f"\nBUG-2026-08-27-02 (customer self-access):")
-    print(f"  1. Login as customer_a@fitgyma.qa / FitQA!234")
-    print(f"  2. Access own health profile, fitness goals, measurements")
-    print(f"  3. Verify data loads correctly (goal, measurement)")
-    print(f"\nFBOS-026 (email verification):")
-    print(f"  1. Register new user — check is_email_verified=False in DB")
-    print(f"  2. Verify token email sent via SendGrid")
+    print("  Owner:    owner_b@fitgymb.qa / FitQA!234  (tenant B)")
+    print("  Customer: customer_b@fitgymb.qa / FitQA!234  (tenant B)")
+    print("\n--- Regression instructions ---")
+    print("BUG-2026-08-27-01 (cross-tenant isolation):")
+    print("  1. Login as owner_a@fitgyma.qa / FitQA!234")
+    print("  2. List memberships/payments — should only see FitGym A data")
+    print("  3. Verify CANNOT see customer_b@fitgymb.qa's membership/payment")
+    print("\nBUG-2026-08-27-02 (customer self-access):")
+    print("  1. Login as customer_a@fitgyma.qa / FitQA!234")
+    print("  2. Access own health profile, fitness goals, measurements")
+    print("  3. Verify data loads correctly (goal, measurement)")
+    print("\nFBOS-026 (email verification):")
+    print("  1. Register new user — check is_email_verified=False in DB")
+    print("  2. Verify token email sent via SendGrid")
 
 
 if __name__ == '__main__':

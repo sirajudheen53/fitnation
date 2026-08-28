@@ -7,8 +7,6 @@ import os
 
 from django.conf import settings
 from django.core.mail import EmailMessage
-from django.template.loader import render_to_string
-from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +73,9 @@ def send_verification_email(user, request) -> bool:
     html_content = f"""
     <h2>Welcome to FitNation, {user.first_name}!</h2>
     <p>Please verify your email address by clicking the button below:</p>
-    <a href="{verify_url}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;margin:16px 0;">Verify Email</a>
+    <a href="{verify_url}" style="display:inline-block;background:#2563eb;color:#fff;"
+       style="padding:12px 24px;border-radius:6px;text-decoration:none;margin:16px 0;">
+       Verify Email</a>
     <p>This link expires in 24 hours. If you didn't create an account, you can ignore this email.</p>
     """
     text_content = f"Welcome to FitNation! Verify your email: {verify_url}"
