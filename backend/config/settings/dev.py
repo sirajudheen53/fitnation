@@ -32,6 +32,7 @@ REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] = [  # noqa: F405
 
 # ── Email: console backend for dev ─────────────────────────────────────────────
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+SENDGRID_API_KEY = env.str("SENDGRID_API_KEY", default="")
 
 # ── Disable security strictness in dev ────────────────────────────────────────
 SECURE_SSL_REDIRECT = False
