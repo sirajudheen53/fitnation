@@ -656,6 +656,10 @@ export function fetchDashboardMemberships(token: string): Promise<MembershipStat
   return request<MembershipStatsData>("/dashboard/memberships/", { token });
 }
 
+export function fetchDashboardTrainers(token: string): Promise<TrainerOverviewData[]> {
+  return request<TrainerOverviewData[]>("/dashboard/trainers/", { token });
+}
+
 export function fetchRevenueReport(
   token: string,
   params?: AnalyticsFilters,
