@@ -10,6 +10,7 @@ from apps.payments.views import (
     RazorpayConfigView,
     RazorpayOrderView,
     RazorpayVerifyView,
+    RevenueSummaryView,
 )
 from apps.payments.webhook_views import razorpay_webhook
 
@@ -20,6 +21,7 @@ router.register(r"refunds", PaymentRefundViewSet, basename="refund")
 
 urlpatterns = [
     path("", include(router.urls)),
+    path("payments/revenue-summary/", RevenueSummaryView.as_view(), name="revenue-summary"),
     path("payments/razorpay/create-order/", RazorpayOrderView.as_view(), name="razorpay-create-order"),
     path("payments/razorpay/verify/", RazorpayVerifyView.as_view(), name="razorpay-verify"),
     path("payments/razorpay/config/", RazorpayConfigView.as_view(), name="razorpay-config"),

@@ -6,6 +6,7 @@ from apps.dashboard.views import (
     DashboardAttendanceView,
     DashboardMembershipsView,
     DashboardOverviewView,
+    DashboardPendingPaymentsView,
     DashboardRevenueView,
     DashboardTrainersView,
 )
@@ -16,4 +17,5 @@ urlpatterns = [
     path("attendance/", DashboardAttendanceView.as_view(), name="dashboard-attendance"),
     path("memberships/", DashboardMembershipsView.as_view(), name="dashboard-memberships"),
     path("trainers/", DashboardTrainersView.as_view(), name="dashboard-trainers"),
+    path("pending-payments/", DashboardPendingPaymentsView.as_view(), name="dashboard-pending-payments"),
 ]

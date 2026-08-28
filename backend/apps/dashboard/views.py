@@ -13,6 +13,7 @@ from apps.dashboard.serializers import (
     AttendanceSerializer,
     MembershipStatsSerializer,
     OverviewSerializer,
+    PendingPaymentSerializer,
     RevenueSerializer,
     TrainerPerformanceResponseSerializer,
 )
@@ -86,3 +87,13 @@ class DashboardTrainersView(DashboardBaseView):
         tenant = self.get_tenant()
         data = services.get_trainer_performance(tenant)
         return Response(TrainerPerformanceResponseSerializer(data).data)
+
+
+class DashboardPendingPaymentsView(DashboardBaseView):
+    """GET pending-payments/ — pending payments with customer and due date."""
+
+    def get(self, request):
+        """Return pending payments for the tenant."""
+        tenant = self.get_tenant()
+        data = services.get_pending_payments(tenant)
+        return Response(PendingPaymentSerializer(data, many=True).data)

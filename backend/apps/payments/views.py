@@ -21,6 +21,7 @@ from apps.payments.serializers import (
     PaymentRefundSerializer,
     PaymentSerializer,
     RazorpayConfigSerializer,
+    RevenueSummarySerializer,
     VerifyPaymentSerializer,
 )
 from apps.permissions.permissions import RolePermission
@@ -208,6 +209,41 @@ class PaymentRefundViewSet(ModelViewSet):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(PaymentRefundSerializer(refund).data, status=status.HTTP_201_CREATED)
+
+
+class RevenueSummaryView(APIView):
+    """GET revenue-summary/ — completed revenue for today, this week, this month."""
+
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
+    required_permission = "payments.view_payment"
+
+    def get(self, request: Request) -> Response:
+        """Return revenue totals for the current tenant."""
+        paid = Payment.objects.for_tenant(request.tenant).filter(
+            status=Payment.Status.COMPLETED,
+            paid_at__isnull=False,
+        )
+        now = timezone.localtime()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - timezone.timedelta(days=now.weekday())
+        month_start = today_start.replace(day=1)
+
+        def _sum(qs):
+            total = Decimal(0)
+            for value in qs.values_list("amount", flat=True):
+                try:
+                    total += Decimal(value or 0)
+                except (TypeError, ValueError):
+                    continue
+            return round(float(total), 2)
+
+        data = {
+            "today": _sum(paid.filter(paid_at__gte=today_start)),
+            "this_week": _sum(paid.filter(paid_at__gte=week_start)),
+            "this_month": _sum(paid.filter(paid_at__gte=month_start)),
+        }
+        return Response(RevenueSummarySerializer(data).data)
 
 
 class PaymentViewSet(ModelViewSet):

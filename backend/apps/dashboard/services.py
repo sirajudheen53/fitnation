@@ -205,6 +205,36 @@ def get_trainer_performance(tenant: Any) -> dict:
     return {"results": rows, "total": len(rows)}
 
 
+def get_pending_payments(tenant: Any) -> list[dict]:
+    """Return pending payments with customer name, amount and due date.
+
+    Due date is derived from the linked membership's end date when available,
+    otherwise falls back to the payment's creation date.
+    """
+    pending = (
+        Payment.objects.for_tenant(tenant)
+        .filter(status=Payment.Status.PENDING)
+        .select_related("customer", "membership")
+        .order_by("-created_at")
+    )
+    rows = []
+    for payment in pending:
+        due_date = None
+        if payment.membership and payment.membership.end_date:
+            due_date = payment.membership.end_date.isoformat()
+        elif payment.created_at:
+            due_date = payment.created_at.date().isoformat()
+        rows.append(
+            {
+                "id": payment.id,
+                "customer_name": payment.customer.name,
+                "amount": round(float(payment.amount), 2),
+                "due_date": due_date,
+            }
+        )
+    return rows
+
+
 def _sum(values: Any) -> Decimal:
     """Sum an iterable of Decimal amounts safely, returning Decimal zero on empty."""
     total = Decimal(0)

@@ -66,6 +66,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
         ]
 
 
+class RevenueSummarySerializer(serializers.Serializer):
+    """Revenue totals for today, this week and this month."""
+
+    today = serializers.FloatField(default=0.0)
+    this_week = serializers.FloatField(default=0.0)
+    this_month = serializers.FloatField(default=0.0)
+
+
 class CreateOrderSerializer(serializers.Serializer):
     """Validate an order-creation request."""
 

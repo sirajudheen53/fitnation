@@ -105,3 +105,12 @@ class TrainerPerformanceResponseSerializer(serializers.Serializer):
 
     results = TrainerPerformanceSerializer(many=True)
     total = serializers.IntegerField(default=0)
+
+
+class PendingPaymentSerializer(serializers.Serializer):
+    """A single pending payment row for the dashboard."""
+
+    id = serializers.IntegerField()
+    customer_name = serializers.CharField()
+    amount = serializers.FloatField(default=0.0)
+    due_date = serializers.CharField(allow_null=True, default=None)
