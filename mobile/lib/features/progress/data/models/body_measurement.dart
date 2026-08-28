@@ -29,18 +29,28 @@ class BodyMeasurement {
   factory BodyMeasurement.fromJson(Map<String, dynamic> json) {
     return BodyMeasurement(
       id: json['id'] as int,
-      measuredAt: json['measured_at'] != null
-          ? DateTime.tryParse(json['measured_at'].toString())
-          : null,
-      weight: (json['weight'] as num?)?.toDouble(),
-      height: (json['height'] as num?)?.toDouble(),
+      measuredAt: json['date_logged'] != null
+          ? DateTime.tryParse(json['date_logged'].toString())
+          : json['measured_at'] != null
+              ? DateTime.tryParse(json['measured_at'].toString())
+              : null,
+      weight: (json['weight_kg'] as num?)?.toDouble() ??
+          (json['weight'] as num?)?.toDouble(),
+      height: (json['height_cm'] as num?)?.toDouble() ??
+          (json['height'] as num?)?.toDouble(),
       bmi: (json['bmi'] as num?)?.toDouble(),
-      bodyFat: (json['body_fat'] as num?)?.toDouble(),
-      chest: (json['chest'] as num?)?.toDouble(),
-      waist: (json['waist'] as num?)?.toDouble(),
-      hips: (json['hips'] as num?)?.toDouble(),
-      arms: (json['arms'] as num?)?.toDouble(),
-      thighs: (json['thighs'] as num?)?.toDouble(),
+      bodyFat: (json['body_fat_percentage'] as num?)?.toDouble() ??
+          (json['body_fat'] as num?)?.toDouble(),
+      chest: (json['chest_cm'] as num?)?.toDouble() ??
+          (json['chest'] as num?)?.toDouble(),
+      waist: (json['waist_cm'] as num?)?.toDouble() ??
+          (json['waist'] as num?)?.toDouble(),
+      hips: (json['hips_cm'] as num?)?.toDouble() ??
+          (json['hips'] as num?)?.toDouble(),
+      arms: (json['arms_cm'] as num?)?.toDouble() ??
+          (json['arms'] as num?)?.toDouble(),
+      thighs: (json['thighs_cm'] as num?)?.toDouble() ??
+          (json['thighs'] as num?)?.toDouble(),
     );
   }
 
@@ -67,6 +77,12 @@ class FitnessGoal {
   final double? targetWeight;
   final DateTime? targetDate;
   final String? status;
+  final bool isActive;
+  final double? targetValue;
+  final String? targetUnit;
+  final double? currentValue;
+  final double? progressPercentage;
+  final String? notes;
 
   const FitnessGoal({
     required this.id,
@@ -75,18 +91,30 @@ class FitnessGoal {
     this.targetWeight,
     this.targetDate,
     this.status,
+    this.isActive = true,
+    this.targetValue,
+    this.targetUnit,
+    this.currentValue,
+    this.progressPercentage,
+    this.notes,
   });
 
   factory FitnessGoal.fromJson(Map<String, dynamic> json) {
     return FitnessGoal(
       id: json['id'] as int,
       goalType: json['goal_type'] as String?,
-      description: json['description'] as String?,
+      description: json['description'] as String? ?? json['notes'] as String?,
       targetWeight: (json['target_weight'] as num?)?.toDouble(),
       targetDate: json['target_date'] != null
           ? DateTime.tryParse(json['target_date'].toString())
           : null,
       status: json['status'] as String?,
+      isActive: (json['is_active'] as bool?) ?? true,
+      targetValue: (json['target_value'] as num?)?.toDouble(),
+      targetUnit: json['target_unit'] as String?,
+      currentValue: (json['current_value'] as num?)?.toDouble(),
+      progressPercentage: (json['progress_percentage'] as num?)?.toDouble(),
+      notes: json['notes'] as String?,
     );
   }
 
@@ -97,6 +125,12 @@ class FitnessGoal {
         if (targetWeight != null) 'target_weight': targetWeight,
         if (targetDate != null) 'target_date': targetDate!.toIso8601String(),
         if (status != null) 'status': status,
+        'is_active': isActive,
+        if (targetValue != null) 'target_value': targetValue,
+        if (targetUnit != null) 'target_unit': targetUnit,
+        if (currentValue != null) 'current_value': currentValue,
+        if (progressPercentage != null) 'progress_percentage': progressPercentage,
+        if (notes != null) 'notes': notes,
       };
 }
 

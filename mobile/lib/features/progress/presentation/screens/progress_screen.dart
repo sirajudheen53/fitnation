@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -191,59 +192,110 @@ class _WeightChart extends StatelessWidget {
       );
     }
 
+    final spots = <FlSpot>[
+      for (var i = 0; i < weights.length; i++)
+        FlSpot(i.toDouble(), weights[i].weight!),
+    ];
+
     final maxWeight = weights.map((m) => m.weight!).reduce((a, b) => a > b ? a : b);
     final minWeight = weights.map((m) => m.weight!).reduce((a, b) => a < b ? a : b);
-    final range = (maxWeight - minWeight).clamp(1.0, double.infinity);
+    final padding = (maxWeight - minWeight).clamp(1.0, double.infinity) * 0.2;
 
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final m in weights)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 90,
-                    child: Text(
-                      _shortDate(m.measuredAt),
-                      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                    ),
+          SizedBox(
+            height: 200,
+            child: LineChart(
+              LineChartData(
+                minY: (minWeight - padding).floorToDouble(),
+                maxY: (maxWeight + padding).ceilToDouble(),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (value) => FlLine(
+                    color: AppTheme.divider,
+                    strokeWidth: 1,
                   ),
-                  Expanded(
-                    child: Container(
-                      height: 20,
-                      decoration: BoxDecoration(
-                        color: AppTheme.background,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: ((m.weight! - minWeight) / range).clamp(0.05, 1.0),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [AppTheme.primary, AppTheme.primaryLight],
-                            ),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
+                ),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 40,
+                      getTitlesWidget: (value, meta) => Text(
+                        value.toStringAsFixed(0),
+                        style: const TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 10,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 48,
-                    child: Text(
-                      m.weight!.toStringAsFixed(1),
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 28,
+                      interval: 1,
+                      getTitlesWidget: (value, meta) {
+                        final index = value.toInt();
+                        if (index < 0 || index >= weights.length) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            _shortDate(weights[index].measuredAt),
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 10,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    color: AppTheme.primary,
+                    barWidth: 3,
+                    dotData: FlDotData(
+                      show: true,
+                      getDotPainter: (spot, percent, barData, index) =>
+                          FlDotCirclePainter(
+                        radius: 4,
+                        color: AppTheme.primary,
+                        strokeWidth: 2,
+                        strokeColor: AppTheme.surface,
+                      ),
+                    ),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          AppTheme.primary.withValues(alpha: 0.25),
+                          AppTheme.primary.withValues(alpha: 0.0),
+                        ],
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
+          ),
         ],
       ),
     );
@@ -262,53 +314,82 @@ class _GoalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final progress = goal.progressPercentage;
+    final target = goal.targetValue ?? goal.targetWeight;
+
     return AppCard(
       margin: const EdgeInsets.only(bottom: 8),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.flag, color: AppTheme.primary, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  goal.goalType ?? 'Goal',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                if (goal.description != null)
-                  Text(
-                    goal.description!,
-                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                child: const Icon(Icons.flag, color: AppTheme.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      goal.goalType ?? 'Goal',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    if (goal.description != null)
+                      Text(
+                        goal.description!,
+                        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                      ),
+                    if (target != null)
+                      Text(
+                        'Target: ${target.toStringAsFixed(1)} ${goal.targetUnit ?? 'kg'}',
+                        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                      ),
+                  ],
+                ),
+              ),
+              if (goal.status != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                if (goal.targetWeight != null)
-                  Text(
-                    'Target: ${goal.targetWeight!.toStringAsFixed(1)} kg',
-                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                  child: Text(
+                    goal.status!,
+                    style: const TextStyle(
+                      color: AppTheme.accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
-          if (goal.status != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.accent.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                goal.status!,
-                style: const TextStyle(color: AppTheme.accent, fontSize: 12, fontWeight: FontWeight.w600),
+          if (progress != null) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: (progress / 100).clamp(0.0, 1.0),
+                minHeight: 8,
+                backgroundColor: AppTheme.background,
+                color: AppTheme.primary,
               ),
             ),
+            const SizedBox(height: 4),
+            Text(
+              '${progress.toStringAsFixed(0)}% complete',
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+            ),
+          ],
         ],
       ),
     );

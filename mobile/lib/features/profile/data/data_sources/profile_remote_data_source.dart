@@ -24,6 +24,42 @@ class ProfileRemoteDataSource {
     }
   }
 
+  /// Updates the customer profile.
+  ///
+  /// PATCH /api/v1/customers/customers/{id}/
+  Future<CustomerProfile> updateProfile(
+    int customerId,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final response = await _dio.patch(
+        '${AppConstants.customerProfileEndpoint}$customerId/',
+        data: data,
+      );
+      return CustomerProfile.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  /// Updates the health profile for a customer.
+  ///
+  /// PATCH /api/v1/customers/customers/{id}/health-profile/
+  Future<HealthProfile> updateHealthProfile(
+    int customerId,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final response = await _dio.patch(
+        AppConstants.customerHealthProfileEndpoint.replaceAll('{id}', '$customerId'),
+        data: data,
+      );
+      return HealthProfile.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
   /// Fetches the health profile for a customer.
   ///
   /// GET /api/v1/customers/customers/{id}/health-profile/

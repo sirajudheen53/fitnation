@@ -64,6 +64,16 @@ class RolePermission(BasePermission):
             "marketplace.create_order",
             "marketplace.edit_order",
             "marketplace.delete_order",
+            "inventory.view_equipment",
+            "inventory.create_equipment",
+            "inventory.edit_equipment",
+            "inventory.delete_equipment",
+            "inventory.view_inventory",
+            "inventory.create_inventory",
+            "inventory.edit_inventory",
+            "inventory.delete_inventory",
+            "reviews.view_review",
+            "reviews.edit_review",
         },
         "trainer": {
             "customers.view_customer",
@@ -79,6 +89,8 @@ class RolePermission(BasePermission):
             "exercises.view_exercise",
             "exercises.edit_exercise",
             "exercises.delete_exercise",
+            "reviews.view_review",
+            "reviews.edit_review",
         },
         "dietitian": {
             "customers.view_customer",
@@ -110,6 +122,8 @@ class RolePermission(BasePermission):
             "marketplace.edit_cart",
             "marketplace.view_order",
             "marketplace.create_order",
+            "reviews.view_review",
+            "reviews.create_review",
         },
     }
 

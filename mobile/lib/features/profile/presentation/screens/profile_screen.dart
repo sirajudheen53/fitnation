@@ -25,6 +25,11 @@ class ProfileScreen extends ConsumerWidget {
         title: const Text('Profile'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: () => context.push('/profile/edit'),
+            tooltip: 'Edit Profile',
+          ),
+          IconButton(
             icon: const Icon(Icons.card_membership_outlined),
             onPressed: () => context.push('/profile/membership'),
             tooltip: 'Membership',
@@ -157,7 +162,7 @@ class _ProfileDetails extends StatelessWidget {
                 ? '${profile.dateOfBirth!.day}/${profile.dateOfBirth!.month}/${profile.dateOfBirth!.year}'
                 : '—',
           ),
-          _InfoRow(label: 'Address', value: profile.address ?? '—'),
+          _InfoRow(label: 'Address', value: profile.fullAddress ?? '—'),
           _InfoRow(label: 'Emergency Contact', value: profile.emergencyContact ?? '—'),
           _InfoRow(label: 'Emergency Phone', value: profile.emergencyPhone ?? '—'),
         ],

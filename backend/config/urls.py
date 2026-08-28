@@ -28,11 +28,13 @@ urlpatterns = [
     path("api/v1/", include("apps.payments.urls")),  # payments/ and invoices/
     path("api/v1/", include("apps.ai_nutrition.urls")),  # ai/nutrition/...
     path("api/v1/permissions/", include("apps.permissions.urls")),
-    path("api/v1/feedback/", include("apps.feedback.urls")),
+    path("api/v1/analytics/", include("apps.analytics.urls")),
     path("api/v1/marketplace/", include("apps.marketplace.urls")),
     path("api/v1/ai/", include("apps.body_analysis.urls")),
     path("api/v1/ai/coach/", include("apps.ai_coach.urls")),
     path("api/v1/notifications/", include("apps.notifications.urls")),
+    path("api/v1/inventory/", include("apps.inventory.urls")),
+    path("api/v1/", include("apps.reviews.urls")),  # reviews/
     path("api/v1/auth/", include("apps.vendors.urls")),
     path(
         "api/v1/subscriptions/plans/",

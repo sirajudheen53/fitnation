@@ -11,6 +11,7 @@ class NotificationLog(TenantModelMixin):
     """A single notification attempt sent via Wati (or skipped/logged)."""
 
     class NotificationType(models.TextChoices):
+        LOW_STOCK = "low_stock", "Low Stock"
         """Supported notification types."""
 
         CHECK_IN = "check_in", "Check-in"

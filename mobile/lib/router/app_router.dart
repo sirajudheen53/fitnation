@@ -20,6 +20,7 @@ import '../features/diet/presentation/screens/meal_log_screen.dart';
 import '../features/diet/data/models/diet_plan.dart';
 import '../features/feedback/presentation/screens/feedback_form_screen.dart';
 import '../features/profile/presentation/screens/membership_screen.dart';
+import '../features/profile/presentation/screens/profile_edit_screen.dart';
 import '../features/profile/presentation/screens/profile_screen.dart';
 import '../features/progress/presentation/screens/progress_photos_screen.dart';
 import '../features/progress/presentation/screens/progress_screen.dart';
@@ -137,6 +138,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile',
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: '/profile/edit',
+        builder: (context, state) => const ProfileEditScreen(),
       ),
       GoRoute(
         path: '/profile/membership',

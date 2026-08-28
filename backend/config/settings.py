@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "apps.customers",
     "apps.exercises",
     "apps.permissions",
+    "apps.inventory",
 ]
 
 MIDDLEWARE = [

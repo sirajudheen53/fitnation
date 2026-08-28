@@ -11,7 +11,8 @@ import { getToken } from "@/lib/auth";
 import { canAccessRoute } from "@/lib/permissions";
 import type { RazorpayPayment, RazorpayPaymentStatus } from "@/types/razorpay";
 import { PaymentHistoryTable } from "@/features/razorpay/components/PaymentHistoryTable";
-import { RazorpayCheckout, type CheckoutResult } from "@/features/razorpay/components/RazorpayCheckout";
+import { CheckoutFlow } from "@/features/razorpay/components/CheckoutFlow";
+import type { CheckoutResult } from "@/features/razorpay/components/RazorpayCheckout";
 
 export default function RazorpayPaymentsPage() {
   const router = useRouter();
@@ -96,7 +97,7 @@ export default function RazorpayPaymentsPage() {
       </div>
 
       {activeTab === "checkout" ? (
-        <RazorpayCheckout onComplete={handleComplete} />
+        <CheckoutFlow onComplete={handleComplete} />
       ) : (
         <>
           {error && <Alert variant="error">{error}</Alert>}

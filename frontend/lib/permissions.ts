@@ -126,6 +126,7 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   "/feedback": ["feedback.view_feedback"],
   "/feedback/new": ["feedback.create_feedback"],
   "/feedback/analytics": ["feedback.view_feedback"],
+  "/analytics": ["reports.view_report"],
 };
 
 export function canAccessRoute(userRole: string, pathname: string): boolean {

@@ -68,6 +68,9 @@ INSTALLED_APPS = [
     "apps.marketplace",
     "apps.ai_coach",
     "apps.notifications",
+    "apps.analytics",
+    "apps.inventory",
+    "apps.reviews",
 ]
 
 MIDDLEWARE = [

@@ -1,7 +1,7 @@
 ---
 description: FitNation Software Architect — designs system architecture, writes specs, reviews code
 mode: subagent
-model: ollama/glm-5.2:cloud
+model: ollama-cloud/deepseek-v4-pro
 permissions:
   - read
   - edit

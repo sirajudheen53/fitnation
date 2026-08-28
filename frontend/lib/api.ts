@@ -610,6 +610,26 @@ export function createScheduleSlot(
 }
 
 /* ── Dashboard ────────────────────────────────────────────────── */
+import {
+  RevenueReport,
+  AttendanceHeatmap,
+  MembershipFunnel,
+  TopCustomer,
+  AnalyticsFilters,
+} from "@/types/analytics";
+
+/** Build a query string for analytics endpoints from filter params. */
+function buildAnalyticsQuery(params?: AnalyticsFilters): string {
+  if (!params) return "";
+  const query = new URLSearchParams();
+  if (params.date_from) query.set("date_from", params.date_from);
+  if (params.date_to) query.set("date_to", params.date_to);
+  if (params.branch !== undefined && params.branch !== "") {
+    query.set("branch", String(params.branch));
+  }
+  const qs = query.toString();
+  return qs ? `?${qs}` : "";
+}
 
 import {
   AttendanceDashboardData,
@@ -636,8 +656,44 @@ export function fetchDashboardMemberships(token: string): Promise<MembershipStat
   return request<MembershipStatsData>("/dashboard/memberships/", { token });
 }
 
-export function fetchDashboardTrainers(token: string): Promise<TrainerOverviewData[]> {
-  return request<TrainerOverviewData[]>("/dashboard/trainers/", { token });
+export function fetchRevenueReport(
+  token: string,
+  params?: AnalyticsFilters,
+): Promise<RevenueReport[]> {
+  return request<RevenueReport[]>(
+    `/analytics/revenue/${buildAnalyticsQuery(params)}`,
+    { token },
+  );
+}
+
+export function fetchAttendanceHeatmap(
+  token: string,
+  params?: AnalyticsFilters,
+): Promise<AttendanceHeatmap[]> {
+  return request<AttendanceHeatmap[]>(
+    `/analytics/attendance/heatmap/${buildAnalyticsQuery(params)}`,
+    { token },
+  );
+}
+
+export function fetchMembershipFunnel(
+  token: string,
+  params?: AnalyticsFilters,
+): Promise<MembershipFunnel[]> {
+  return request<MembershipFunnel[]>(
+    `/analytics/memberships/funnel/${buildAnalyticsQuery(params)}`,
+    { token },
+  );
+}
+
+export function fetchTopCustomers(
+  token: string,
+  params?: AnalyticsFilters,
+): Promise<TopCustomer[]> {
+  return request<TopCustomer[]>(
+    `/analytics/top-customers/${buildAnalyticsQuery(params)}`,
+    { token },
+  );
 }
 
 export function fetchDashboardPendingPayments(

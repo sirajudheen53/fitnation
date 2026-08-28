@@ -1,7 +1,7 @@
 ---
 description: FitNation Frontend Engineer — builds Next.js ERP web application
 mode: subagent
-model: ollama/glm-5.2:cloud
+model: ollama-cloud/deepseek-v4-pro
 permissions:
   - read
   - edit

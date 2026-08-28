@@ -1,7 +1,7 @@
 ---
 description: FitNation Product Designer — creates design system, UI specs, mockups, component specs
 mode: subagent
-model: ollama/glm-5.2:cloud
+model: ollama-cloud/deepseek-v4-pro
 permissions:
   - read
   - edit

@@ -22,6 +22,36 @@ class ProfileRepository {
     }
   }
 
+  /// Updates the customer profile.
+  Future<({CustomerProfile? profile, Failure? error})> updateProfile(
+    int customerId,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final profile = await _remote.updateProfile(customerId, data);
+      return (profile: profile, error: null);
+    } on Failure catch (e) {
+      return (profile: null, error: e);
+    } catch (e) {
+      return (profile: null, error: UnknownFailure(message: e.toString()));
+    }
+  }
+
+  /// Updates the health profile for a customer.
+  Future<({HealthProfile? health, Failure? error})> updateHealthProfile(
+    int customerId,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final health = await _remote.updateHealthProfile(customerId, data);
+      return (health: health, error: null);
+    } on Failure catch (e) {
+      return (health: null, error: e);
+    } catch (e) {
+      return (health: null, error: UnknownFailure(message: e.toString()));
+    }
+  }
+
   /// Fetches the health profile for a customer.
   Future<({HealthProfile? health, Failure? error})> getHealthProfile(
     int customerId,

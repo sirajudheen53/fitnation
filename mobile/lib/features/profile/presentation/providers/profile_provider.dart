@@ -52,3 +52,78 @@ final membershipsProvider = FutureProvider<List<Membership>>((ref) async {
   if (result.error != null) throw result.error!;
   return result.memberships;
 });
+
+/// State for profile editing.
+class ProfileEditState {
+  final bool isSaving;
+  final bool isSuccess;
+  final String? errorMessage;
+
+  const ProfileEditState({
+    this.isSaving = false,
+    this.isSuccess = false,
+    this.errorMessage,
+  });
+
+  ProfileEditState copyWith({
+    bool? isSaving,
+    bool? isSuccess,
+    String? errorMessage,
+  }) {
+    return ProfileEditState(
+      isSaving: isSaving ?? this.isSaving,
+      isSuccess: isSuccess ?? this.isSuccess,
+      errorMessage: errorMessage,
+    );
+  }
+}
+
+/// Notifier for updating the customer profile and health profile.
+class ProfileEditNotifier extends StateNotifier<ProfileEditState> {
+  final ProfileRepository _repository;
+
+  ProfileEditNotifier(this._repository) : super(const ProfileEditState());
+
+  /// Updates the customer profile and returns whether it succeeded.
+  Future<bool> updateProfile(int customerId, Map<String, dynamic> data) async {
+    state = state.copyWith(isSaving: true, isSuccess: false, errorMessage: null);
+    final result = await _repository.updateProfile(customerId, data);
+    if (result.error != null) {
+      state = state.copyWith(
+        isSaving: false,
+        errorMessage: result.error!.message,
+      );
+      return false;
+    }
+    state = const ProfileEditState(isSaving: false, isSuccess: true);
+    return true;
+  }
+
+  /// Updates the health profile and returns whether it succeeded.
+  Future<bool> updateHealthProfile(
+    int customerId,
+    Map<String, dynamic> data,
+  ) async {
+    state = state.copyWith(isSaving: true, isSuccess: false, errorMessage: null);
+    final result = await _repository.updateHealthProfile(customerId, data);
+    if (result.error != null) {
+      state = state.copyWith(
+        isSaving: false,
+        errorMessage: result.error!.message,
+      );
+      return false;
+    }
+    state = const ProfileEditState(isSaving: false, isSuccess: true);
+    return true;
+  }
+
+  void reset() {
+    state = const ProfileEditState();
+  }
+}
+
+/// Provides the ProfileEditNotifier.
+final profileEditProvider =
+    StateNotifierProvider<ProfileEditNotifier, ProfileEditState>((ref) {
+  return ProfileEditNotifier(ref.read(profileRepositoryProvider));
+});

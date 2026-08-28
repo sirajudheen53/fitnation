@@ -1,7 +1,7 @@
 ---
 description: FitNation DevOps Engineer — manages GCP infrastructure, CI/CD, Docker, monitoring
 mode: subagent
-model: ollama/glm-5.2:cloud
+model: ollama-cloud/deepseek-v4-pro
 permissions:
   - read
   - edit
