@@ -104,6 +104,17 @@ jobs:
             "$MIGRATION_IMAGE" \
             python manage.py migrate --no-input
 
+      - name: Seed QA test data
+        run: |
+          DATABASE_URL=$(gcloud secrets versions access latest --secret=DATABASE_URL --project=yougetfitwithus)
+          SEED_IMAGE="${{ env.BACKEND_IMAGE }}:seed-${{ github.sha }}"
+          docker build -t "$SEED_IMAGE" .
+          docker run --rm \
+            -e DJANGO_SETTINGS_MODULE=config.settings.cloudrun \
+            -e DATABASE_URL="$DATABASE_URL" \
+            "$SEED_IMAGE" \
+            python seed_qa.py
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy ${{ env.CLOUD_RUN_SERVICE }} \
