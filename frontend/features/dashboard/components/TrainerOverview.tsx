@@ -22,6 +22,9 @@ export function formatTrainerRating(value: number | string): string {
 }
 
 export function TrainerOverview({ trainers, loading = false }: TrainerOverviewProps) {
+  // Defensive: a malformed API payload must never crash the dashboard render.
+  const items = Array.isArray(trainers) ? trainers : [];
+
   if (loading) {
     return (
       <Card>
@@ -38,11 +41,11 @@ export function TrainerOverview({ trainers, loading = false }: TrainerOverviewPr
         <h2 className="text-lg font-semibold text-gray-900">Top trainers</h2>
       </CardHeader>
       <CardBody>
-        {trainers.length === 0 ? (
+        {items.length === 0 ? (
           <p className="text-sm text-gray-500">No trainers to show.</p>
         ) : (
           <ul className="divide-y divide-gray-100">
-            {trainers.map((trainer) => (
+            {items.map((trainer) => (
               <li key={trainer.id} className="flex items-center justify-between py-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700">

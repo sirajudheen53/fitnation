@@ -27,6 +27,29 @@ export function errorMessage(err: unknown): string {
   return "An unexpected error occurred.";
 }
 
+/**
+ * Normalise a backend list response into a plain array.
+ *
+ * Some DRF endpoints return a plain array while others wrap items in a
+ * paginated envelope (`{count, next, previous, results}` or `{results, total}`).
+ * The UI expects arrays everywhere, so list fetchers funnel their raw response
+ * through this helper. It tolerates both shapes - and returns `[]` for
+ * anything else - so a contract drift can never crash a render.
+ */
+export function unwrapList<T>(
+  res: T[] | { results?: T[] } | Record<string, unknown> | null | undefined,
+): T[] {
+  if (Array.isArray(res)) return res;
+  if (
+    res &&
+    typeof res === "object" &&
+    Array.isArray((res as { results?: unknown }).results)
+  ) {
+    return (res as { results: T[] }).results;
+  }
+  return [];
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -656,48 +679,53 @@ export function fetchDashboardMemberships(token: string): Promise<MembershipStat
   return request<MembershipStatsData>("/dashboard/memberships/", { token });
 }
 
-export function fetchDashboardTrainers(token: string): Promise<TrainerOverviewData[]> {
-  return request<TrainerOverviewData[]>("/dashboard/trainers/", { token });
+export function fetchDashboardTrainers(
+  token: string,
+): Promise<TrainerOverviewData[]> {
+  return request<TrainerOverviewData[] | { results?: TrainerOverviewData[] }>(
+    "/dashboard/trainers/",
+    { token },
+  ).then(unwrapList);
 }
 
 export function fetchRevenueReport(
   token: string,
   params?: AnalyticsFilters,
 ): Promise<RevenueReport[]> {
-  return request<RevenueReport[]>(
+  return request<RevenueReport[] | { results?: RevenueReport[] }>(
     `/analytics/revenue/${buildAnalyticsQuery(params)}`,
     { token },
-  );
+  ).then(unwrapList);
 }
 
 export function fetchAttendanceHeatmap(
   token: string,
   params?: AnalyticsFilters,
 ): Promise<AttendanceHeatmap[]> {
-  return request<AttendanceHeatmap[]>(
+  return request<AttendanceHeatmap[] | { results?: AttendanceHeatmap[] }>(
     `/analytics/attendance/heatmap/${buildAnalyticsQuery(params)}`,
     { token },
-  );
+  ).then(unwrapList);
 }
 
 export function fetchMembershipFunnel(
   token: string,
   params?: AnalyticsFilters,
 ): Promise<MembershipFunnel[]> {
-  return request<MembershipFunnel[]>(
+  return request<MembershipFunnel[] | { results?: MembershipFunnel[] }>(
     `/analytics/memberships/funnel/${buildAnalyticsQuery(params)}`,
     { token },
-  );
+  ).then(unwrapList);
 }
 
 export function fetchTopCustomers(
   token: string,
   params?: AnalyticsFilters,
 ): Promise<TopCustomer[]> {
-  return request<TopCustomer[]>(
+  return request<TopCustomer[] | { results?: TopCustomer[] }>(
     `/analytics/top-customers/${buildAnalyticsQuery(params)}`,
     { token },
-  );
+  ).then(unwrapList);
 }
 
 export function fetchDashboardPendingPayments(
@@ -1455,7 +1483,7 @@ export function fetchNotificationLogs(
 export function unwrapNotificationLogs(
   res: NotificationLogListResponse | NotificationLog[],
 ): NotificationLog[] {
-  return Array.isArray(res) ? res : (res.results ?? []);
+  return unwrapList(res);
 }
 
 /* ── Customer detail sub-resources (FBOS-025) ─────────────────── */
