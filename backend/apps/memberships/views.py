@@ -107,6 +107,16 @@ class MembershipViewSet(ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"])
+    def cancel(self, request: Request, pk: int) -> Response:
+        """Cancel a membership by setting its status to cancelled."""
+        self.required_permission = "memberships.edit_membership"
+        membership = self.get_object()
+        if membership.status != "cancelled":
+            membership.status = "cancelled"
+            membership.save(update_fields=["status", "updated_at"])
+        return Response(self.get_serializer(membership).data)
+
+    @action(detail=True, methods=["post"])
     def renewal(self, request: Request, pk: int) -> Response:
         """Renew a membership by extending end_date and refreshing status."""
         self.required_permission = "memberships.edit_membership"
