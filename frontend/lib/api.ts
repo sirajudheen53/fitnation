@@ -1248,7 +1248,7 @@ export function addToCart(
   productId: number,
   quantity: number,
 ): Promise<Cart> {
-  return request<Cart>("/marketplace/cart/items/", {
+  return request<Cart>("/marketplace/cart/", {
     method: "POST",
     body: { product: productId, quantity },
     token,

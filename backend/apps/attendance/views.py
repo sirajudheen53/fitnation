@@ -4,18 +4,23 @@ from typing import ClassVar
 
 from django.db.models import Count
 from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from apps.attendance.models import AttendanceRecord, TrainerAttendance
+from apps.attendance.selectors import attendance_stats
 from apps.attendance.serializers import (
     AttendanceRecordSerializer,
+    CheckInSerializer,
     TrainerAttendanceSerializer,
 )
+from apps.attendance.services import log_check_in
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -101,6 +106,20 @@ class AttendanceRecordViewSet(ModelViewSet):
         """Delete an attendance record."""
         self.required_permission = "attendance.edit_attendance"
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="check-out")
+    def check_out(self, request: Request, pk: int) -> Response:
+        """Check a customer out by stamping the check-out time."""
+        self.required_permission = "attendance.edit_attendance"
+        record = self.get_object()
+        if record.check_out_time is not None:
+            return Response(
+                {"detail": "Already checked out."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        record.check_out_time = timezone.now()
+        record.save(update_fields=["check_out_time", "updated_at"])
+        return Response(AttendanceRecordSerializer(record).data)
 
     @action(detail=False, methods=["get"])
     def reports(self, request: Request) -> Response:
@@ -255,3 +274,48 @@ class TrainerAttendanceViewSet(ModelViewSet):
             for row in rows
         ]
         return Response({"period": period, "results": payload})
+
+
+class CheckInView(APIView):
+    """Handle walk-in check-ins for customers and trainers."""
+
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        RolePermission,
+    ]
+
+    def post(self, request: Request) -> Response:
+        """Check a customer or trainer in."""
+        self.required_permission = "attendance.log_attendance"
+        serializer = CheckInSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        record = log_check_in(
+            tenant=request.tenant,
+            person_id=serializer.validated_data["person_id"],
+            person_type=serializer.validated_data["person_type"],
+            branch_id=serializer.validated_data.get("branch_id"),
+        )
+        serializer_class = (
+            TrainerAttendanceSerializer
+            if isinstance(record, TrainerAttendance)
+            else AttendanceRecordSerializer
+        )
+        return Response(serializer_class(record).data, status=status.HTTP_201_CREATED)
+
+
+class AttendanceStatsView(APIView):
+    """Return attendance statistics for the tenant."""
+
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        RolePermission,
+    ]
+
+    def get(self, request: Request) -> Response:
+        """Return attendance stats and the weekly summary."""
+        self.required_permission = "attendance.view_attendance"
+        return Response(attendance_stats(tenant=request.tenant))

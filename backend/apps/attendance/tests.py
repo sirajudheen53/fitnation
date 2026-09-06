@@ -246,3 +246,164 @@ class TrainerAttendanceAPITests(APITestCase):
         self.assertEqual(response.data["period"], "weekly")
         total = sum(r["count"] for r in response.data["results"])
         self.assertEqual(total, 1)
+
+
+class CheckInViewTests(APITestCase):
+    """Integration tests for POST /api/v1/attendance/check-in/."""
+
+    def setUp(self) -> None:
+        """Create tenant, owner, customer, trainer, branch, and auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            first_name="Owner",
+            last_name="User",
+            role=User.Role.GYM_OWNER,
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.branch = Branch.objects.create(
+            tenant=self.tenant,
+            name="Main Branch",
+            address_line1="MG Road",
+        )
+        self.customer = _make_customer(self.tenant, "cust@local.test")
+        self.trainer = _make_trainer(self.tenant, "trainer@local.test")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def test_customer_check_in_returns_frontend_shape(self) -> None:
+        """Check-in creates a record in the person_* shape the UI renders."""
+        res = self.client.post(
+            "/api/v1/attendance/check-in/",
+            {
+                "person_id": self.customer.id,
+                "person_type": "customer",
+                "branch_id": self.branch.id,
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["person_type"], "customer")
+        self.assertEqual(res.data["person_name"], "cust@local.test")
+        self.assertEqual(res.data["status"], "present")
+        self.assertIn("check_in_time", res.data)
+
+    def test_trainer_check_in(self) -> None:
+        """Trainer check-in creates a trainer attendance record."""
+        res = self.client.post(
+            "/api/v1/attendance/check-in/",
+            {"person_id": self.trainer.id, "person_type": "trainer"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["person_type"], "trainer")
+
+    def test_staff_check_in_rejected(self) -> None:
+        """Staff attendance is not supported yet."""
+        res = self.client.post(
+            "/api/v1/attendance/check-in/",
+            {"person_id": 1, "person_type": "staff"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_unknown_customer_rejected(self) -> None:
+        """Check-in for a non-existent customer is rejected."""
+        res = self.client.post(
+            "/api/v1/attendance/check-in/",
+            {"person_id": 99999, "person_type": "customer"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_duplicate_check_in_rejected(self) -> None:
+        """A second open check-in for the same day is rejected."""
+        payload = {"person_id": self.customer.id, "person_type": "customer"}
+        self.client.post("/api/v1/attendance/check-in/", payload, format="json")
+        res = self.client.post("/api/v1/attendance/check-in/", payload, format="json")
+        self.assertEqual(res.status_code, 400)
+
+
+class CheckOutTests(APITestCase):
+    """Integration tests for the check-out action."""
+
+    def setUp(self) -> None:
+        """Create tenant, owner, customer, and auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            first_name="Owner",
+            last_name="User",
+            role=User.Role.GYM_OWNER,
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.customer = _make_customer(self.tenant, "cust@local.test")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def _check_in(self):
+        """Check the customer in and return the response."""
+        return self.client.post(
+            "/api/v1/attendance/check-in/",
+            {"person_id": self.customer.id, "person_type": "customer"},
+            format="json",
+        )
+
+    def test_check_out_stamps_time(self) -> None:
+        """Check-out stamps check_out_time and returns status 'left'."""
+        check_in = self._check_in()
+        record_id = check_in.data["id"]
+        res = self.client.post(
+            f"/api/v1/attendance/attendance/{record_id}/check-out/",
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["status"], "left")
+        self.assertIsNotNone(res.data["check_out_time"])
+
+    def test_double_check_out_rejected(self) -> None:
+        """A second check-out on the same record is rejected."""
+        check_in = self._check_in()
+        record_id = check_in.data["id"]
+        self.client.post(
+            f"/api/v1/attendance/attendance/{record_id}/check-out/",
+            format="json",
+        )
+        res = self.client.post(
+            f"/api/v1/attendance/attendance/{record_id}/check-out/",
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
+
+class AttendanceStatsViewTests(APITestCase):
+    """Integration tests for GET /api/v1/attendance/stats/."""
+
+    def setUp(self) -> None:
+        """Create tenant, owner, customer, and auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            first_name="Owner",
+            last_name="User",
+            role=User.Role.GYM_OWNER,
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.customer = _make_customer(self.tenant, "cust@local.test")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def test_stats_shape(self) -> None:
+        """Stats return the stats + weekly summary the frontend renders."""
+        self.client.post(
+            "/api/v1/attendance/check-in/",
+            {"person_id": self.customer.id, "person_type": "customer"},
+            format="json",
+        )
+        res = self.client.get("/api/v1/attendance/stats/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("stats", res.data)
+        self.assertIn("summary", res.data)
+        self.assertGreaterEqual(res.data["stats"]["today_count"], 1)
+        self.assertEqual(len(res.data["summary"]["labels"]), 7)
+        self.assertEqual(len(res.data["summary"]["check_ins"]), 7)

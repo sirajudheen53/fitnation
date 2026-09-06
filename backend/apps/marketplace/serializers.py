@@ -195,7 +195,15 @@ class CartItemSerializer(serializers.ModelSerializer):
     """Serialize a cart line item."""
 
     product_name = serializers.CharField(source="product.name", read_only=True)
-    total_price = serializers.DecimalField(
+    product_price = serializers.DecimalField(
+        source="unit_price",
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+    )
+    product_image_url = serializers.SerializerMethodField()
+    subtotal = serializers.DecimalField(
+        source="total_price",
         max_digits=12,
         decimal_places=2,
         read_only=True,
@@ -210,18 +218,36 @@ class CartItemSerializer(serializers.ModelSerializer):
             "cart",
             "product",
             "product_name",
+            "product_price",
+            "product_image_url",
             "quantity",
             "unit_price",
+            "subtotal",
             "total_price",
             "created_at",
         ]
-        read_only_fields = ["id", "cart", "product_name", "total_price", "created_at"]
+        read_only_fields = [
+            "id",
+            "cart",
+            "product_name",
+            "product_price",
+            "product_image_url",
+            "subtotal",
+            "total_price",
+            "created_at",
+        ]
+
+    def get_product_image_url(self, obj: CartItem) -> str | None:
+        """Return the product's first image URL when available."""
+        image = obj.product.images.first()
+        return image.image_url if image else None
 
 
 class CartSerializer(serializers.ModelSerializer):
     """Serialize a cart with its line items."""
 
     items = CartItemSerializer(many=True, read_only=True)
+    item_count = serializers.SerializerMethodField()
     total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
 
     class Meta:
@@ -233,11 +259,16 @@ class CartSerializer(serializers.ModelSerializer):
             "user",
             "status",
             "items",
+            "item_count",
             "total",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "user", "items", "total", "created_at", "updated_at"]
+        read_only_fields = ["id", "user", "items", "item_count", "total", "created_at", "updated_at"]
+
+    def get_item_count(self, obj: Cart) -> int:
+        """Return the total quantity of items in the cart."""
+        return sum(item.quantity for item in obj.items.all())
 
 
 class OrderItemSerializer(serializers.ModelSerializer):

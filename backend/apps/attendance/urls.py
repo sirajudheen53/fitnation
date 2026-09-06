@@ -5,6 +5,8 @@ from rest_framework.routers import DefaultRouter
 
 from apps.attendance.views import (
     AttendanceRecordViewSet,
+    AttendanceStatsView,
+    CheckInView,
     TrainerAttendanceViewSet,
 )
 
@@ -17,5 +19,7 @@ router.register(
 )
 
 urlpatterns = [
+    path("check-in/", CheckInView.as_view(), name="attendance-check-in"),
+    path("stats/", AttendanceStatsView.as_view(), name="attendance-stats"),
     path("", include(router.urls)),
 ]
