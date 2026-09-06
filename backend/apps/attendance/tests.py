@@ -439,3 +439,120 @@ class AttendanceStatsViewTests(APITestCase):
         self.assertGreaterEqual(res.data["stats"]["today_count"], 1)
         self.assertEqual(len(res.data["summary"]["labels"]), 7)
         self.assertEqual(len(res.data["summary"]["check_ins"]), 7)
+
+
+class TrainerCheckOutTests(APITestCase):
+    """Integration tests for the trainer check-out action."""
+
+    def setUp(self) -> None:
+        """Create tenant, owner, trainer, and auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            first_name="Owner",
+            last_name="User",
+            role=User.Role.GYM_OWNER,
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.trainer = _make_trainer(self.tenant, "trainer@local.test")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def _log_trainer(self):
+        """Log a trainer attendance record via the API."""
+        return self.client.post(
+            "/api/v1/attendance/trainer-attendance/",
+            {"trainer": self.trainer.id, "check_in_time": timezone.now().isoformat()},
+            format="json",
+        )
+
+    def test_trainer_check_out(self) -> None:
+        """Trainer check-out stamps check_out_time and sets status 'left'."""
+        res = self._log_trainer()
+        self.assertEqual(res.status_code, 201)
+        record_id = res.data["id"]
+        res = self.client.post(
+            f"/api/v1/attendance/trainer-attendance/{record_id}/check-out/",
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["status"], "left")
+        self.assertIsNotNone(res.data["check_out_time"])
+
+    def test_double_trainer_check_out_rejected(self) -> None:
+        """A second trainer check-out is rejected."""
+        res = self._log_trainer()
+        record_id = res.data["id"]
+        self.client.post(
+            f"/api/v1/attendance/trainer-attendance/{record_id}/check-out/",
+            format="json",
+        )
+        res = self.client.post(
+            f"/api/v1/attendance/trainer-attendance/{record_id}/check-out/",
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
+
+class StaffAttendanceTests(APITestCase):
+    """Integration tests for staff attendance endpoints."""
+
+    def setUp(self) -> None:
+        """Create tenant, owner, staff user, and auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            first_name="Owner",
+            last_name="User",
+            role=User.Role.GYM_OWNER,
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.staff_user = create_user(
+            tenant=self.tenant,
+            email="manager@local.test",
+            first_name="Manny",
+            last_name="Ger",
+            role=User.Role.MANAGER,
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def _check_in_staff(self):
+        """Check the staff user in via the check-in endpoint."""
+        return self.client.post(
+            "/api/v1/attendance/check-in/",
+            {"person_id": self.staff_user.id, "person_type": "staff"},
+            format="json",
+        )
+
+    def test_staff_attendance_list(self) -> None:
+        """The staff attendance list endpoint returns tenant records."""
+        self._check_in_staff()
+        res = self.client.get("/api/v1/attendance/staff-attendance/")
+        self.assertEqual(res.status_code, 200)
+
+    def test_staff_check_out(self) -> None:
+        """Staff check-out stamps check_out_time and sets status 'left'."""
+        check_in = self._check_in_staff()
+        record_id = check_in.data["id"]
+        res = self.client.post(
+            f"/api/v1/attendance/staff-attendance/{record_id}/check-out/",
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["status"], "left")
+        self.assertIsNotNone(res.data["check_out_time"])
+
+    def test_double_staff_check_out_rejected(self) -> None:
+        """A second staff check-out is rejected."""
+        check_in = self._check_in_staff()
+        record_id = check_in.data["id"]
+        self.client.post(
+            f"/api/v1/attendance/staff-attendance/{record_id}/check-out/",
+            format="json",
+        )
+        res = self.client.post(
+            f"/api/v1/attendance/staff-attendance/{record_id}/check-out/",
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)

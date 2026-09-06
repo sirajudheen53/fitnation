@@ -250,6 +250,21 @@ class TrainerAttendanceViewSet(ModelViewSet):
         self.required_permission = "attendance.edit_attendance"
         return super().destroy(request, *args, **kwargs)
 
+    @action(detail=True, methods=["post"], url_path="check-out")
+    def check_out(self, request: Request, pk: int) -> Response:
+        """Check a trainer out by stamping the check-out time."""
+        self.required_permission = "attendance.edit_attendance"
+        record = self.get_object()
+        if record.check_out_time is not None:
+            return Response(
+                {"detail": "Already checked out."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        record.check_out_time = timezone.now()
+        record.status = TrainerAttendance.Status.LEFT
+        record.save(update_fields=["check_out_time", "status", "updated_at"])
+        return Response(TrainerAttendanceSerializer(record).data)
+
     @action(detail=False, methods=["get"])
     def reports(self, request: Request) -> Response:
         """Return trainer attendance counts aggregated per period.
@@ -329,3 +344,66 @@ class AttendanceStatsView(APIView):
         """Return attendance stats and the weekly summary."""
         self.required_permission = "attendance.view_attendance"
         return Response(attendance_stats(tenant=request.tenant))
+
+
+class StaffAttendanceViewSet(ModelViewSet):
+    """Tenant-scoped staff attendance CRUD viewset."""
+
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        RolePermission,
+    ]
+    required_permission = "attendance.view_attendance"
+    serializer_class = StaffAttendanceSerializer
+
+    def get_queryset(self) -> StaffAttendance:
+        """Return staff attendance records scoped to the tenant."""
+        return StaffAttendance.objects.for_tenant(self.request.tenant)
+
+    def create(self, request: Request) -> Response:
+        """Log a new staff attendance record."""
+        self.required_permission = "attendance.log_attendance"
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        record = serializer.save(tenant=request.tenant)
+        return Response(
+            StaffAttendanceSerializer(record).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request: Request, *args: object, **kwargs: object) -> Response:
+        """Update a staff attendance record."""
+        self.required_permission = "attendance.edit_attendance"
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(
+        self,
+        request: Request,
+        *args: object,
+        **kwargs: object,
+    ) -> Response:
+        """Partially update a staff attendance record."""
+        self.required_permission = "attendance.edit_attendance"
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request: Request, *args: object, **kwargs: object) -> Response:
+        """Delete a staff attendance record."""
+        self.required_permission = "attendance.edit_attendance"
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="check-out")
+    def check_out(self, request: Request, pk: int) -> Response:
+        """Check a staff member out by stamping the check-out time."""
+        self.required_permission = "attendance.edit_attendance"
+        record = self.get_object()
+        if record.check_out_time is not None:
+            return Response(
+                {"detail": "Already checked out."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        record.check_out_time = timezone.now()
+        record.status = AttendanceRecord.Status.LEFT
+        record.save(update_fields=["check_out_time", "status", "updated_at"])
+        return Response(StaffAttendanceSerializer(record).data)

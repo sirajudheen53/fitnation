@@ -7,6 +7,7 @@ from apps.attendance.views import (
     AttendanceRecordViewSet,
     AttendanceStatsView,
     CheckInView,
+    StaffAttendanceViewSet,
     TrainerAttendanceViewSet,
 )
 
@@ -16,6 +17,11 @@ router.register(
     r"trainer-attendance",
     TrainerAttendanceViewSet,
     basename="trainer-attendance",
+)
+router.register(
+    r"staff-attendance",
+    StaffAttendanceViewSet,
+    basename="staff-attendance",
 )
 
 urlpatterns = [
