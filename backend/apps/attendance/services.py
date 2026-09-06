@@ -3,9 +3,13 @@
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from apps.attendance.models import AttendanceRecord, TrainerAttendance
+from apps.attendance.models import (
+    AttendanceRecord,
+    StaffAttendance,
+    TrainerAttendance,
+)
 from apps.customers.models import Customer
-from apps.users.models import Trainer
+from apps.users.models import Trainer, User
 
 
 def log_check_in(
@@ -14,14 +18,16 @@ def log_check_in(
     person_id: int,
     person_type: str,
     branch_id: int | None = None,
-) -> AttendanceRecord | TrainerAttendance:
-    """Create an open attendance record for a customer or trainer.
+    status: str | None = None,
+) -> AttendanceRecord | TrainerAttendance | StaffAttendance:
+    """Create an attendance record for a customer, trainer, or staff member.
 
-    Raises ``ValidationError`` for unsupported person types, unknown
-    persons, and duplicate open check-ins on the same day.
+    Raises ``ValidationError`` for unknown persons, duplicate open
+    check-ins on the same day, and customer ids passed as staff.
     """
     today = timezone.localdate()
     now = timezone.now()
+    record_status = status or "present"
 
     if person_type == "customer":
         if not Customer.objects.for_tenant(tenant).filter(id=person_id).exists():
@@ -39,6 +45,7 @@ def log_check_in(
             branch_id=branch_id,
             check_in_time=now,
             method=AttendanceRecord.Method.MANUAL,
+            status=record_status,
         )
         record.save()
         return record
@@ -58,8 +65,33 @@ def log_check_in(
             trainer_id=person_id,
             branch_id=branch_id,
             check_in_time=now,
+            status=record_status,
         )
         record.save()
         return record
 
-    raise ValidationError({"person_type": "Staff attendance is not supported yet."})
+    if person_type == "staff":
+        staff_user = User.objects.filter(id=person_id, tenant=tenant).first()
+        if staff_user is None:
+            raise ValidationError({"person_id": "Staff member not found."})
+        if staff_user.role == User.Role.CUSTOMER:
+            raise ValidationError(
+                {"person_id": "User is a customer — use the customer flow."}
+            )
+        records = StaffAttendance.objects.for_tenant(tenant)
+        if records.filter(
+            user_id=person_id, date=today, check_out_time__isnull=True
+        ).exists():
+            raise ValidationError({"detail": "Already checked in — check out first."})
+        record = StaffAttendance(
+            tenant=tenant,
+            user_id=person_id,
+            branch_id=branch_id,
+            check_in_time=now,
+            method=AttendanceRecord.Method.MANUAL,
+            status=record_status,
+        )
+        record.save()
+        return record
+
+    raise ValidationError({"person_type": "Unsupported person type."})

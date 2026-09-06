@@ -13,11 +13,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
-from apps.attendance.models import AttendanceRecord, TrainerAttendance
+from apps.attendance.models import (
+    AttendanceRecord,
+    StaffAttendance,
+    TrainerAttendance,
+)
 from apps.attendance.selectors import attendance_stats
 from apps.attendance.serializers import (
     AttendanceRecordSerializer,
     CheckInSerializer,
+    StaffAttendanceSerializer,
     TrainerAttendanceSerializer,
 )
 from apps.attendance.services import log_check_in
@@ -118,7 +123,10 @@ class AttendanceRecordViewSet(ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         record.check_out_time = timezone.now()
-        record.save(update_fields=["check_out_time", "updated_at"])
+        record.status = AttendanceRecord.Status.LEFT
+        record.save(
+            update_fields=["check_out_time", "status", "updated_at"]
+        )
         return Response(AttendanceRecordSerializer(record).data)
 
     @action(detail=False, methods=["get"])
@@ -287,7 +295,7 @@ class CheckInView(APIView):
     ]
 
     def post(self, request: Request) -> Response:
-        """Check a customer or trainer in."""
+        """Check a customer, trainer, or staff member in."""
         self.required_permission = "attendance.log_attendance"
         serializer = CheckInSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -296,12 +304,14 @@ class CheckInView(APIView):
             person_id=serializer.validated_data["person_id"],
             person_type=serializer.validated_data["person_type"],
             branch_id=serializer.validated_data.get("branch_id"),
+            status=serializer.validated_data.get("status"),
         )
-        serializer_class = (
-            TrainerAttendanceSerializer
-            if isinstance(record, TrainerAttendance)
-            else AttendanceRecordSerializer
-        )
+        if isinstance(record, StaffAttendance):
+            serializer_class = StaffAttendanceSerializer
+        elif isinstance(record, TrainerAttendance):
+            serializer_class = TrainerAttendanceSerializer
+        else:
+            serializer_class = AttendanceRecordSerializer
         return Response(serializer_class(record).data, status=status.HTTP_201_CREATED)
 
 

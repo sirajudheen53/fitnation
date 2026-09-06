@@ -298,14 +298,46 @@ class CheckInViewTests(APITestCase):
         self.assertEqual(res.status_code, 201)
         self.assertEqual(res.data["person_type"], "trainer")
 
-    def test_staff_check_in_rejected(self) -> None:
-        """Staff attendance is not supported yet."""
+    def test_staff_check_in(self) -> None:
+        """Staff check-in creates a staff attendance record."""
+        staff_user = create_user(
+            tenant=self.tenant,
+            email="manager@local.test",
+            first_name="Manny",
+            last_name="Ger",
+            role=User.Role.MANAGER,
+        )
         res = self.client.post(
             "/api/v1/attendance/check-in/",
-            {"person_id": 1, "person_type": "staff"},
+            {"person_id": staff_user.id, "person_type": "staff"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["person_type"], "staff")
+        self.assertEqual(res.data["person_name"], "Manny Ger")
+
+    def test_staff_check_in_rejects_customer(self) -> None:
+        """A customer id with person_type 'staff' is rejected."""
+        res = self.client.post(
+            "/api/v1/attendance/check-in/",
+            {"person_id": self.customer.user_id, "person_type": "staff"},
             format="json",
         )
         self.assertEqual(res.status_code, 400)
+
+    def test_submitted_status_stored(self) -> None:
+        """A submitted status ('late') is stored on the record."""
+        res = self.client.post(
+            "/api/v1/attendance/check-in/",
+            {
+                "person_id": self.customer.id,
+                "person_type": "customer",
+                "status": "late",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data["status"], "late")
 
     def test_unknown_customer_rejected(self) -> None:
         """Check-in for a non-existent customer is rejected."""
