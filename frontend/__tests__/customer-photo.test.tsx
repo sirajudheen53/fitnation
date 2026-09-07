@@ -168,6 +168,7 @@ describe("buildCustomerBody", () => {
       first_name: "A",
       last_name: "K",
       is_active: true,
+      branch_id: 3,
       phone: undefined,
     });
     expect(body instanceof FormData).toBe(true);
@@ -175,6 +176,9 @@ describe("buildCustomerBody", () => {
     expect(form.get("profile_photo")).toBe(file);
     expect(form.get("email")).toBe("a@b.com");
     expect(form.get("is_active")).toBe("true");
+    // Contract: the wire field is `branch` (no backend alias).
+    expect(form.get("branch")).toBe("3");
+    expect(form.has("branch_id")).toBe(false);
     expect(form.has("phone")).toBe(false);
   });
 
@@ -184,10 +188,13 @@ describe("buildCustomerBody", () => {
       first_name: "A",
       last_name: "K",
       is_active: true,
+      branch_id: 3,
       profile_photo: undefined,
     }) as Record<string, unknown>;
     expect(body instanceof FormData).toBe(false);
     expect(body.email).toBe("a@b.com");
+    expect(body.branch).toBe(3);
+    expect("branch_id" in body).toBe(false);
     expect("profile_photo" in body).toBe(false);
   });
 

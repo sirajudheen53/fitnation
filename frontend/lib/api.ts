@@ -285,13 +285,16 @@ export function fetchCustomer(id: number | string, token: string): Promise<Custo
 export function buildCustomerBody(
   data: CustomerFormData,
 ): FormData | Record<string, unknown> {
-  const { profile_photo, ...fields } = data;
+  // The backend contract names the branch field `branch` (ADR-001: no
+  // aliases) while the form state uses `branch_id` - translate here.
+  const { profile_photo, branch_id, ...fields } = data;
 
   if (typeof File !== "undefined" && profile_photo instanceof File) {
     const form = new FormData();
     for (const [key, value] of Object.entries(fields)) {
       if (value !== undefined) form.append(key, String(value));
     }
+    if (branch_id !== undefined) form.append("branch", String(branch_id));
     form.append("profile_photo", profile_photo);
     return form;
   }
@@ -300,6 +303,7 @@ export function buildCustomerBody(
   for (const [key, value] of Object.entries(fields)) {
     if (value !== undefined) body[key] = value;
   }
+  if (branch_id !== undefined) body.branch = branch_id;
   if (profile_photo === null) body.profile_photo = null;
   return body;
 }

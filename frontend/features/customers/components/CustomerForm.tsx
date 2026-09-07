@@ -104,7 +104,7 @@ export function CustomerForm({
         phone: customer.phone || "",
         gender: customer.gender ?? undefined,
         date_of_birth: customer.date_of_birth || "",
-        branch_id: customer.branch_id ?? undefined,
+        branch_id: customer.branch ?? undefined,
         emergency_contact_name: customer.emergency_contact_name || "",
         emergency_contact_phone: customer.emergency_contact_phone || "",
         is_active: customer.is_active,
