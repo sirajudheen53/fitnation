@@ -1,5 +1,6 @@
 """Customer management serializers."""
 
+from PIL import Image
 from rest_framework import serializers
 
 from apps.customers.models import (
@@ -9,6 +10,10 @@ from apps.customers.models import (
     HealthProfile,
     ProgressPhoto,
 )
+
+# FBOS-026 part 1: profile photo constraints (JPEG/PNG/WebP, max 5 MB).
+ALLOWED_PROFILE_PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}
+MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -41,6 +46,32 @@ class CustomerSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_profile_photo(self, value):
+        """FBOS-026: accept JPEG/PNG/WebP only, max 5 MB."""
+        if not value:
+            return value
+        if value.size > MAX_PROFILE_PHOTO_BYTES:
+            raise serializers.ValidationError(
+                "Profile photo must be 5 MB or smaller."
+            )
+        fmt = None
+        try:
+            with Image.open(value) as image:
+                fmt = image.format
+                image.verify()
+        except Exception:
+            raise serializers.ValidationError(
+                "Profile photo must be a valid JPEG, PNG or WebP image."
+            )
+        finally:
+            if hasattr(value, "seek"):
+                value.seek(0)
+        if fmt not in ALLOWED_PROFILE_PHOTO_FORMATS:
+            raise serializers.ValidationError(
+                "Profile photo must be a JPEG, PNG or WebP image."
+            )
+        return value
 
     def validate(self, data: dict) -> dict:
         """Ensure a tenant does not contain duplicate customer emails."""

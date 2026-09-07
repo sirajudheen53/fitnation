@@ -1,8 +1,15 @@
 """Tests for the customers app."""
 
+import io
+import shutil
+import tempfile
+
 from django.contrib.auth import get_user_model
+from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from PIL import Image, features
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 
 from apps.branches.models import Branch
@@ -13,6 +20,7 @@ from apps.customers.models import (
     HealthProfile,
     ProgressPhoto,
 )
+from apps.customers.serializers import MAX_PROFILE_PHOTO_BYTES
 from apps.tenants.services import provision_tenant
 from apps.users.services import create_owner_user, issue_token
 
@@ -1422,3 +1430,221 @@ class ProgressSummaryAPITests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["progress_percentage"], 50.0)
         self.assertEqual(response.data[0]["target_unit"], "kg")
+
+
+class CustomerPhotoUploadAPITests(APITestCase):
+    """FBOS-026 part 1 — customer profile photo upload validation.
+
+    Covers: upload on create, replace on update, invalid/oversized rejection,
+    optional-field behavior, WebP support and tenant isolation.
+    """
+
+    def setUp(self) -> None:
+        """Isolated MEDIA_ROOT, tenant, owner, branch, and auth token."""
+        self.media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media_root, ignore_errors=True)
+        media_override = override_settings(MEDIA_ROOT=self.media_root)
+        media_override.enable()
+        self.addCleanup(media_override.disable)
+
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.branch = Branch.objects.create(
+            tenant=self.tenant,
+            name="Main Branch",
+            address_line1="MG Road",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def _create_raw_customer_user(self, email: str) -> User:
+        """Create a customer user without an auto-generated profile."""
+        return User.objects.create_user(
+            email=email,
+            password="F1tNati0n!",
+            first_name="Photo",
+            last_name="Customer",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+
+    @staticmethod
+    def _photo(name: str = "photo.jpg", fmt: str = "JPEG", size: tuple[int, int] = (8, 8)) -> SimpleUploadedFile:
+        """Build an in-memory image upload for the given format."""
+        content_types = {
+            "JPEG": "image/jpeg",
+            "PNG": "image/png",
+            "WEBP": "image/webp",
+            "GIF": "image/gif",
+        }
+        extensions = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "GIF": "gif"}
+        buffer = io.BytesIO()
+        Image.new("RGB", size, color=(180, 60, 30)).save(buffer, format=fmt)
+        buffer.seek(0)
+        return SimpleUploadedFile(
+            f"photo.{extensions[fmt]}",
+            buffer.getvalue(),
+            content_type=content_types[fmt],
+        )
+
+    def _payload(self, email: str, user: User) -> dict:
+        """Minimal valid customer payload."""
+        return {
+            "user": user.id,
+            "branch": self.branch.id,
+            "name": "Photo Customer",
+            "email": email,
+            "phone": "+919876543210",
+            "date_of_birth": "1995-01-01",
+            "gender": "male",
+            "emergency_contact_name": "Contact",
+            "emergency_contact_phone": "+919876543211",
+            "is_active": True,
+        }
+
+    def test_upload_photo_on_create(self) -> None:
+        """Multipart create persists the photo and returns a usable media URL."""
+        user = self._create_raw_customer_user("photo@example.com")
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            {**self._payload("photo@example.com", user), "profile_photo": self._photo("photo.jpg")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        customer = Customer.objects.get(email="photo@example.com")
+        self.assertTrue(customer.profile_photo)
+        self.assertTrue(customer.profile_photo.name.startswith("customer-photos/"))
+        self.assertTrue(default_storage.exists(customer.profile_photo.name))
+
+        url = response.data["profile_photo"]
+        self.assertIn("media/customer-photos/", url)
+        with default_storage.open(customer.profile_photo.name) as stored:
+            self.assertEqual(Image.open(stored).format, "JPEG")
+
+    def test_replace_photo_on_update(self) -> None:
+        """PATCH with a new image replaces the stored photo reference."""
+        user = self._create_raw_customer_user("replace@example.com")
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=user,
+            name="Replace Customer",
+            email="replace@example.com",
+        )
+        response = self.client.patch(
+            f"/api/v1/customers/customers/{customer.id}/",
+            {"profile_photo": self._photo("updated.png", fmt="PNG")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200)
+        customer.refresh_from_db()
+        self.assertTrue(customer.profile_photo.name.endswith(".png"))
+        self.assertTrue(default_storage.exists(customer.profile_photo.name))
+        self.assertIn("media/customer-photos/", response.data["profile_photo"])
+
+    def test_invalid_format_rejected(self) -> None:
+        """GIF uploads are rejected with a format error."""
+        user = self._create_raw_customer_user("gif@example.com")
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            {**self._payload("gif@example.com", user), "profile_photo": self._photo("bad.gif", fmt="GIF")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("JPEG, PNG or WebP", str(response.data))
+
+    def test_non_image_rejected(self) -> None:
+        """Corrupt/plain-text payloads are rejected as invalid images.
+
+        DRF's ImageField decodes the upload first, so its own message fires
+        before the serializer's format allow-list.
+        """
+        user = self._create_raw_customer_user("text@example.com")
+        bogus = SimpleUploadedFile("photo.jpg", b"definitely not an image", content_type="image/jpeg")
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            {**self._payload("text@example.com", user), "profile_photo": bogus},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("profile_photo", response.data)
+        self.assertIn("not an image", str(response.data))
+
+    def test_oversized_photo_rejected(self) -> None:
+        """A valid image larger than 5 MB is rejected by the size check."""
+        import os
+
+        user = self._create_raw_customer_user("big@example.com")
+        # Valid PNG of pure noise — ~1500x1500x3 bytes, far above the limit.
+        buffer = io.BytesIO()
+        Image.frombytes("RGB", (1500, 1500), os.urandom(1500 * 1500 * 3)).save(buffer, format="PNG")
+        self.assertGreater(buffer.getbuffer().nbytes, MAX_PROFILE_PHOTO_BYTES)
+        oversized = SimpleUploadedFile(
+            "big.png", buffer.getvalue(), content_type="image/png"
+        )
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            {**self._payload("big@example.com", user), "profile_photo": oversized},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("5 MB", str(response.data))
+        self.assertEqual(Customer.objects.filter(email="big@example.com").count(), 0)
+
+    def test_create_without_photo_still_works(self) -> None:
+        """The photo field remains optional."""
+        user = self._create_raw_customer_user("nophoto@example.com")
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("nophoto@example.com", user),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNone(response.data["profile_photo"])
+
+    def test_webp_photo_accepted(self) -> None:
+        """WebP uploads are accepted when Pillow supports WebP."""
+        if not features.check("webp"):
+            self.skipTest("Pillow built without WebP support")
+        user = self._create_raw_customer_user("webp@example.com")
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            {**self._payload("webp@example.com", user), "profile_photo": self._photo("valid.webp", fmt="WEBP")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIn("customer-photos/", response.data["profile_photo"])
+
+    def test_tenant_isolation_unchanged(self) -> None:
+        """Another tenant's owner cannot touch this customer's photo."""
+        user = self._create_raw_customer_user("isolated@example.com")
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=user,
+            name="Isolated Customer",
+            email="isolated@example.com",
+        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_owner = create_owner_user(
+            tenant=other_tenant,
+            email="other-owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Other Owner",
+        )
+        other_token = issue_token(other_owner, other_tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {other_token.key}")
+
+        response = self.client.patch(
+            f"/api/v1/customers/customers/{customer.id}/",
+            {"profile_photo": self._photo("intruder.png", fmt="PNG")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 404)
+        customer.refresh_from_db()
+        self.assertFalse(customer.profile_photo)
+        self.assertEqual(Customer.objects.for_tenant(other_tenant).count(), 0)
