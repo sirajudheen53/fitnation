@@ -9,7 +9,7 @@ import { AttendanceTable } from "@/features/attendance/components/AttendanceTabl
 import { AttendanceStats } from "@/features/attendance/components/AttendanceStats";
 import { PeakHoursChart } from "@/features/attendance/components/PeakHoursChart";
 import { Button, Alert, Spinner } from "@/components/ui";
-import { fetchAttendance, fetchAttendanceStats, errorMessage } from "@/lib/api";
+import { fetchAllAttendance, fetchAttendanceStats, errorMessage } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { canAccessRoute } from "@/lib/permissions";
 import type { AttendanceRecord } from "@/types/attendance";
@@ -51,11 +51,11 @@ export default function AttendancePage() {
 
     async function load() {
       try {
-        const [recordRes, statsRes] = await Promise.all([
-          fetchAttendance(authToken),
+        const [records, statsRes] = await Promise.all([
+          fetchAllAttendance(authToken),
           fetchAttendanceStats(authToken),
         ]);
-        setRecords(recordRes.results);
+        setRecords(records);
         setStats(statsRes);
       } catch (err) {
         setError(errorMessage(err));

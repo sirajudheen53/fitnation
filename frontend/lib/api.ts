@@ -531,6 +531,28 @@ export function fetchAttendance(token: string): Promise<AttendanceListResponse> 
   return request<AttendanceListResponse>("/attendance/attendance/", { token });
 }
 
+export function fetchTrainerAttendance(token: string): Promise<AttendanceListResponse> {
+  return request<AttendanceListResponse>("/attendance/trainer-attendance/", { token });
+}
+
+export function fetchStaffAttendance(token: string): Promise<AttendanceListResponse> {
+  return request<AttendanceListResponse>("/attendance/staff-attendance/", { token });
+}
+
+export function fetchAllAttendance(token: string): Promise<AttendanceRecord[]> {
+  return Promise.all([
+    fetchAttendance(token),
+    fetchTrainerAttendance(token),
+    fetchStaffAttendance(token),
+  ]).then(([customer, trainer, staff]) =>
+    [...customer.results, ...trainer.results, ...staff.results].sort(
+      (a, b) =>
+        new Date(b.check_in_time ?? 0).getTime() -
+        new Date(a.check_in_time ?? 0).getTime(),
+    ),
+  );
+}
+
 export function fetchAttendanceStats(token: string): Promise<AttendanceStatsResponse> {
   return request<AttendanceStatsResponse>("/attendance/stats/", { token });
 }
