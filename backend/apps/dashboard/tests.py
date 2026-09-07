@@ -162,7 +162,7 @@ class DashboardAPITests(APITestCase):
         )
 
     def test_overview_endpoint(self) -> None:
-        """GET overview/ returns the overview shape."""
+        """GET overview/ returns the overview shape incl. mrr."""
         response = self.client.get("/api/v1/dashboard/overview/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["total_members"], 1)
@@ -174,47 +174,79 @@ class DashboardAPITests(APITestCase):
             response.data["revenue_summary"]["total"],
             1500.0,
         )
+        # MRR: single active membership, plan 1500.00 over 30 days → 1500/mo.
+        self.assertIn("mrr", response.data)
+        self.assertEqual(float(response.data["mrr"]), 1500.0)
+
+    def test_overview_cache_shape_invalidation(self) -> None:
+        """A same-day cache row from an older payload shape is recomputed."""
+        DashboardCache.objects.create(
+            tenant=self.tenant,
+            metric_name="overview",
+            metric_value={"total_members": 99},
+        )
+        response = self.client.get("/api/v1/dashboard/overview/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("mrr", response.data)
+        self.assertEqual(response.data["total_members"], 1)
 
     def test_revenue_endpoint(self) -> None:
-        """GET revenue/ returns a series for daily/weekly/monthly."""
-        for period in ("daily", "weekly", "monthly"):
-            response = self.client.get(f"/api/v1/dashboard/revenue/?period={period}")
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.data["period"], period)
-            total = sum(r["amount"] for r in response.data["results"])
+        """GET revenue/ returns daily/weekly/monthly series with label+amount."""
+        response = self.client.get("/api/v1/dashboard/revenue/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.data.keys()), {"daily", "weekly", "monthly"}
+        )
+        for series_name in ("daily", "weekly", "monthly"):
+            series = response.data[series_name]
+            self.assertGreaterEqual(len(series), 1)
+            for point in series:
+                self.assertIn("label", point)
+                self.assertIn("amount", point)
+        # The setUp payment was completed today → present in all three series.
+        for series_name in ("daily", "weekly", "monthly"):
+            total = sum(p["amount"] for p in response.data[series_name])
             self.assertEqual(total, 1500.0)
 
-    def test_revenue_invalid_period_defaults_monthly(self) -> None:
-        """An unknown period defaults to monthly rather than erroring."""
+    def test_revenue_ignores_period_param(self) -> None:
+        """The period query param is accepted (back-compat) and ignored."""
         response = self.client.get("/api/v1/dashboard/revenue/?period=hourly")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["period"], "monthly")
+        self.assertEqual(set(response.data.keys()), {"daily", "weekly", "monthly"})
 
     def test_attendance_endpoint(self) -> None:
-        """GET attendance/ returns peak hours and weekly counts."""
+        """GET attendance/ returns peak hours and the 7-day weekly trend."""
         response = self.client.get("/api/v1/dashboard/attendance/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("peak_hours", response.data)
-        self.assertIn("weekly_counts", response.data)
-        weekly_total = sum(r["count"] for r in response.data["weekly_counts"])
-        self.assertEqual(weekly_total, 1)
+        self.assertIn("weekly_trend", response.data)
+        # Every point uses the {hour: <label>, check_ins: <count>} shape.
+        for point in response.data["peak_hours"] + response.data["weekly_trend"]:
+            self.assertIn("hour", point)
+            self.assertIn("check_ins", point)
+        self.assertEqual(len(response.data["weekly_trend"]), 7)
+        trend_total = sum(p["check_ins"] for p in response.data["weekly_trend"])
+        self.assertEqual(trend_total, 1)
 
     def test_memberships_endpoint(self) -> None:
-        """GET memberships/ returns status counts and plan distribution."""
+        """GET memberships/ returns the breakdown and plan distribution."""
         response = self.client.get("/api/v1/dashboard/memberships/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["status_counts"]["active"], 1)
+        self.assertIn("breakdown", response.data)
+        self.assertEqual(response.data["breakdown"]["active"], 1)
         self.assertGreaterEqual(len(response.data["plan_distribution"]), 1)
 
     def test_trainers_endpoint(self) -> None:
-        """GET trainers/ returns the trainer's performance row."""
+        """GET trainers/ returns a flat TrainerOverviewData[] list."""
         response = self.client.get("/api/v1/dashboard/trainers/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["total"], 1)
-        row = response.data["results"][0]
+        self.assertIsInstance(response.data, list)
+        self.assertEqual(len(response.data), 1)
+        row = response.data[0]
+        self.assertEqual(row["id"], self.trainer.id)
         self.assertEqual(row["revenue"], 5000.0)
-        self.assertEqual(row["rating_avg"], 4.8)
-        self.assertEqual(row["client_count"], 1)
+        self.assertEqual(row["rating"], 4.8)
+        self.assertEqual(row["active_clients"], 1)
 
     def test_tenant_isolation(self) -> None:
         """Tenant B sees none of tenant A's dashboard data."""
@@ -237,7 +269,10 @@ class DashboardAPITests(APITestCase):
         self.assertEqual(response.data["pending_payments"], 0)
 
         response = self.client.get("/api/v1/dashboard/revenue/")
-        self.assertEqual(response.data["results"], [])
+        self.assertEqual(response.status_code, 200)
+        # Zero-filled series, but no revenue for tenant B.
+        self.assertGreaterEqual(len(response.data["daily"]), 1)
+        self.assertEqual(sum(p["amount"] for p in response.data["daily"]), 0.0)
 
     def test_unauthenticated_denied(self) -> None:
         """Requests without a token are rejected."""

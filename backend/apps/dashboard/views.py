@@ -15,7 +15,6 @@ from apps.dashboard.serializers import (
     OverviewSerializer,
     PendingPaymentSerializer,
     RevenueSerializer,
-    TrainerPerformanceResponseSerializer,
 )
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
@@ -49,13 +48,12 @@ class DashboardOverviewView(DashboardBaseView):
 
 
 class DashboardRevenueView(DashboardBaseView):
-    """GET revenue/?period=daily|weekly|monthly — revenue time-series."""
+    """GET revenue/ — revenue time-series for daily/weekly/monthly periods."""
 
     def get(self, request):
-        """Return the revenue breakdown for the requested period."""
+        """Return all three revenue series in a single payload."""
         tenant = self.get_tenant()
-        period = request.query_params.get("period", "monthly")
-        data = services.get_revenue_breakdown(tenant, period)
+        data = services.get_revenue_breakdown(tenant)
         return Response(RevenueSerializer(data).data)
 
 
@@ -80,13 +78,12 @@ class DashboardMembershipsView(DashboardBaseView):
 
 
 class DashboardTrainersView(DashboardBaseView):
-    """GET trainers/ — top trainers ranked by revenue/rating/client count."""
+    """GET trainers/ — top trainers ranked by revenue and client count."""
 
     def get(self, request):
-        """Return trainer performance for the tenant."""
+        """Return the trainer performance list (TrainerOverviewData[])."""
         tenant = self.get_tenant()
-        data = services.get_trainer_performance(tenant)
-        return Response(TrainerPerformanceResponseSerializer(data).data)
+        return Response(services.get_trainer_performance(tenant))
 
 
 class DashboardPendingPaymentsView(DashboardBaseView):

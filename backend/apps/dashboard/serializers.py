@@ -1,8 +1,8 @@
 """Dashboard response serializers (FBOS-008).
 
-These serializers are intentionally lightweight — they shape the aggregation
-dictionaries returned by ``apps.dashboard.services`` into validated, documented
-DRF responses.
+These serializers shape the aggregation dictionaries returned by
+``apps.dashboard.services`` into the contract defined by the frontend
+(``frontend/src/types/dashboard.ts``).
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ class OverviewSerializer(serializers.Serializer):
 
     total_members = serializers.IntegerField(default=0)
     active_memberships = serializers.IntegerField(default=0)
+    mrr = serializers.CharField()
     revenue_summary = RevenueSummarySerializer()
     today_attendance = serializers.IntegerField(default=0)
     trainer_count = serializers.IntegerField(default=0)
@@ -29,45 +30,36 @@ class OverviewSerializer(serializers.Serializer):
 
 
 class RevenuePointSerializer(serializers.Serializer):
-    """A single revenue bucket in the time-series."""
+    """A single revenue bucket in a time-series."""
 
-    period = serializers.CharField()
+    label = serializers.CharField()
     amount = serializers.FloatField(default=0.0)
 
 
 class RevenueSerializer(serializers.Serializer):
-    """Revenue breakdown response."""
+    """Revenue breakdown response — one series per period."""
 
-    period = serializers.ChoiceField(
-        choices=["daily", "weekly", "monthly"],
-        default="monthly",
-    )
-    results = RevenuePointSerializer(many=True)
+    daily = RevenuePointSerializer(many=True)
+    weekly = RevenuePointSerializer(many=True)
+    monthly = RevenuePointSerializer(many=True)
 
 
-class PeakHourSerializer(serializers.Serializer):
-    """A peak attendance hour bucket."""
+class AttendancePointSerializer(serializers.Serializer):
+    """An attendance chart point — ``hour`` carries the x-axis label."""
 
-    hour = serializers.IntegerField()
-    count = serializers.IntegerField(default=0)
-
-
-class WeeklyCountSerializer(serializers.Serializer):
-    """Weekly check-in count bucket."""
-
-    week = serializers.CharField()
-    count = serializers.IntegerField(default=0)
+    hour = serializers.CharField()
+    check_ins = serializers.IntegerField(default=0)
 
 
 class AttendanceSerializer(serializers.Serializer):
     """Attendance analytics response."""
 
-    peak_hours = PeakHourSerializer(many=True)
-    weekly_counts = WeeklyCountSerializer(many=True)
+    peak_hours = AttendancePointSerializer(many=True)
+    weekly_trend = AttendancePointSerializer(many=True)
 
 
-class MembershipStatusSerializer(serializers.Serializer):
-    """Membership status counts."""
+class MembershipBreakdownSerializer(serializers.Serializer):
+    """Membership status breakdown."""
 
     active = serializers.IntegerField(default=0)
     expired = serializers.IntegerField(default=0)
@@ -78,33 +70,14 @@ class PlanDistributionSerializer(serializers.Serializer):
     """A per-plan membership distribution bucket."""
 
     plan = serializers.CharField()
-    plan_type = serializers.CharField()
     count = serializers.IntegerField(default=0)
 
 
 class MembershipStatsSerializer(serializers.Serializer):
     """Membership stats response."""
 
-    status_counts = MembershipStatusSerializer()
+    breakdown = MembershipBreakdownSerializer()
     plan_distribution = PlanDistributionSerializer(many=True)
-
-
-class TrainerPerformanceSerializer(serializers.Serializer):
-    """A single trainer performance row."""
-
-    trainer_id = serializers.IntegerField()
-    name = serializers.CharField()
-    revenue = serializers.FloatField(default=0.0)
-    rating_avg = serializers.FloatField(allow_null=True, default=None)
-    client_count = serializers.IntegerField(default=0)
-    sessions_completed = serializers.IntegerField(default=0)
-
-
-class TrainerPerformanceResponseSerializer(serializers.Serializer):
-    """Top trainers response."""
-
-    results = TrainerPerformanceSerializer(many=True)
-    total = serializers.IntegerField(default=0)
 
 
 class PendingPaymentSerializer(serializers.Serializer):
