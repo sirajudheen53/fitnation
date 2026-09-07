@@ -17,27 +17,48 @@ export type FitnessGoal =
 export interface Customer {
   id: number;
   email: string;
-  first_name: string;
-  last_name: string;
+  /** Fields returned by GET /customers/customers/ (backend contract). */
+  user: number;
+  name: string;
+  branch: number | null;
+  status: string;
+  notes: string;
+  address_street: string;
+  address_city: string;
+  address_state: string;
+  address_postal_code: string;
   phone: string | null;
   gender: Gender | null;
   date_of_birth: string | null;
-  branch_id: number | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   is_active: boolean;
-  // Health profile fields
-  height_cm: number | string | null;
-  weight_kg: number | string | null;
-  bmi: number | string | null;
-  fitness_goal: FitnessGoal | null;
-  injuries: string | null;
-  medical_info: string | null;
+  profile_photo: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Legacy fields kept optional for existing call sites. The backend does
+   * NOT return them (health data lives on the separate health-profile
+   * endpoint); display code must prefer `name`.
+   */
+  first_name?: string;
+  last_name?: string;
+  branch_id?: number | null;
+  height_cm?: number | string | null;
+  weight_kg?: number | string | null;
+  bmi?: number | string | null;
+  fitness_goal?: FitnessGoal | null;
+  injuries?: string | null;
+  medical_info?: string | null;
 }
 
 export interface CustomerFormData {
+  /**
+   * Upload/replace photo (File), explicitly remove an existing photo (null),
+   * or leave unchanged (undefined). Serialised as multipart when a File is
+   * present, otherwise as JSON (null included so the backend can clear it).
+   */
+  profile_photo?: File | null;
   email: string;
   first_name: string;
   last_name: string;

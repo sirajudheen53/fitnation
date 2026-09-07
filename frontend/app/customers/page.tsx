@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { CustomerTable } from "@/features/customers/components/CustomerTable";
+import { getCustomerDisplayName } from "@/features/customers/components/CustomerAvatar";
 import { Button, Alert, Spinner } from "@/components/ui";
 import { fetchCustomers, deleteCustomer, errorMessage } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -55,7 +56,7 @@ export default function CustomersPage() {
   const canCreate = userRole ? canAccessRoute(userRole, "/customers/new") : false;
 
   const handleDelete = async (customer: Customer) => {
-    if (!confirm(`Delete customer "${customer.first_name} ${customer.last_name}"?`)) return;
+    if (!confirm(`Delete customer "${getCustomerDisplayName(customer)}"?`)) return;
     const token = getToken();
     if (!token) return;
     setDeleting(customer.id);

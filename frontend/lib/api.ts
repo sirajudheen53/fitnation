@@ -50,6 +50,24 @@ export function unwrapList<T>(
   return [];
 }
 
+/**
+ * Resolve a backend media URL for display.
+ *
+ * Django serves media at a relative path (`/media/...`), which only works
+ * when the page is served from the API origin. Prefix the API origin so
+ * images render from the frontend domain; absolute URLs pass through.
+ */
+export function resolveMediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  try {
+    const origin = new URL(API_BASE_URL).origin;
+    return `${origin}${path.startsWith("/") ? path : `/${path}`}`;
+  } catch {
+    return path;
+  }
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -60,10 +78,14 @@ interface RequestOptions {
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, token, headers = {} } = options;
 
+  // Multipart uploads (e.g. customer profile photo) must NOT set
+  // Content-Type - the browser supplies it with the form boundary.
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+
   const config: RequestInit = {
     method,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...headers,
     },
   };
@@ -73,7 +95,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   if (body !== undefined) {
-    config.body = JSON.stringify(body);
+    config.body = isFormData ? (body as FormData) : JSON.stringify(body);
   }
 
   const res = await fetch(`${API_BASE_URL}${path}`, config);
@@ -253,13 +275,42 @@ export function fetchCustomer(id: number | string, token: string): Promise<Custo
   return request<Customer>(`/customers/customers/${id}/`, { token });
 }
 
+/**
+ * Build the request body for a customer create/update.
+ *
+ * With a photo File the body becomes multipart FormData (the browser sets
+ * the boundary); otherwise it stays JSON. `profile_photo: null` is kept in
+ * the JSON body so the backend can clear an existing photo on update.
+ */
+export function buildCustomerBody(
+  data: CustomerFormData,
+): FormData | Record<string, unknown> {
+  const { profile_photo, ...fields } = data;
+
+  if (typeof File !== "undefined" && profile_photo instanceof File) {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined) form.append(key, String(value));
+    }
+    form.append("profile_photo", profile_photo);
+    return form;
+  }
+
+  const body: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) body[key] = value;
+  }
+  if (profile_photo === null) body.profile_photo = null;
+  return body;
+}
+
 export function createCustomer(
   data: CustomerFormData,
   token: string,
 ): Promise<Customer> {
   return request<Customer>("/customers/customers/", {
     method: "POST",
-    body: data,
+    body: buildCustomerBody(data),
     token,
   });
 }
@@ -271,7 +322,7 @@ export function updateCustomer(
 ): Promise<Customer> {
   return request<Customer>(`/customers/customers/${id}/`, {
     method: "PUT",
-    body: data,
+    body: buildCustomerBody(data),
     token,
   });
 }

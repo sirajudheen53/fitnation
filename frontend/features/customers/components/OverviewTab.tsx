@@ -15,6 +15,7 @@ import {
   HeartPulse,
 } from "lucide-react";
 import { Card, CardHeader, CardBody, Badge } from "@/components/ui";
+import { CustomerAvatar, getCustomerDisplayName } from "./CustomerAvatar";
 import type { Customer } from "@/types/customer";
 import type { ProgressSummary } from "@/types/customer-detail";
 
@@ -68,8 +69,19 @@ export function OverviewTab({ customer, summary }: OverviewTabProps) {
     },
   ];
 
+  const displayName = getCustomerDisplayName(customer);
+
   return (
     <div className="space-y-6">
+      {/* Customer identity header */}
+      <div className="flex items-center gap-4">
+        <CustomerAvatar customer={customer} size="lg" />
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">{displayName}</h3>
+          <p className="text-sm text-gray-500">{customer.email}</p>
+        </div>
+      </div>
+
       {/* Primary stats grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (

@@ -13,9 +13,12 @@ import {
 } from "@tanstack/react-table";
 import { ArrowUpDown, Edit, Eye, MoreHorizontal, Trash2 } from "lucide-react";
 import { Button, Badge } from "@/components/ui";
+import { CustomerAvatar, getCustomerDisplayName } from "./CustomerAvatar";
 import type { Customer } from "@/types/customer";
 
 const columnHelper = createColumnHelper<Customer>();
+
+export { getCustomerDisplayName };
 
 export function getCustomerMembershipStatus(customer: Customer): {
   label: string;
@@ -25,11 +28,6 @@ export function getCustomerMembershipStatus(customer: Customer): {
     return { label: "Inactive", variant: "danger" };
   }
   return { label: "Active", variant: "success" };
-}
-
-export function getCustomerDisplayName(customer: Customer): string {
-  const name = `${customer.first_name || ""} ${customer.last_name || ""}`.trim();
-  return name || customer.email;
 }
 
 interface CustomerTableProps {
@@ -46,9 +44,12 @@ export function CustomerTable({ customers, onDelete, loading }: CustomerTablePro
       id: "name",
       header: "Name",
       cell: ({ row }) => (
-        <div>
-          <div className="font-medium text-gray-900">{getCustomerDisplayName(row.original)}</div>
-          <div className="text-sm text-gray-500">{row.original.email}</div>
+        <div className="flex items-center gap-3">
+          <CustomerAvatar customer={row.original} size="sm" />
+          <div>
+            <div className="font-medium text-gray-900">{getCustomerDisplayName(row.original)}</div>
+            <div className="text-sm text-gray-500">{row.original.email}</div>
+          </div>
         </div>
       ),
     }),

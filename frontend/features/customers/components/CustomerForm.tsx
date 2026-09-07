@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -15,16 +15,29 @@ import {
 } from "lucide-react";
 import { Button, Input, Alert } from "@/components/ui";
 import type { Customer, CustomerFormData, Gender } from "@/types/customer";
-import { errorMessage } from "@/lib/api";
+import { errorMessage, resolveMediaUrl } from "@/lib/api";
+import { ProfilePhotoPicker, validateProfilePhoto } from "./ProfilePhotoPicker";
 
 const customerSchema = z.object({
   email: z.string().email("Please enter a valid email"),
   first_name: z.string().min(1, "First name is required").max(100),
   last_name: z.string().min(1, "Last name is required").max(100),
   phone: z.string().max(20).optional().or(z.literal("")),
-  gender: z.enum(["male", "female", "other", "prefer_not_to_say"]).optional(),
+  // Untouched <select>/<input> elements submit as "" (or NaN for numbers),
+  // so tolerate empty values instead of failing validation with cryptic
+  // "Invalid enum value" messages.
+  gender: z
+    .enum(["male", "female", "other", "prefer_not_to_say"])
+    .optional()
+    .or(z.literal("")),
   date_of_birth: z.string().optional().or(z.literal("")),
-  branch_id: z.coerce.number().int().positive().optional().or(z.nan().transform(() => undefined)),
+  branch_id: z
+    .union([
+      z.literal("").transform(() => undefined),
+      z.nan().transform(() => undefined),
+      z.coerce.number().int().positive(),
+    ])
+    .optional(),
   emergency_contact_name: z.string().max(100).optional().or(z.literal("")),
   emergency_contact_phone: z.string().max(20).optional().or(z.literal("")),
   is_active: z.boolean().default(true),
@@ -72,12 +85,22 @@ export function CustomerForm({
     },
   });
 
+  // Profile photo state (kept outside react-hook-form - it is a File, not text).
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoRemoved, setPhotoRemoved] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const existingPhotoUrl = resolveMediaUrl(customer?.profile_photo ?? null);
+
   useEffect(() => {
     if (customer) {
+      // The backend stores a single `name`; best-effort split for the two inputs.
+      const legacyFirst = customer.first_name || customer.name?.split(/\s+/)[0] || "";
+      const legacyLast =
+        customer.last_name || customer.name?.split(/\s+/).slice(1).join(" ") || "";
       reset({
         email: customer.email,
-        first_name: customer.first_name,
-        last_name: customer.last_name,
+        first_name: legacyFirst,
+        last_name: legacyLast,
         phone: customer.phone || "",
         gender: customer.gender ?? undefined,
         date_of_birth: customer.date_of_birth || "",
@@ -86,6 +109,10 @@ export function CustomerForm({
         emergency_contact_phone: customer.emergency_contact_phone || "",
         is_active: customer.is_active,
       });
+      // Reloaded customer - drop any stale picker state.
+      setPhotoFile(null);
+      setPhotoRemoved(false);
+      setPhotoError(null);
     }
   }, [customer, reset]);
 
@@ -95,7 +122,7 @@ export function CustomerForm({
       first_name: data.first_name,
       last_name: data.last_name,
       phone: data.phone || undefined,
-      gender: data.gender ?? undefined,
+      gender: data.gender || undefined,
       date_of_birth: data.date_of_birth || undefined,
       branch_id:
         data.branch_id !== undefined && !Number.isNaN(data.branch_id)
@@ -104,8 +131,33 @@ export function CustomerForm({
       emergency_contact_name: data.emergency_contact_name || undefined,
       emergency_contact_phone: data.emergency_contact_phone || undefined,
       is_active: data.is_active,
+      profile_photo: photoFile ?? (photoRemoved ? null : undefined),
     };
     await onSubmit(payload);
+  };
+
+  const handlePhotoChange = (file: File | null) => {
+    setPhotoError(null);
+    if (!file) {
+      setPhotoFile(null);
+      return;
+    }
+    const validationError = validateProfilePhoto(file);
+    if (validationError) {
+      setPhotoError(validationError);
+      return;
+    }
+    setPhotoFile(file);
+    setPhotoRemoved(false);
+  };
+
+  const handlePhotoRemove = () => {
+    setPhotoError(null);
+    if (photoFile) {
+      setPhotoFile(null);
+      return;
+    }
+    setPhotoRemoved(true);
   };
 
   const isActive = watch("is_active");
@@ -113,6 +165,15 @@ export function CustomerForm({
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="max-w-3xl space-y-6">
       {error != null && <Alert variant="error">{errorMessage(error)}</Alert>}
+
+      <ProfilePhotoPicker
+        existingPhotoUrl={existingPhotoUrl}
+        file={photoFile}
+        removed={photoRemoved}
+        error={photoError}
+        onChange={handlePhotoChange}
+        onRemove={handlePhotoRemove}
+      />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Input
