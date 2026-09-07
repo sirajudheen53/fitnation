@@ -42,3 +42,7 @@ Thumbs.db
 
 # Docker
 *.pid
+
+# QA environment secrets (NEVER commit)
+deploy/qa/.env.qa
+deploy/qa/certbot/
