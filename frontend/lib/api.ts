@@ -325,7 +325,7 @@ export function updateCustomer(
   token: string,
 ): Promise<Customer> {
   return request<Customer>(`/customers/customers/${id}/`, {
-    method: "PUT",
+    method: "PATCH",
     body: buildCustomerBody(data),
     token,
   });
