@@ -39,6 +39,8 @@ class Payment(TenantModelMixin):
         CARD = "card", "Card"
         ONLINE = "online", "Online"
         UPI = "upi", "UPI"
+        BANK_TRANSFER = "bank_transfer", "Bank Transfer"
+        OTHER = "other", "Other"
 
     class Status(models.TextChoices):
         """Lifecycle status of a payment."""

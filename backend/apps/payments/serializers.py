@@ -2,13 +2,35 @@
 
 from typing import ClassVar
 
+from django.utils import timezone
 from rest_framework import serializers
 
+from apps.customers.models import Customer
+from apps.memberships.models import Membership
 from apps.payments.models import Invoice, Payment, PaymentRefund, RazorpayConfig
 
 
 class PaymentSerializer(serializers.ModelSerializer):
-    """Serialize payment details."""
+    """Serialize payment details for the frontend Payment contract (FBOS-005).
+
+    Exposes ``customer_id``/``customer_name``, ``method``, ``membership_id``,
+    ``invoice_id`` and ``payment_date`` (falling back to ``created_at`` so
+    pending payments always carry a sortable date).
+    """
+
+    customer_id = serializers.PrimaryKeyRelatedField(
+        source="customer", queryset=Customer.objects.all()
+    )
+    customer_name = serializers.CharField(source="customer.name", read_only=True)
+    membership_id = serializers.PrimaryKeyRelatedField(
+        source="membership",
+        queryset=Membership.objects.all(),
+        allow_null=True,
+        required=False,
+    )
+    invoice_id = serializers.SerializerMethodField()
+    method = serializers.ChoiceField(source="payment_method", choices=Payment.PaymentMethod.choices)
+    payment_date = serializers.DateTimeField(source="paid_at", allow_null=True, required=False)
 
     class Meta:
         """Serializer metadata."""
@@ -16,27 +38,42 @@ class PaymentSerializer(serializers.ModelSerializer):
         model = Payment
         fields: ClassVar[list] = [
             "id",
-            "customer",
-            "membership",
+            "customer_id",
+            "customer_name",
+            "membership_id",
+            "invoice_id",
             "amount",
-            "payment_method",
+            "method",
             "status",
             "transaction_id",
             "razorpay_order_id",
             "razorpay_payment_id",
-            "paid_at",
+            "payment_date",
             "notes",
             "created_at",
             "updated_at",
         ]
         read_only_fields: ClassVar[list] = [
             "id",
-            "paid_at",
+            "customer_name",
+            "invoice_id",
             "razorpay_order_id",
             "razorpay_payment_id",
             "created_at",
             "updated_at",
         ]
+
+    def get_invoice_id(self, payment: Payment) -> int | None:
+        """Return the first invoice issued for this payment, if any."""
+        invoice = payment.invoices.first()
+        return invoice.id if invoice else None
+
+    def to_representation(self, instance):
+        """Ensure payment_date is never null (frontend slices it for filters)."""
+        data = super().to_representation(instance)
+        if not data.get("payment_date"):
+            data["payment_date"] = timezone.localtime(instance.created_at).isoformat()
+        return data
 
 
 class InvoiceSerializer(serializers.ModelSerializer):

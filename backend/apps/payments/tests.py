@@ -209,32 +209,35 @@ class PaymentAPITests(APITestCase):
         response = self.client.post(
             "/api/v1/payments/",
             {
-                "customer": self.customer.id,
-                "membership": self.membership.id,
+                "customer_id": self.customer.id,
+                "membership_id": self.membership.id,
                 "amount": "1500.00",
-                "payment_method": "cash",
+                "method": "cash",
                 "status": "completed",
             },
             format="json",
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["status"], "completed")
-        self.assertIsNotNone(response.data["paid_at"])
+        self.assertIsNotNone(response.data["payment_date"])
+        self.assertEqual(response.data["customer_name"], "API Customer")
 
     def test_record_pending_payment_has_no_paid_at(self) -> None:
         """A pending payment has no paid_at timestamp."""
         response = self.client.post(
             "/api/v1/payments/",
             {
-                "customer": self.customer.id,
+                "customer_id": self.customer.id,
                 "amount": "1500.00",
-                "payment_method": "cash",
+                "method": "cash",
                 "status": "pending",
             },
             format="json",
         )
         self.assertEqual(response.status_code, 201)
-        self.assertIsNone(response.data["paid_at"])
+        # pending payments carry no paid_at; payment_date falls back to created_at
+        self.assertIsNotNone(response.data["payment_date"])
+        self.assertNotIn("paid_at", response.data)
 
     def test_list_payments(self) -> None:
         """Owners can list payments."""
@@ -248,6 +251,33 @@ class PaymentAPITests(APITestCase):
         response = self.client.get("/api/v1/payments/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
+
+    def test_payment_list_contract_shape(self) -> None:
+        """List rows match the frontend Payment contract (FBOS-005)."""
+        response = self.client.post(
+            "/api/v1/payments/",
+            {
+                "customer_id": self.customer.id,
+                "amount": "1500.00",
+                "method": "bank_transfer",
+                "status": "completed",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        list_response = self.client.get("/api/v1/payments/")
+        self.assertEqual(list_response.status_code, 200)
+        row = list_response.data["results"][0]
+        for key in ("id", "customer_id", "customer_name", "membership_id",
+                    "invoice_id", "amount", "method", "status", "payment_date",
+                    "notes", "created_at", "updated_at"):
+            self.assertIn(key, row)
+        self.assertEqual(row["customer_id"], self.customer.id)
+        self.assertEqual(row["customer_name"], "API Customer")
+        self.assertEqual(row["method"], "bank_transfer")
+        self.assertIsNotNone(row["payment_date"])  # created_at fallback for rows without paid_at
+        self.assertIn("invoice_id", row)
 
     def test_filter_payments_by_status(self) -> None:
         """Payments can be filtered by status."""
