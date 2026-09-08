@@ -8,6 +8,7 @@ well-formed defaults (zeros / empty lists) rather than raising on empty data.
 
 from __future__ import annotations
 
+import datetime as dt
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -44,11 +45,7 @@ def get_overview(tenant: Any) -> dict:
 
     # MRR: active memberships normalized to a 30-day equivalent.
     mrr_total = Decimal(0)
-    active_qs = (
-        Membership.objects.for_tenant(tenant)
-        .filter(status=Membership.Status.ACTIVE)
-        .select_related("plan")
-    )
+    active_qs = Membership.objects.for_tenant(tenant).filter(status=Membership.Status.ACTIVE).select_related("plan")
     for membership in active_qs:
         plan = membership.plan
         if plan is not None and plan.duration_days:
@@ -115,9 +112,8 @@ def get_revenue_breakdown(tenant: Any, period: str | None = None) -> dict:
     monthly_totals = {start: Decimal(0) for start in month_starts}
 
     earliest = timezone.make_aware(datetime.combine(month_starts[0], datetime.min.time()))
-    paid = (
-        Payment.objects.for_tenant(tenant)
-        .filter(status=Payment.Status.COMPLETED, paid_at__isnull=False, paid_at__gte=earliest)
+    paid = Payment.objects.for_tenant(tenant).filter(
+        status=Payment.Status.COMPLETED, paid_at__isnull=False, paid_at__gte=earliest
     )
 
     for payment in paid.iterator(chunk_size=500):
@@ -133,10 +129,7 @@ def get_revenue_breakdown(tenant: Any, period: str | None = None) -> dict:
             monthly_totals[month_key] += amount
 
     return {
-        "daily": [
-            {"label": day.strftime("%b %d"), "amount": round(float(daily_totals[day]), 2)}
-            for day in daily_days
-        ],
+        "daily": [{"label": day.strftime("%b %d"), "amount": round(float(daily_totals[day]), 2)} for day in daily_days],
         "weekly": [
             {"label": start.strftime("%b %d"), "amount": round(float(weekly_totals[start]), 2)}
             for start in weekly_starts
@@ -159,16 +152,8 @@ def get_attendance_analytics(tenant: Any) -> dict:
     """
     qs = AttendanceRecord.objects.for_tenant(tenant)
 
-    peak_qs = (
-        qs.annotate(hour=ExtractHour("check_in_time"))
-        .values("hour")
-        .annotate(count=Count("id"))
-        .order_by("hour")
-    )
-    peak_hours = [
-        {"hour": _hour_label(int(row["hour"] or 0)), "check_ins": row["count"]}
-        for row in peak_qs
-    ]
+    peak_qs = qs.annotate(hour=ExtractHour("check_in_time")).values("hour").annotate(count=Count("id")).order_by("hour")
+    peak_hours = [{"hour": _hour_label(int(row["hour"] or 0)), "check_ins": row["count"]} for row in peak_qs]
 
     today = timezone.localdate()
     day_counts = {today - timedelta(days=offset): 0 for offset in range(6, -1, -1)}
@@ -177,9 +162,7 @@ def get_attendance_analytics(tenant: Any) -> dict:
         if day in day_counts:
             day_counts[day] += 1
 
-    weekly_trend = [
-        {"hour": day.strftime("%a"), "check_ins": day_counts[day]} for day in day_counts
-    ]
+    weekly_trend = [{"hour": day.strftime("%a"), "check_ins": day_counts[day]} for day in day_counts]
 
     return {
         "peak_hours": peak_hours,
@@ -204,12 +187,8 @@ def get_membership_stats(tenant: Any) -> dict:
         "cancelled": qs.filter(status=Membership.Status.CANCELLED).count(),
     }
 
-    plan_rows = list(
-        qs.values("plan__name").annotate(count=Count("id")).order_by("-count")
-    )
-    plan_distribution = [
-        {"plan": row["plan__name"], "count": row["count"]} for row in plan_rows
-    ]
+    plan_rows = list(qs.values("plan__name").annotate(count=Count("id")).order_by("-count"))
+    plan_distribution = [{"plan": row["plan__name"], "count": row["count"]} for row in plan_rows]
 
     return {
         "breakdown": breakdown,

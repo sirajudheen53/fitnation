@@ -18,9 +18,7 @@ class PaymentSerializer(serializers.ModelSerializer):
     pending payments always carry a sortable date).
     """
 
-    customer_id = serializers.PrimaryKeyRelatedField(
-        source="customer", queryset=Customer.objects.all()
-    )
+    customer_id = serializers.PrimaryKeyRelatedField(source="customer", queryset=Customer.objects.all())
     customer_name = serializers.CharField(source="customer.name", read_only=True)
     membership_id = serializers.PrimaryKeyRelatedField(
         source="membership",

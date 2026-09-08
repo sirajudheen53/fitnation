@@ -194,9 +194,7 @@ class DashboardAPITests(APITestCase):
         """GET revenue/ returns daily/weekly/monthly series with label+amount."""
         response = self.client.get("/api/v1/dashboard/revenue/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            set(response.data.keys()), {"daily", "weekly", "monthly"}
-        )
+        self.assertEqual(set(response.data.keys()), {"daily", "weekly", "monthly"})
         for series_name in ("daily", "weekly", "monthly"):
             series = response.data[series_name]
             self.assertGreaterEqual(len(series), 1)

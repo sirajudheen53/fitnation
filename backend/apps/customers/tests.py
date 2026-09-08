@@ -6,11 +6,12 @@ import tempfile
 
 from django.contrib.auth import get_user_model
 from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
-from PIL import Image, features
-from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
+
+from PIL import Image, features
 
 from apps.branches.models import Branch
 from apps.customers.models import (
@@ -1584,9 +1585,7 @@ class CustomerPhotoUploadAPITests(APITestCase):
         buffer = io.BytesIO()
         Image.frombytes("RGB", (1500, 1500), os.urandom(1500 * 1500 * 3)).save(buffer, format="PNG")
         self.assertGreater(buffer.getbuffer().nbytes, MAX_PROFILE_PHOTO_BYTES)
-        oversized = SimpleUploadedFile(
-            "big.png", buffer.getvalue(), content_type="image/png"
-        )
+        oversized = SimpleUploadedFile("big.png", buffer.getvalue(), content_type="image/png")
         response = self.client.post(
             "/api/v1/customers/customers/",
             {**self._payload("big@example.com", user), "profile_photo": oversized},
@@ -1716,9 +1715,7 @@ class BodyMeasurementFilterAPITests(APITestCase):
     def test_owner_filter_by_customer_param(self) -> None:
         """?customer={id} narrows staff/owner results to that customer."""
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.owner_token.key}")
-        response = self.client.get(
-            f"/api/v1/customers/body-measurements/?customer={self.customer_a.id}"
-        )
+        response = self.client.get(f"/api/v1/customers/body-measurements/?customer={self.customer_a.id}")
         self.assertEqual(response.status_code, 200)
         rows = self._rows(response)
         self.assertEqual(len(rows), 2)
@@ -1737,9 +1734,7 @@ class BodyMeasurementFilterAPITests(APITestCase):
         """Customer tokens always resolve to their own rows (?customer= ignored)."""
         customer_token = issue_token(self.customer_a_user, self.tenant)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {customer_token.key}")
-        response = self.client.get(
-            f"/api/v1/customers/body-measurements/?customer={self.customer_b.id}"
-        )
+        response = self.client.get(f"/api/v1/customers/body-measurements/?customer={self.customer_b.id}")
         self.assertEqual(response.status_code, 200)
         rows = self._rows(response)
         self.assertEqual(len(rows), 2)
@@ -1862,7 +1857,7 @@ class CustomerCreationContractTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 201)
-        customer = Customer.objects.get(email="otp@local.test")
+        Customer.objects.get(email="otp@local.test")
 
         request_response = self.client.post(
             "/api/v1/users/auth/otp/request/",

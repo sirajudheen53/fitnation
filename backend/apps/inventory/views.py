@@ -104,9 +104,7 @@ class InventoryItemViewSet(ModelViewSet):
         """
         self.required_permission = "inventory.view_inventory"
         queryset = self.get_queryset().filter(track_inventory=True)
-        low_stock_items = [
-            item for item in queryset if item.is_low_stock
-        ]
+        low_stock_items = [item for item in queryset if item.is_low_stock]
         page = self.paginate_queryset(low_stock_items)
         if page is not None:
             serializer = self.get_serializer(page, many=True)

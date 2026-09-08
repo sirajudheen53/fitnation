@@ -378,9 +378,7 @@ class BodyMeasurementViewSet(ModelViewSet):
             try:
                 customer_id = int(self.request.query_params["customer"])
             except ValueError:
-                raise ValidationError(
-                    {"customer": "Must be a valid integer."}
-                )
+                raise ValidationError({"customer": "Must be a valid integer."})
             queryset = queryset.filter(customer_id=customer_id)
 
         return queryset

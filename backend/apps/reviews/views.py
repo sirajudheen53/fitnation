@@ -90,9 +90,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
             data = serializer.data
 
         data["average_rating"] = (
-            round(float(aggregate["average_rating"]), 2)
-            if aggregate["average_rating"] is not None
-            else None
+            round(float(aggregate["average_rating"]), 2) if aggregate["average_rating"] is not None else None
         )
         data["count"] = aggregate["count"]
         return Response(data)

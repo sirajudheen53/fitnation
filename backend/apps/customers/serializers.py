@@ -1,9 +1,9 @@
 """Customer management serializers."""
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q
-from PIL import Image
 from rest_framework import serializers
+
+from PIL import Image
 
 from apps.customers.models import (
     BodyMeasurement,
@@ -30,9 +30,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     writable for mobile/tests.
     """
 
-    first_name = serializers.CharField(
-        required=False, allow_blank=True, write_only=True, max_length=150
-    )
+    first_name = serializers.CharField(required=False, allow_blank=True, write_only=True, max_length=150)
     last_name = serializers.CharField(required=False, allow_blank=True, write_only=True, max_length=150)
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
     name = serializers.CharField(max_length=200, required=False)
@@ -72,25 +70,19 @@ class CustomerSerializer(serializers.ModelSerializer):
         if not value:
             return value
         if value.size > MAX_PROFILE_PHOTO_BYTES:
-            raise serializers.ValidationError(
-                "Profile photo must be 5 MB or smaller."
-            )
+            raise serializers.ValidationError("Profile photo must be 5 MB or smaller.")
         fmt = None
         try:
             with Image.open(value) as image:
                 fmt = image.format
                 image.verify()
         except Exception:
-            raise serializers.ValidationError(
-                "Profile photo must be a valid JPEG, PNG or WebP image."
-            )
+            raise serializers.ValidationError("Profile photo must be a valid JPEG, PNG or WebP image.")
         finally:
             if hasattr(value, "seek"):
                 value.seek(0)
         if fmt not in ALLOWED_PROFILE_PHOTO_FORMATS:
-            raise serializers.ValidationError(
-                "Profile photo must be a JPEG, PNG or WebP image."
-            )
+            raise serializers.ValidationError("Profile photo must be a JPEG, PNG or WebP image.")
         return value
 
     def validate(self, data: dict) -> dict:
@@ -127,9 +119,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         first_name = validated_data.pop("first_name", "")
         last_name = validated_data.pop("last_name", "")
         if validated_data.get("user") is None:
-            user = self._provision_portal_user(
-                validated_data, validated_data.get("tenant"), first_name, last_name
-            )
+            user = self._provision_portal_user(validated_data, validated_data.get("tenant"), first_name, last_name)
             validated_data["user"] = user
         return super().create(validated_data)
 

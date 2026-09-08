@@ -13,7 +13,7 @@ from apps.branches.models import Branch
 from apps.tenants.models import Tenant, TenantSettings
 from apps.users.models import User
 
-from .common import PASSWORDS, ensure_password, ensure_active
+from .common import PASSWORDS, ensure_active, ensure_password
 
 ADMIN_EMAIL = "admin@fitnation.test"
 DEFAULT_TENANT_NAME = "FitNation Test Gym"

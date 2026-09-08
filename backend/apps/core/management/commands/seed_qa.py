@@ -57,8 +57,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--no-reset-passwords",
             action="store_true",
-            help="Do not align existing account passwords with the documented "
-            "QA values (default: align).",
+            help="Do not align existing account passwords with the documented " "QA values (default: align).",
         )
 
     def handle(self, *args, **options) -> None:
@@ -75,9 +74,7 @@ class Command(BaseCommand):
                 echo=echo,
             )
             tenant_ab.seed(reset_passwords=reset_passwords, echo=echo)
-            trainers_t1 = realistic_t1.seed_staff(
-                tenant1, reset_passwords=reset_passwords, echo=echo
-            )
+            trainers_t1 = realistic_t1.seed_staff(tenant1, reset_passwords=reset_passwords, echo=echo)
             tenant2.seed_base(reset_passwords=reset_passwords, echo=echo)
             if realistic:
                 realistic_t1.seed_realistic(tenant1, branch1, trainers_t1, echo=echo)
@@ -102,9 +99,7 @@ class Command(BaseCommand):
         for email, password, note in rows:
             self.stdout.write(f"  {email:<28} {password:<12} {note}")
         if realistic:
-            self.stdout.write(
-                "  (customers use Test@1234 in tenant 1, F1tNati0n! in IronHouse)"
-            )
+            self.stdout.write("  (customers use Test@1234 in tenant 1, F1tNati0n! in IronHouse)")
         self.stdout.write(
             "\nRegression reminders:\n"
             "  BUG-2026-08-27-01: owner_a sees only FitGym A memberships/payments\n"

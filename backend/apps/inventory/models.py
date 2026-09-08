@@ -30,9 +30,7 @@ class Equipment(TenantModelMixin):
         db_table = "equipment"
         ordering = ["name"]
         constraints = [
-            models.UniqueConstraint(
-                fields=["tenant", "uuid"], name="uq_equipment_tenant_uuid"
-            ),
+            models.UniqueConstraint(fields=["tenant", "uuid"], name="uq_equipment_tenant_uuid"),
         ]
 
     def __str__(self) -> str:
@@ -42,9 +40,7 @@ class Equipment(TenantModelMixin):
 class InventoryItem(TenantModelMixin):
     """Stock tracking for a piece of equipment."""
 
-    equipment = models.OneToOneField(
-        Equipment, on_delete=models.CASCADE, related_name="inventory_item"
-    )
+    equipment = models.OneToOneField(Equipment, on_delete=models.CASCADE, related_name="inventory_item")
     stock_quantity = models.PositiveIntegerField(default=0)
     low_stock_threshold = models.PositiveIntegerField(default=5)
     track_inventory = models.BooleanField(default=True)
@@ -57,9 +53,7 @@ class InventoryItem(TenantModelMixin):
         db_table = "inventory_items"
         ordering = ["id"]
         constraints = [
-            models.UniqueConstraint(
-                fields=["tenant", "equipment"], name="uq_inventory_tenant_equipment"
-            ),
+            models.UniqueConstraint(fields=["tenant", "equipment"], name="uq_inventory_tenant_equipment"),
         ]
 
     @property
@@ -81,9 +75,7 @@ class MaintenanceLog(TenantModelMixin):
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
 
-    equipment = models.ForeignKey(
-        Equipment, on_delete=models.CASCADE, related_name="maintenance_logs"
-    )
+    equipment = models.ForeignKey(Equipment, on_delete=models.CASCADE, related_name="maintenance_logs")
     performed_at = models.DateTimeField(default=timezone.now)
     description = models.TextField()
     status = models.CharField(

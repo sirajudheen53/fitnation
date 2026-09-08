@@ -24,11 +24,7 @@ def attendance_stats(tenant) -> dict:
 
     def check_in_datetimes(queryset) -> list:
         """Return local check-in datetimes for a record queryset."""
-        return [
-            timezone.localtime(record.check_in_time)
-            for record in queryset
-            if record.check_in_time is not None
-        ]
+        return [timezone.localtime(record.check_in_time) for record in queryset if record.check_in_time is not None]
 
     today_check_ins = (
         check_in_datetimes(customer_records.filter(date=today))

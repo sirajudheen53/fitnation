@@ -2,24 +2,26 @@
 Seed QA database with test tenants and users for regression testing.
 Run: python seed_qa.py
 """
+
 import os
 import uuid
 from datetime import date, datetime
 
 import django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.cloudrun')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.cloudrun")
 django.setup()
 
 from django.contrib.auth.hashers import make_password  # noqa: E402
+
+from apps.branches.models import Branch  # noqa: E402
+from apps.customers.models import BodyMeasurement, Customer, FitnessGoal  # noqa: E402
+from apps.memberships.models import Membership, MembershipPlan  # noqa: E402
+from apps.payments.models import Payment as PaymentModel  # noqa: E402
 from apps.tenants.models import Tenant  # noqa: E402
 from apps.tenants.services import provision_tenant  # noqa: E402
 from apps.users.models import User  # noqa: E402
 from apps.users.services import create_owner_user  # noqa: E402
-from apps.customers.models import Customer, BodyMeasurement, FitnessGoal  # noqa: E402
-from apps.memberships.models import Membership, MembershipPlan  # noqa: E402
-from apps.payments.models import Payment as PaymentModel  # noqa: E402
-from apps.branches.models import Branch  # noqa: E402
 
 
 def seed():
@@ -285,5 +287,5 @@ def seed():
     print("  2. Verify token email sent via SendGrid")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     seed()

@@ -33,12 +33,8 @@ def log_check_in(
         if not Customer.objects.for_tenant(tenant).filter(id=person_id).exists():
             raise ValidationError({"person_id": "Customer not found."})
         records = AttendanceRecord.objects.for_tenant(tenant)
-        if records.filter(
-            customer_id=person_id, date=today, check_out_time__isnull=True
-        ).exists():
-            raise ValidationError(
-                {"detail": "Already checked in — check out first."}
-            )
+        if records.filter(customer_id=person_id, date=today, check_out_time__isnull=True).exists():
+            raise ValidationError({"detail": "Already checked in — check out first."})
         record = AttendanceRecord(
             tenant=tenant,
             customer_id=person_id,
@@ -54,12 +50,8 @@ def log_check_in(
         if not Trainer.objects.filter(id=person_id, user__tenant=tenant).exists():
             raise ValidationError({"person_id": "Trainer not found."})
         records = TrainerAttendance.objects.for_tenant(tenant)
-        if records.filter(
-            trainer_id=person_id, date=today, check_out_time__isnull=True
-        ).exists():
-            raise ValidationError(
-                {"detail": "Already checked in — check out first."}
-            )
+        if records.filter(trainer_id=person_id, date=today, check_out_time__isnull=True).exists():
+            raise ValidationError({"detail": "Already checked in — check out first."})
         record = TrainerAttendance(
             tenant=tenant,
             trainer_id=person_id,
@@ -75,13 +67,9 @@ def log_check_in(
         if staff_user is None:
             raise ValidationError({"person_id": "Staff member not found."})
         if staff_user.role == User.Role.CUSTOMER:
-            raise ValidationError(
-                {"person_id": "User is a customer — use the customer flow."}
-            )
+            raise ValidationError({"person_id": "User is a customer — use the customer flow."})
         records = StaffAttendance.objects.for_tenant(tenant)
-        if records.filter(
-            user_id=person_id, date=today, check_out_time__isnull=True
-        ).exists():
+        if records.filter(user_id=person_id, date=today, check_out_time__isnull=True).exists():
             raise ValidationError({"detail": "Already checked in — check out first."})
         record = StaffAttendance(
             tenant=tenant,

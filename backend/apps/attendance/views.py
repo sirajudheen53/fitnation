@@ -124,9 +124,7 @@ class AttendanceRecordViewSet(ModelViewSet):
             )
         record.check_out_time = timezone.now()
         record.status = AttendanceRecord.Status.LEFT
-        record.save(
-            update_fields=["check_out_time", "status", "updated_at"]
-        )
+        record.save(update_fields=["check_out_time", "status", "updated_at"])
         return Response(AttendanceRecordSerializer(record).data)
 
     @action(detail=False, methods=["get"])

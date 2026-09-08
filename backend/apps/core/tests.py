@@ -7,11 +7,6 @@ from django.core.management import call_command
 from django.utils import timezone as dj_timezone
 from rest_framework.test import APITestCase
 
-import datetime as dt
-
-from apps.payments.models import Payment
-from apps.memberships.models import MembershipPlan
-
 from apps.core.qa_seed.common import PASSWORDS
 from apps.customers.models import Customer
 from apps.diet.models import DietPlan, FoodItem
@@ -102,9 +97,7 @@ class SeedQACommandTests(APITestCase):
             ("owner.iron@fitnation.test", PASSWORDS["tenant2_staff"]),
         ]:
             user = User.objects.get(email=email)
-            self.assertTrue(
-                check_password(password, user.password), f"{email} password broken"
-            )
+            self.assertTrue(check_password(password, user.password), f"{email} password broken")
 
     def test_realistic_flag_seeds_full_dataset(self) -> None:
         """--realistic adds customers, memberships, diet and workout plans."""
@@ -152,22 +145,29 @@ class SeedQACommandTests(APITestCase):
         from apps.payments.models import Payment
 
         tenant = Tenant.objects.create(name="Backfill Gym", contact_email="bf@x.test")
-        plan = MembershipPlan.objects.create(
-            tenant=tenant, name="Legacy Plan", price="2000.00", duration_days=30
-        )
+        plan = MembershipPlan.objects.create(tenant=tenant, name="Legacy Plan", price="2000.00", duration_days=30)
         user = User.objects.create(
-            tenant=tenant, email="legacy@x.test", first_name="L", last_name="U",
+            tenant=tenant,
+            email="legacy@x.test",
+            first_name="L",
+            last_name="U",
             role=User.Role.CUSTOMER,
         )
         customer = Customer.objects.create(tenant=tenant, user=user, email=user.email)
         membership = Membership.objects.create(
-            tenant=tenant, customer=customer, plan=plan,
-            start_date=dt.date(2026, 6, 1), end_date=dt.date(2026, 6, 30),
+            tenant=tenant,
+            customer=customer,
+            plan=plan,
+            start_date=dt.date(2026, 6, 1),
+            end_date=dt.date(2026, 6, 30),
             status=Membership.Status.ACTIVE,
         )
         payment = Payment.objects.create(
-            tenant=tenant, customer=customer, membership=membership,
-            amount="2000.00", status=Payment.Status.COMPLETED,  # paid_at NULL
+            tenant=tenant,
+            customer=customer,
+            membership=membership,
+            amount="2000.00",
+            status=Payment.Status.COMPLETED,  # paid_at NULL
         )
         self.assertIsNone(payment.paid_at)
 

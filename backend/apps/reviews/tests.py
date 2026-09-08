@@ -361,9 +361,7 @@ class ReviewSerializerTests(TestCase):
         """Customers cannot set the customer field through the write serializer."""
         from apps.reviews.serializers import ReviewWriteSerializer
 
-        serializer = ReviewWriteSerializer(
-            data={"branch": self.branch.id, "rating": 5, "customer": 999}
-        )
+        serializer = ReviewWriteSerializer(data={"branch": self.branch.id, "rating": 5, "customer": 999})
         self.assertTrue(serializer.is_valid())
         self.assertNotIn("customer", serializer.validated_data)
 

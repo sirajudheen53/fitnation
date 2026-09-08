@@ -269,9 +269,20 @@ class PaymentAPITests(APITestCase):
         list_response = self.client.get("/api/v1/payments/")
         self.assertEqual(list_response.status_code, 200)
         row = list_response.data["results"][0]
-        for key in ("id", "customer_id", "customer_name", "membership_id",
-                    "invoice_id", "amount", "method", "status", "payment_date",
-                    "notes", "created_at", "updated_at"):
+        for key in (
+            "id",
+            "customer_id",
+            "customer_name",
+            "membership_id",
+            "invoice_id",
+            "amount",
+            "method",
+            "status",
+            "payment_date",
+            "notes",
+            "created_at",
+            "updated_at",
+        ):
             self.assertIn(key, row)
         self.assertEqual(row["customer_id"], self.customer.id)
         self.assertEqual(row["customer_name"], "API Customer")

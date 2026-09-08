@@ -51,8 +51,7 @@ def _ensure_tenant(name: str, contact_email: str, plan: str) -> Tenant:
     return tenant
 
 
-def _ensure_owner(tenant: Tenant, email: str, contact_name: str, phone: str,
-                  reset_passwords: bool = True) -> User:
+def _ensure_owner(tenant: Tenant, email: str, contact_name: str, phone: str, reset_passwords: bool = True) -> User:
     owner = User.objects.filter(email=email).first()
     if owner is None:
         owner = create_owner_user(
@@ -94,11 +93,8 @@ def seed(reset_passwords: bool = True, echo=print) -> dict:
     """
     # ── Tenant A: FitGym A ────────────────────────────────────────────────
     tenant_a = _ensure_tenant("FitGym A", "admin@fitgyma.qa", "professional")
-    owner_a = _ensure_owner(tenant_a, "owner_a@fitgyma.qa", "Rahul Sharma",
-                            "+919876543210", reset_passwords)
-    customer_a = _ensure_customer_user(
-        tenant_a, "customer_a@fitgyma.qa", "Priya", "Verma", "+919876543211"
-    )
+    owner_a = _ensure_owner(tenant_a, "owner_a@fitgyma.qa", "Rahul Sharma", "+919876543210", reset_passwords)
+    customer_a = _ensure_customer_user(tenant_a, "customer_a@fitgyma.qa", "Priya", "Verma", "+919876543211")
 
     customer_profile_a = Customer.objects.filter(user=customer_a).first()
     if customer_profile_a is None:
@@ -188,11 +184,8 @@ def seed(reset_passwords: bool = True, echo=print) -> dict:
 
     # ── Tenant B: FitGym B ────────────────────────────────────────────────
     tenant_b = _ensure_tenant("FitGym B", "admin@fitgymb.qa", "starter")
-    owner_b = _ensure_owner(tenant_b, "owner_b@fitgymb.qa", "Suresh Patel",
-                            "+919876543220", reset_passwords)
-    customer_b = _ensure_customer_user(
-        tenant_b, "customer_b@fitgymb.qa", "Anita", "Desai", "+919876543221"
-    )
+    owner_b = _ensure_owner(tenant_b, "owner_b@fitgymb.qa", "Suresh Patel", "+919876543220", reset_passwords)
+    customer_b = _ensure_customer_user(tenant_b, "customer_b@fitgymb.qa", "Anita", "Desai", "+919876543221")
 
     customer_profile_b = Customer.objects.filter(user=customer_b).first()
     if customer_profile_b is None:

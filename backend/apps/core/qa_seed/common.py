@@ -100,9 +100,7 @@ def ensure_trainer(user: User, **defaults) -> Trainer:
     return trainer
 
 
-def ensure_trainer_schedule(
-    trainer: Trainer, tenant, days: list[str], start: str, end: str
-) -> None:
+def ensure_trainer_schedule(trainer: Trainer, tenant, days: list[str], start: str, end: str) -> None:
     """Idempotently create weekly availability slots for a trainer."""
     for day in days:
         TrainerSchedule.objects.get_or_create(
@@ -120,6 +118,7 @@ def ensure_active(tenant) -> None:
     if tenant.status != Tenant.Status.ACTIVE:
         tenant.status = Tenant.Status.ACTIVE
         tenant.save(update_fields=["status"])
+
 
 def _month_start(months_back: int) -> date:
     """First day of the month ``months_back`` months before today."""
@@ -154,8 +153,11 @@ def ensure_demo_payments(tenant, customers) -> None:
             if membership is None:
                 continue
             Payment.objects.create(
-                tenant=tenant, customer=customer, membership=membership,
-                amount=membership.plan.price, payment_method=Payment.PaymentMethod.UPI,
+                tenant=tenant,
+                customer=customer,
+                membership=membership,
+                amount=membership.plan.price,
+                payment_method=Payment.PaymentMethod.UPI,
                 status=Payment.Status.PENDING,
                 transaction_id=f"DEMO-PEND-{customer.id:05d}",
                 notes="Demo pending payment",
@@ -163,22 +165,26 @@ def ensure_demo_payments(tenant, customers) -> None:
             break
 
     # 2. completed today (>= 3) — feeds today's revenue + the revenue series.
-    if not Payment.objects.filter(
-        tenant=tenant, status=Payment.Status.COMPLETED, paid_at__gte=start_of_today
-    ).exists():
+    if not Payment.objects.filter(tenant=tenant, status=Payment.Status.COMPLETED, paid_at__gte=start_of_today).exists():
         for customer in customers[:3]:
             membership = _membership_for(customer)
             if membership is None:
                 continue
             payment = Payment.objects.create(
-                tenant=tenant, customer=customer, membership=membership,
-                amount=membership.plan.price, payment_method=Payment.PaymentMethod.ONLINE,
-                status=Payment.Status.COMPLETED, paid_at=now,
+                tenant=tenant,
+                customer=customer,
+                membership=membership,
+                amount=membership.plan.price,
+                payment_method=Payment.PaymentMethod.ONLINE,
+                status=Payment.Status.COMPLETED,
+                paid_at=now,
                 transaction_id=f"DEMO-TODAY-{customer.id:05d}",
                 notes="Demo walk-in payment",
             )
             Invoice.objects.create(
-                tenant=tenant, customer=customer, payment=payment,
+                tenant=tenant,
+                customer=customer,
+                payment=payment,
                 subtotal=payment.amount,
                 tax=(payment.amount * Decimal("0.18")).quantize(Decimal("0.01")),
                 total=(payment.amount * Decimal("1.18")).quantize(Decimal("0.01")),
@@ -188,12 +194,12 @@ def ensure_demo_payments(tenant, customers) -> None:
     for months_back in range(1, 7):
         month_day = _month_start(months_back)
         month_start = timezone.make_aware(datetime.combine(month_day, time.min))
-        month_end = timezone.make_aware(
-            datetime.combine(month_day + timedelta(days=32), time.min)
-        ).replace(day=1)
+        month_end = timezone.make_aware(datetime.combine(month_day + timedelta(days=32), time.min)).replace(day=1)
         has_payment = Payment.objects.filter(
-            tenant=tenant, status=Payment.Status.COMPLETED,
-            paid_at__gte=month_start, paid_at__lt=month_end,
+            tenant=tenant,
+            status=Payment.Status.COMPLETED,
+            paid_at__gte=month_start,
+            paid_at__lt=month_end,
         ).exists()
         if has_payment or not customers:
             continue
@@ -201,13 +207,13 @@ def ensure_demo_payments(tenant, customers) -> None:
         membership = _membership_for(customer)
         amount = Decimal(str(membership.plan.price)) if membership else Decimal("1200.00")
         Payment.objects.create(
-            tenant=tenant, customer=customer,
-            membership=membership, amount=amount,
+            tenant=tenant,
+            customer=customer,
+            membership=membership,
+            amount=amount,
             payment_method=Payment.PaymentMethod.CARD,
             status=Payment.Status.COMPLETED,
-            paid_at=timezone.make_aware(
-                datetime.combine(month_day + timedelta(days=10), time(10, 0))
-            ),
+            paid_at=timezone.make_aware(datetime.combine(month_day + timedelta(days=10), time(10, 0))),
             transaction_id=f"DEMO-HIST-{month_day:%Y%m}-{customer.id:05d}",
             notes="Demo historical payment",
         )
@@ -219,8 +225,11 @@ def ensure_demo_payments(tenant, customers) -> None:
             if membership is None:
                 continue
             Payment.objects.create(
-                tenant=tenant, customer=customer, membership=membership,
-                amount=membership.plan.price, payment_method=Payment.PaymentMethod.CARD,
+                tenant=tenant,
+                customer=customer,
+                membership=membership,
+                amount=membership.plan.price,
+                payment_method=Payment.PaymentMethod.CARD,
                 status=Payment.Status.FAILED,
                 transaction_id=f"DEMO-FAILED-{customer.id:05d}",
                 notes="Demo failed payment (card declined)",
@@ -253,8 +262,11 @@ def ensure_demo_payments(tenant, customers) -> None:
             if membership is None:
                 continue
             Payment.objects.create(
-                tenant=tenant, customer=customer, membership=membership,
-                amount=membership.plan.price, payment_method=Payment.PaymentMethod.BANK_TRANSFER,
+                tenant=tenant,
+                customer=customer,
+                membership=membership,
+                amount=membership.plan.price,
+                payment_method=Payment.PaymentMethod.BANK_TRANSFER,
                 status=Payment.Status.COMPLETED,
                 paid_at=timezone.make_aware(datetime.combine(date.today(), time(11, 0))),
                 transaction_id=f"DEMO-BANK-{customer.id:05d}",
