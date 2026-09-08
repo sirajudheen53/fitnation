@@ -134,11 +134,14 @@ class CustomerSerializer(serializers.ModelSerializer):
             if match is not None:
                 if not self._is_synthetic_identity(match, phone):
                     raise serializers.ValidationError(
-                        {"phone": [serializers.ErrorDetail(
-                            "This phone is already registered to a different "
-                            "account. Resolve manually.",
-                            code="phone_already_registered",
-                        )]},
+                        {
+                            "phone": [
+                                serializers.ErrorDetail(
+                                    "This phone is already registered to a different " "account. Resolve manually.",
+                                    code="phone_already_registered",
+                                )
+                            ]
+                        },
                     )
                 # ADR-002 rule 1: LINK the synthetic phone-keyed identity and
                 # adopt the real email. Its OTP-provisioned customer row is
@@ -166,11 +169,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 
     def _phone_identity_match(self, tenant, phone: str):
         """Return the tenant user already holding this phone, if any."""
-        return (
-            User.objects.filter(tenant=tenant, phone=phone)
-            .order_by("id")
-            .first()
-        )
+        return User.objects.filter(tenant=tenant, phone=phone).order_by("id").first()
 
     def _converge_phone_identity(self, user: User, validated_data: dict) -> None:
         """Replace a synthetic/empty email with the customer's real email."""
@@ -179,14 +178,19 @@ class CustomerSerializer(serializers.ModelSerializer):
                 user.email = validated_data.get("email")
                 user.save(update_fields=["email", "updated_at"])
         except IntegrityError:
-            raise serializers.ValidationError(
-                {"email": "A user with this email already exists."}
-            )
+            raise serializers.ValidationError({"email": "A user with this email already exists."})
 
     def _adopt_customer_profile(self, profile: Customer, validated_data: dict) -> Customer:
         """Apply the payload to an existing (OTP-provisioned) customer row."""
-        for field in ("name", "email", "phone", "date_of_birth", "gender",
-                      "emergency_contact_name", "emergency_contact_phone"):
+        for field in (
+            "name",
+            "email",
+            "phone",
+            "date_of_birth",
+            "gender",
+            "emergency_contact_name",
+            "emergency_contact_phone",
+        ):
             value = validated_data.get(field)
             if value:
                 setattr(profile, field, value)

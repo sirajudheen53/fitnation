@@ -1609,10 +1609,13 @@ export function fetchBodyMeasurements(
   id: number | string,
   token: string,
 ): Promise<BodyMeasurement[]> {
-  return request<BodyMeasurement[]>(
+  // The flat BodyMeasurementViewSet paginates (PageNumberPagination) -
+  // unwrap the {count, next, previous, results} envelope into a plain
+  // array so the tab can iterate it directly.
+  return request<BodyMeasurement[] | { results?: BodyMeasurement[] }>(
     `/customers/body-measurements/?customer=${id}`,
     { token },
-  );
+  ).then(unwrapList);
 }
 
 /** Create a body measurement for a customer. */

@@ -52,9 +52,18 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # ── Static (whitenoise for standalone serving, no nginx on Cloud Run) ─────────
 STATIC_URL = os.environ.get("STATIC_URL", "/static/")
 STATIC_ROOT = os.environ.get("STATIC_ROOT", "/app/staticfiles")
+# Durable fallback (ADR-002 review): a missing/broken django-storages must
+# degrade media to local disk instead of hard-failing the whole backend.
+try:
+    import storages.backends.gcloud  # noqa: F401
+
+    _MEDIA_BACKEND = "storages.backends.gcloud.GoogleCloudStorage"
+except Exception:  # pragma: no cover — dependency missing on a bad deploy
+    _MEDIA_BACKEND = "django.core.files.storage.FileSystemStorage"
+
 STORAGES = {
     "default": {
-        "BACKEND": "storages.backends.gcloud.GoogleCloudStorage",
+        "BACKEND": _MEDIA_BACKEND,
     },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",

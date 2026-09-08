@@ -2,8 +2,8 @@
  * @critical customers FBOS-026
  *
  * Covers the customer profile photo flow (create-with-photo):
- *   - Uploading a photo on the create form persists it and shows an avatar
- *     in the customers list
+ *   - Uploading a photo on the create form persists it, shows an avatar in
+ *     the customers list, and the detail page refetch renders it immediately
  *   - Disallowed file types are rejected inline; the customer is still
  *     created without a photo
  *
@@ -38,11 +38,9 @@ test.describe("Customer profile photo (FBOS-026)", () => {
   // Dev-server cold compiles of /customers/new can take >30s on first hit.
   test.setTimeout(120_000);
 
-  // BLOCKED (2026-09-07): POST /customers/customers/ requires `user` + `name`
-  // (see apps/customers/tests.py::test_create_customer) while the frontend
-  // sends first_name/last_name - the create flow 400s end-to-end. Full-flow
-  // tests unblock once the contract is aligned (Arch/Forge decision pending).
-  test.fixme("@high create a customer with a profile photo persists and shows an avatar", async ({
+  // Unblocked (2026-09-07): backend accepted the blessed contract
+  // (first_name/last_name → composed name, portal user auto-provisioned).
+  test("@high create a customer with a profile photo persists and shows an avatar", async ({
     page,
   }) => {
     const suffix = uniqueSuffix();
@@ -76,6 +74,14 @@ test.describe("Customer profile photo (FBOS-026)", () => {
     const customer = await findCustomerByEmail(email);
     expect(customer).not.toBeNull();
     expect(customer?.profile_photo).toBeTruthy();
+
+    // Refetch UX: navigating to the detail page renders the new photo in the
+    // OverviewTab identity header without any manual refresh.
+    await page.goto(`/customers/${customer!.id}`, { waitUntil: "load", timeout: 30_000 });
+    await expect(page.getByText(/Photo Test_/).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-testid="customer-avatar-photo"]').first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     // Cleanup via API.
     if (customer) {

@@ -196,11 +196,7 @@ def get_or_create_customer_by_phone(phone: str, tenant: Tenant) -> User:
     """
     # ADR-002 rule 2: reuse an existing owner-created customer user in the
     # tenant before provisioning a synthetic phone-keyed identity.
-    existing = (
-        User.objects.filter(tenant=tenant, phone=phone, role=User.Role.CUSTOMER)
-        .order_by("id")
-        .first()
-    )
+    existing = User.objects.filter(tenant=tenant, phone=phone, role=User.Role.CUSTOMER).order_by("id").first()
     if existing is not None:
         Customer.objects.get_or_create(
             user=existing,

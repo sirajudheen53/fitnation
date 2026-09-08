@@ -66,11 +66,19 @@ describe("detail-tab API routes (P0 regression)", () => {
     expect(url).not.toContain("/customers/1/");
   });
 
-  it("fetchBodyMeasurements uses the FLAT viewset filtered by customer", async () => {
-    const fetchMock = mockFetchOnce([]);
-    await fetchBodyMeasurements(1, TOKEN);
+  it("fetchBodyMeasurements uses the FLAT viewset filtered by customer and unwraps the page envelope", async () => {
+    const row = { id: 9, customer: 1 } as never;
+    const fetchMock = mockFetchOnce({ count: 1, next: null, previous: null, results: [row] });
+    await expect(fetchBodyMeasurements(1, TOKEN)).resolves.toEqual([row]);
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toBe("http://localhost:8000/api/v1/customers/body-measurements/?customer=1");
+  });
+
+  it("fetchBodyMeasurements passes plain arrays through and degrades garbage to []", async () => {
+    mockFetchOnce([{ id: 5, customer: 1 } as never]);
+    await expect(fetchBodyMeasurements(1, TOKEN)).resolves.toHaveLength(1);
+    mockFetchOnce({ detail: "Unexpected shape" });
+    await expect(fetchBodyMeasurements(1, TOKEN)).resolves.toEqual([]);
   });
 
   it("createBodyMeasurement POSTs the flat viewset with customer in the body", async () => {
