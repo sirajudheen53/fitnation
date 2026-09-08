@@ -54,12 +54,20 @@ STATIC_URL = os.environ.get("STATIC_URL", "/static/")
 STATIC_ROOT = os.environ.get("STATIC_ROOT", "/app/staticfiles")
 STORAGES = {
     "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "BACKEND": "storages.backends.gcloud.GoogleCloudStorage",
     },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+# ── Media: GCS bucket (PO-provisioned; photos survive restarts/scale) ─────────
+# Private objects: django-storages signs URLs (querystring_auth) with GS_EXPIRE
+# TTL — never enable public ACL.
+GS_BUCKET_NAME = env("GS_BUCKET_NAME", default="yougetfitwithus-media")
+GS_PROJECT_ID = env("GS_PROJECT_ID", default="yougetfitwithus")
+GS_QUERYSTRING_AUTH = True
+GS_EXPIRE = env.int("GS_EXPIRE", default=3600)  # ~1h signed-URL TTL
 
 # Whitenoise middleware for serving static files (no nginx/CDN on dev Cloud Run)
 MIDDLEWARE = ["whitenoise.middleware.WhiteNoiseMiddleware"] + MIDDLEWARE  # noqa: F405

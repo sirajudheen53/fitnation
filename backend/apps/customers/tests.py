@@ -1907,3 +1907,41 @@ class CustomerCreationContractTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         customer.refresh_from_db()
         self.assertEqual(customer.name, "Meera Kapoor")
+
+
+class MediaStorageConfigTests(TestCase):
+    """P0 media-storage fix — storage backends per environment.
+
+    QA/prod (cloudrun.py) must pin media to the GCS bucket (signed URLs);
+    test settings must pin FileSystemStorage so tests never touch GCS.
+    """
+
+    def test_test_settings_pin_filesystem_storage(self) -> None:
+        """Test settings never touch GCS (uploads stay on local disk)."""
+        from django.conf import settings
+
+        self.assertEqual(
+            settings.STORAGES["default"]["BACKEND"],
+            "django.core.files.storage.FileSystemStorage",
+        )
+
+    def test_cloudrun_pins_gcs_media_storage(self) -> None:
+        """cloudrun settings route media to the PO-provisioned GCS bucket."""
+        import os
+
+        os.environ.setdefault("DATABASE_URL", "postgres://u:p@localhost:5432/configcheck")
+        from config.settings import cloudrun
+
+        self.assertEqual(
+            cloudrun.STORAGES["default"]["BACKEND"],
+            "storages.backends.gcloud.GoogleCloudStorage",
+        )
+        # static serving stays on whitenoise (Cloud Run has no nginx)
+        self.assertEqual(
+            cloudrun.STORAGES["staticfiles"]["BACKEND"],
+            "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        )
+        self.assertEqual(cloudrun.GS_BUCKET_NAME, "yougetfitwithus-media")
+        self.assertEqual(cloudrun.GS_PROJECT_ID, "yougetfitwithus")
+        self.assertTrue(cloudrun.GS_QUERYSTRING_AUTH)  # private objects
+        self.assertEqual(cloudrun.GS_EXPIRE, 3600)  # ~1h signed-URL TTL

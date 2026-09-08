@@ -1,5 +1,7 @@
 """FBOS URL configuration — root URLs."""
 
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
@@ -44,3 +46,8 @@ urlpatterns = [
         name="subscription-plans",
     ),
 ]
+
+# Media serving for local development only (QA/prod media lives in GCS —
+# signed URLs, not app-served).
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

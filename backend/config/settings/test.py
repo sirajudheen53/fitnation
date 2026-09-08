@@ -5,6 +5,13 @@ from .base import *  # noqa: F401, F403
 DEBUG = False
 ALLOWED_HOSTS = ["*"]
 
+# Pin storage backends: tests must never touch GCS (FileSystemStorage for
+# uploads; tests override MEDIA_ROOT to a tempdir).
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
