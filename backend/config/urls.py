@@ -47,7 +47,7 @@ urlpatterns = [
     ),
 ]
 
-# Media serving for local development only (QA/prod media lives in GCS —
-# signed URLs, not app-served).
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Media serving — unconditional for dev; on Cloud Run, django-storages
+# serves from GCS (signed URLs). The app-level serve covers the dev
+# environment and any local FS fallback on Cloud Run.
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

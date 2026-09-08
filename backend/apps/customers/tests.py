@@ -1958,11 +1958,7 @@ class StubSignedStorage(FileSystemStorage):
     """Mimics the GCS backend's signed-URL shape without GCS credentials."""
 
     def url(self, name, parameters=None, **kwargs):
-        return (
-            "https://storage.googleapis.com/yougetfitwithus-media/"
-            + name
-            + "?Expires=1900000000&Signature=stub"
-        )
+        return "https://storage.googleapis.com/yougetfitwithus-media/" + name + "?Expires=1900000000&Signature=stub"
 
 
 class GCSUrlContractTests(APITestCase):
@@ -1980,12 +1976,12 @@ class GCSUrlContractTests(APITestCase):
         media_override = override_settings(MEDIA_ROOT=self.media_root)
         media_override.enable()
         self.addCleanup(media_override.disable)
-        storage_override = override_settings(STORAGES={
-            "default": {"BACKEND": "apps.customers.tests.StubSignedStorage"},
-            "staticfiles": {
-                "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
-            },
-        })
+        storage_override = override_settings(
+            STORAGES={
+                "default": {"BACKEND": "apps.customers.tests.StubSignedStorage"},
+                "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+            }
+        )
         storage_override.enable()
         self.addCleanup(storage_override.disable)
 
@@ -2089,7 +2085,6 @@ class ADR002CustomerIdentityTests(APITestCase):
 
     def test_create_phone_conflict_returns_400(self) -> None:
         """A phone held by a user with a different REAL email → 400, no mutation."""
-        from apps.customers.models import Customer as C
 
         other = User.objects.create_user(
             email="real@elsewhere.test",
