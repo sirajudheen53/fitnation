@@ -67,7 +67,16 @@ STORAGES = {
 GS_BUCKET_NAME = env("GS_BUCKET_NAME", default="yougetfitwithus-media")
 GS_PROJECT_ID = env("GS_PROJECT_ID", default="yougetfitwithus")
 GS_QUERYSTRING_AUTH = True
-GS_EXPIRE = env.int("GS_EXPIRE", default=3600)  # ~1h signed-URL TTL
+# Cloud Run compute credentials are token-only (no local RSA key) — sign
+# signed URLs via the IAM signBlob API against the SA itself (roles/
+# iam.serviceAccountTokenCreator granted on it).
+GS_IAM_SIGN_BLOB = True
+GS_SA_EMAIL = env(
+    "GS_SA_EMAIL",
+    default="35318880783-compute@developer.gserviceaccount.com",
+)
+# django-storages reads GS_EXPIRATION (GS_EXPIRE is not a recognized setting).
+GS_EXPIRATION = env.int("GS_EXPIRATION", default=3600)  # ~1h signed-URL TTL
 
 # Whitenoise middleware for serving static files (no nginx/CDN on dev Cloud Run)
 MIDDLEWARE = ["whitenoise.middleware.WhiteNoiseMiddleware"] + MIDDLEWARE  # noqa: F405
