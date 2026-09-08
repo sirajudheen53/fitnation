@@ -34,7 +34,14 @@ python manage.py runserver
 | Environment | Settings module              | Use              |
 |------------|------------------------------|------------------|
 | Dev        | `config.settings.dev`        | Local + compose  |
+| QA         | `config.settings.qa`         | QA VM (compose)  |
+| Cloud Run  | `config.settings.cloudrun`   | Dev/Cloud Run    |
 | Production | `config.settings.prod`       | Staging/Prod     |
+
+> **GCS media gotcha:** django-storages reads `GS_*` settings from Django
+> settings, NOT environment variables — an env-only `GS_IAM_SIGN_BLOB` had no
+> effect. Define `GS_*` explicitly in `config/settings/cloudrun.py` (the
+> working pattern: `env(...)` defaults inside settings).
 
 ## Testing
 
