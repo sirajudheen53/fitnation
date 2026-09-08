@@ -3,6 +3,7 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -360,7 +361,11 @@ class BodyMeasurementViewSet(ModelViewSet):
     serializer_class = BodyMeasurementSerializer
 
     def get_queryset(self) -> BodyMeasurement:
-        """Return body measurements scoped to the request tenant."""
+        """Return body measurements scoped to the request tenant.
+
+        Staff/owners may narrow the list with ``?customer={id}``. Customers
+        can only ever access their own measurements, regardless of the param.
+        """
         queryset = BodyMeasurement.objects.for_tenant(self.request.tenant)
 
         # Customers can only access their own body measurements
@@ -368,6 +373,15 @@ class BodyMeasurementViewSet(ModelViewSet):
             queryset = queryset.filter(
                 customer__user=self.request.user,
             )
+        elif self.request.query_params.get("customer"):
+            # FBOS-025 companion: staff/owner view for a single customer.
+            try:
+                customer_id = int(self.request.query_params["customer"])
+            except ValueError:
+                raise ValidationError(
+                    {"customer": "Must be a valid integer."}
+                )
+            queryset = queryset.filter(customer_id=customer_id)
 
         return queryset
 

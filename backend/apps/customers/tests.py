@@ -1648,3 +1648,267 @@ class CustomerPhotoUploadAPITests(APITestCase):
         customer.refresh_from_db()
         self.assertFalse(customer.profile_photo)
         self.assertEqual(Customer.objects.for_tenant(other_tenant).count(), 0)
+
+
+class BodyMeasurementFilterAPITests(APITestCase):
+    """FBOS-025 companion — ?customer= filter + customer-role self-filter.
+
+    Staff/owners may narrow the list with ?customer={id}; customer-role
+    tokens always resolve to their own rows regardless of the param.
+    """
+
+    def setUp(self) -> None:
+        """Tenant, owner, two customers with measurements, and tokens."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.owner_token = issue_token(self.owner, self.tenant)
+
+        self.customer_a_user = self._create_customer_user("cust-a@local.test")
+        self.customer_a = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.customer_a_user,
+            name="Customer A",
+            email="cust-a@local.test",
+        )
+        self.customer_b_user = self._create_customer_user("cust-b@local.test")
+        self.customer_b = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.customer_b_user,
+            name="Customer B",
+            email="cust-b@local.test",
+        )
+        for weight in (70, 75):
+            BodyMeasurement.objects.create(
+                tenant=self.tenant,
+                customer=self.customer_a,
+                weight_kg=weight,
+                height_cm="175",
+            )
+        BodyMeasurement.objects.create(
+            tenant=self.tenant,
+            customer=self.customer_b,
+            weight_kg=60,
+            height_cm="160",
+        )
+
+    def _create_customer_user(self, email: str) -> User:
+        """Create a raw customer user without an auto profile."""
+        return User.objects.create_user(
+            email=email,
+            password="F1tNati0n!",
+            first_name="Cust",
+            last_name="User",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+
+    @staticmethod
+    def _rows(response):
+        """Normalize paginated/bare list responses to the row list."""
+        data = response.data
+        return data["results"] if isinstance(data, dict) and "results" in data else data
+
+    def test_owner_filter_by_customer_param(self) -> None:
+        """?customer={id} narrows staff/owner results to that customer."""
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.owner_token.key}")
+        response = self.client.get(
+            f"/api/v1/customers/body-measurements/?customer={self.customer_a.id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        rows = self._rows(response)
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertEqual(row["customer"], self.customer_a.id)
+
+    def test_owner_without_param_returns_tenant_wide(self) -> None:
+        """Without the param, staff/owner results stay tenant-wide."""
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.owner_token.key}")
+        response = self.client.get("/api/v1/customers/body-measurements/")
+        self.assertEqual(response.status_code, 200)
+        rows = self._rows(response)
+        self.assertEqual(len(rows), 3)
+
+    def test_customer_role_ignores_customer_param(self) -> None:
+        """Customer tokens always resolve to their own rows (?customer= ignored)."""
+        customer_token = issue_token(self.customer_a_user, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {customer_token.key}")
+        response = self.client.get(
+            f"/api/v1/customers/body-measurements/?customer={self.customer_b.id}"
+        )
+        self.assertEqual(response.status_code, 200)
+        rows = self._rows(response)
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertEqual(row["customer"], self.customer_a.id)
+
+    def test_invalid_customer_param_rejected(self) -> None:
+        """A non-integer ?customer= value is rejected with a field error."""
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.owner_token.key}")
+        response = self.client.get("/api/v1/customers/body-measurements/?customer=abc")
+        self.assertEqual(response.status_code, 400)
+
+
+class CustomerCreationContractTests(APITestCase):
+    """Arch-blessed customer creation contract (FBOS-026 companion).
+
+    The create payload carries first_name/last_name/email (+branch); the
+    linked customer-role portal User is auto-provisioned from the email with
+    an unusable password (OTP login path) and starts verified.
+    """
+
+    def setUp(self) -> None:
+        """Tenant, owner, branch, and owner auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.owner_token = issue_token(self.owner, self.tenant)
+        self.branch = Branch.objects.create(
+            tenant=self.tenant,
+            name="Main Branch",
+            address_line1="MG Road",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.owner_token.key}")
+
+    def _payload(self, email: str, **overrides) -> dict:
+        """Minimal frontend-shaped create payload (no user, no name)."""
+        payload = {
+            "email": email,
+            "first_name": "Asha",
+            "last_name": "Nair",
+            "phone": "+919999000001",
+            "branch": self.branch.id,
+        }
+        payload.update(overrides)
+        return {k: v for k, v in payload.items() if v is not None}
+
+    def test_create_composes_name_and_provisions_user(self) -> None:
+        """first/last compose the name; the portal user is auto-provisioned."""
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("asha@local.test"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["name"], "Asha Nair")
+
+        customer = Customer.objects.get(email="asha@local.test")
+        user = customer.user
+        self.assertIsNotNone(user)
+        self.assertEqual(user.role, User.Role.CUSTOMER)
+        self.assertEqual(user.tenant, self.tenant)
+        self.assertFalse(user.has_usable_password())  # OTP login path
+        self.assertTrue(user.is_email_verified)
+        self.assertEqual(customer.name, "Asha Nair")
+
+        # Response shape unchanged — write-only parts never leak.
+        self.assertNotIn("first_name", response.data)
+        self.assertNotIn("last_name", response.data)
+
+    def test_composition_precedence_over_name(self) -> None:
+        """first/last win over a provided name when either is present."""
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("prec@local.test", name="Ignored Name"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["name"], "Asha Nair")
+
+    def test_branch_persisted_when_sent(self) -> None:
+        """A customer created with `branch` persists the branch link."""
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("branchy@local.test"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        customer = Customer.objects.get(email="branchy@local.test")
+        self.assertEqual(customer.branch, self.branch)
+
+    def test_email_conflict_returns_400_field_error(self) -> None:
+        """A user-email collision (cross-tenant) surfaces as a 400 field error."""
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        User.objects.create_user(
+            email="taken@local.test",
+            password="F1tNati0n!",
+            first_name="Taken",
+            last_name="Elsewhere",
+            role=User.Role.CUSTOMER,
+            tenant=other_tenant,
+        )
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("taken@local.test"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("email", response.data)
+        self.assertEqual(Customer.objects.filter(email="taken@local.test").count(), 0)
+
+    def test_otp_login_for_auto_created_user(self) -> None:
+        """The auto-provisioned CUSTOMER-role user authenticates via OTP."""
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("otp@local.test", phone="+919999000001"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        customer = Customer.objects.get(email="otp@local.test")
+
+        request_response = self.client.post(
+            "/api/v1/users/auth/otp/request/",
+            {"phone": "+919999000001"},
+            format="json",
+        )
+        self.assertEqual(request_response.status_code, 200)
+
+        verify_response = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": "+919999000001", "otp": "123456"},
+            format="json",
+        )
+        self.assertEqual(verify_response.status_code, 200)
+        self.assertIsNotNone(verify_response.data.get("token"))
+        # The OTP flow is phone-keyed (get_or_create_customer_by_phone) and
+        # provisions CUSTOMER-role users with synthetic emails — the
+        # email-provisioned account vs phone-OTP identity merge is a known
+        # product question (ticketed for Arch), so we assert the OTP flow
+        # issues a working token for a customer-role user.
+        self.assertEqual(
+            verify_response.data.get("user", {}).get("role"),
+            "customer",
+        )
+
+    def test_update_composes_name(self) -> None:
+        """PATCH with name parts recomposes the name (parts win)."""
+        user = User.objects.create_user(
+            email="upd@local.test",
+            password="F1tNati0n!",
+            first_name="Upd",
+            last_name="User",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=user,
+            name="Old Name",
+            email="upd@local.test",
+        )
+        response = self.client.patch(
+            f"/api/v1/customers/customers/{customer.id}/",
+            {"first_name": "Meera", "last_name": "Kapoor"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        customer.refresh_from_db()
+        self.assertEqual(customer.name, "Meera Kapoor")

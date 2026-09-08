@@ -1,5 +1,7 @@
 """Customer management serializers."""
 
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from PIL import Image
 from rest_framework import serializers
 
@@ -10,6 +12,7 @@ from apps.customers.models import (
     HealthProfile,
     ProgressPhoto,
 )
+from apps.users.models import User
 
 # FBOS-026 part 1: profile photo constraints (JPEG/PNG/WebP, max 5 MB).
 ALLOWED_PROFILE_PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}
@@ -17,7 +20,22 @@ MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024
 
 
 class CustomerSerializer(serializers.ModelSerializer):
-    """Serialize customer details."""
+    """Serialize customer details.
+
+    Create contract (ADR customer-creation blessing): the payload carries
+    ``first_name``/``last_name``/``email`` (+ ``branch``); the linked
+    customer-role portal User is auto-provisioned from the email (unusable
+    password — customers log in via OTP; ``is_email_verified=True`` since the
+    owner vouches for the address). ``name``/``user``/``branch`` remain
+    writable for mobile/tests.
+    """
+
+    first_name = serializers.CharField(
+        required=False, allow_blank=True, write_only=True, max_length=150
+    )
+    last_name = serializers.CharField(required=False, allow_blank=True, write_only=True, max_length=150)
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
+    name = serializers.CharField(max_length=200, required=False)
 
     class Meta:
         """Serializer metadata."""
@@ -28,6 +46,8 @@ class CustomerSerializer(serializers.ModelSerializer):
             "user",
             "branch",
             "name",
+            "first_name",
+            "last_name",
             "email",
             "phone",
             "date_of_birth",
@@ -74,7 +94,12 @@ class CustomerSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data: dict) -> dict:
-        """Ensure a tenant does not contain duplicate customer emails."""
+        """Ensure a tenant does not contain duplicate customer emails.
+
+        Name composition (ADR customer-creation blessing): when either
+        ``first_name`` or ``last_name`` is present, the whitespace-collapsed
+        ``"{first} {last}".strip()`` composition wins over a provided ``name``.
+        """
         request = self.context.get("request")
         tenant = getattr(request, "tenant", None) if request else None
         email = data.get("email")
@@ -86,7 +111,61 @@ class CustomerSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"email": "A customer with this email already exists."},
                 )
+        # Name composition: first/last wins over name when either is present.
+        first = (data.get("first_name") or "").strip()
+        last = (data.get("last_name") or "").strip()
+        if first or last:
+            data["name"] = " ".join(f"{first} {last}".split())
+        if self.instance is None and not (data.get("name") or "").strip():
+            raise serializers.ValidationError(
+                {"name": "This field is required."},
+            )
         return data
+
+    def create(self, validated_data: dict) -> Customer:
+        """Create the customer, auto-provisioning the portal user when absent."""
+        first_name = validated_data.pop("first_name", "")
+        last_name = validated_data.pop("last_name", "")
+        if validated_data.get("user") is None:
+            user = self._provision_portal_user(
+                validated_data, validated_data.get("tenant"), first_name, last_name
+            )
+            validated_data["user"] = user
+        return super().create(validated_data)
+
+    def update(self, instance: Customer, validated_data: dict) -> Customer:
+        """Update the customer; write-only name parts never reach the model."""
+        validated_data.pop("first_name", None)
+        validated_data.pop("last_name", None)
+        return super().update(instance, validated_data)
+
+    def _provision_portal_user(self, validated_data, tenant, first_name: str, last_name: str) -> User:
+        """Auto-provision the linked customer-role portal account.
+
+        Unusable password (customers authenticate via OTP); the owner vouches
+        for the email so the account starts verified. Email conflicts surface
+        as a 400 field error — never silently link an existing user.
+        """
+        try:
+            # Nested atomic: a uniqueness violation rolls back to the savepoint
+            # so the surrounding request transaction stays usable for the 400.
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    email=validated_data.get("email"),
+                    password=None,
+                    first_name=first_name,
+                    last_name=last_name,
+                    role=User.Role.CUSTOMER,
+                    tenant=tenant,
+                    phone=validated_data.get("phone") or "",
+                )
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {"email": "A user with this email already exists."},
+            )
+        user.is_email_verified = True
+        user.save(update_fields=["is_email_verified"])
+        return user
 
 
 class HealthProfileSerializer(serializers.ModelSerializer):
