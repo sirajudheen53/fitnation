@@ -1,8 +1,8 @@
 # ADR-001 — API-Driven Seeding for QA Demo Data
 
-**Status:** Approved (with corrections to proposal)
+**Status:** Approved (with corrections to proposal) — ratified by Arch after independent code verification, 2026-09-05
 **Date:** 2026-09-05
-**Deciders:** Arch (author), Lead (relay), Forge (proposer), Siju (final call on direction)
+**Deciders:** Arch (ratifier, code-verified), Forge (proposer + code evidence), Lead (relay), Siju (final call on direction)
 **Supersedes:** Direct-ORM seeding in `apps/core/qa_seed/*` for business data
 
 ## Context

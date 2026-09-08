@@ -5,7 +5,7 @@ import shutil
 import tempfile
 
 from django.contrib.auth import get_user_model
-from django.core.files.storage import default_storage
+from django.core.files.storage import FileSystemStorage, default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
@@ -1944,4 +1944,267 @@ class MediaStorageConfigTests(TestCase):
         self.assertEqual(cloudrun.GS_BUCKET_NAME, "yougetfitwithus-media")
         self.assertEqual(cloudrun.GS_PROJECT_ID, "yougetfitwithus")
         self.assertTrue(cloudrun.GS_QUERYSTRING_AUTH)  # private objects
-        self.assertEqual(cloudrun.GS_EXPIRE, 3600)  # ~1h signed-URL TTL
+        # Cloud Run compute creds are token-only → sign via IAM signBlob.
+        self.assertTrue(cloudrun.GS_IAM_SIGN_BLOB)
+        self.assertEqual(
+            cloudrun.GS_SA_EMAIL,
+            "35318880783-compute@developer.gserviceaccount.com",
+        )
+        self.assertEqual(cloudrun.GS_EXPIRATION, 3600)  # ~1h signed-URL TTL
+        self.assertFalse(hasattr(cloudrun, "GS_EXPIRE"))  # dead setting removed
+
+
+class StubSignedStorage(FileSystemStorage):
+    """Mimics the GCS backend's signed-URL shape without GCS credentials."""
+
+    def url(self, name, parameters=None, **kwargs):
+        return (
+            "https://storage.googleapis.com/yougetfitwithus-media/"
+            + name
+            + "?Expires=1900000000&Signature=stub"
+        )
+
+
+class GCSUrlContractTests(APITestCase):
+    """Regression: the response carries the storage URL, never None.
+
+    DRF's ImageField.to_representation swallows AttributeError from
+    storage.url via getattr — the fix makes .url WORK (IAM signBlob), and
+    this pins the pass-through with a stub signed-URL storage.
+    """
+
+    def setUp(self) -> None:
+        """Isolated MEDIA_ROOT + stub GCS-style storage + owner token."""
+        self.media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media_root, ignore_errors=True)
+        media_override = override_settings(MEDIA_ROOT=self.media_root)
+        media_override.enable()
+        self.addCleanup(media_override.disable)
+        storage_override = override_settings(STORAGES={
+            "default": {"BACKEND": "apps.customers.tests.StubSignedStorage"},
+            "staticfiles": {
+                "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"
+            },
+        })
+        storage_override.enable()
+        self.addCleanup(storage_override.disable)
+
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.owner_token = issue_token(self.owner, self.tenant)
+        self.branch = Branch.objects.create(
+            tenant=self.tenant,
+            name="Main Branch",
+            address_line1="MG Road",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.owner_token.key}")
+
+    def test_serializer_returns_signed_style_url_not_none(self) -> None:
+        """Uploads return the storage URL, never None (no silent swallow)."""
+        buffer = io.BytesIO()
+        Image.new("RGB", (8, 8), color=(120, 40, 200)).save(buffer, format="JPEG")
+        buffer.seek(0)
+        photo = SimpleUploadedFile("signed.jpg", buffer.getvalue(), content_type="image/jpeg")
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            {
+                "email": "signed@example.com",
+                "first_name": "Signed",
+                "last_name": "Photo",
+                "branch": self.branch.id,
+                "profile_photo": photo,
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 201, str(response.data))
+        url = response.data["profile_photo"]
+        self.assertIsNotNone(url, "profile_photo must never be None (silent swallow)")
+        self.assertTrue(url.startswith("https://storage.googleapis.com/"))
+        self.assertIn("Expires=", url)
+
+
+class ADR002CustomerIdentityTests(APITestCase):
+    """ADR-002 customer identity model — phone is the canonical key.
+
+    Convergence at write time in BOTH directions: owner-create links/400s on
+    phone matches; OTP login reuses owner-created users; email-only customers
+    are non-loginable until a phone is set (update provisions the same user).
+    """
+
+    def setUp(self) -> None:
+        """Tenant, owner, branch, and owner auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.owner_token = issue_token(self.owner, self.tenant)
+        self.branch = Branch.objects.create(
+            tenant=self.tenant,
+            name="Main Branch",
+            address_line1="MG Road",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.owner_token.key}")
+
+    def _payload(self, email: str, **overrides) -> dict:
+        """Frontend-shaped create payload (no user, no name)."""
+        payload = {
+            "email": email,
+            "first_name": "Asha",
+            "last_name": "Nair",
+            "phone": "+919999000001",
+            "branch": self.branch.id,
+        }
+        payload.update(overrides)
+        return {k: v for k, v in payload.items() if v is not None}
+
+    def test_create_links_synthetic_otp_user(self) -> None:
+        """A phone matching a synthetic OTP user links it + adopts the email."""
+        from apps.users.services import get_or_create_customer_by_phone
+
+        synthetic_user = get_or_create_customer_by_phone("+919999000001", self.tenant)
+        users_before = User.objects.count()
+
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("asha@local.test", phone="+919999000001"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        customer = Customer.objects.get(email="asha@local.test")
+        self.assertEqual(customer.user.id, synthetic_user.id)  # LINKED, no second user
+        self.assertEqual(User.objects.count(), users_before)  # no new identity provisioned
+        # Synthetic email replaced by the real one (converge at write time).
+        synthetic_user.refresh_from_db()
+        self.assertEqual(synthetic_user.email, "asha@local.test")
+        self.assertEqual(customer.name, "Asha Nair")
+
+    def test_create_phone_conflict_returns_400(self) -> None:
+        """A phone held by a user with a different REAL email → 400, no mutation."""
+        from apps.customers.models import Customer as C
+
+        other = User.objects.create_user(
+            email="real@elsewhere.test",
+            password="***",
+            first_name="Real",
+            last_name="Identity",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+            phone="+919999000001",
+        )
+        before_email = other.email
+        users_before = User.objects.count()
+
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("different@local.test", phone="+919999000001"),
+            format="json",
+        )
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("different@local.test", phone="+919999000001"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("phone", response.data)
+        self.assertEqual(User.objects.count(), users_before)  # no second identity
+        other.refresh_from_db()
+        self.assertEqual(other.email, before_email)  # never silently mutated
+
+    def test_otp_login_reuses_owner_created_user(self) -> None:
+        """OTP verify reuses the owner-created customer user (rule 2)."""
+        create_response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("owner-made@local.test", phone="+919999000002"),
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        created_user_id = create_response.data["user"]
+
+        self.client.credentials()  # OTP endpoints are anonymous
+        request_response = self.client.post(
+            "/api/v1/users/auth/otp/request/",
+            {"phone": "+919999000002"},
+            format="json",
+        )
+        self.assertEqual(request_response.status_code, 200)
+        verify_response = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": "+919999000002", "otp": "123456"},
+            format="json",
+        )
+        self.assertEqual(verify_response.status_code, 200)
+        self.assertIsNotNone(verify_response.data.get("token"))
+        self.assertEqual(
+            verify_response.data.get("user", {}).get("id"),
+            created_user_id,  # SAME user — no synthetic second identity
+        )
+        self.assertEqual(User.objects.count(), 2)  # owner + the one customer
+
+    def test_email_only_customer_otp_request_clean_400(self) -> None:
+        """An email-only customer hitting OTP request gets a clean 4xx."""
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("emailonly@local.test", phone=None),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, str(response.data))  # email-only allowed
+
+        self.client.credentials()  # OTP endpoints are anonymous
+        otp_response = self.client.post(
+            "/api/v1/users/auth/otp/request/",
+            {},
+            format="json",
+        )
+        self.assertEqual(otp_response.status_code, 400)
+        self.assertIn("phone", otp_response.data)  # clean field error, no crash
+
+    def test_update_phone_provisions_otp_capability(self) -> None:
+        """PATCH phone provisions OTP capability on the SAME user (rule 3)."""
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            self._payload("emailonly2@local.test", phone=None),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, str(response.data))
+        customer = Customer.objects.get(email="emailonly2@local.test")
+        self.assertEqual(customer.user.phone, "")  # email-only start
+
+        patch_response = self.client.patch(
+            f"/api/v1/customers/customers/{customer.id}/",
+            {"phone": "+919999000099"},
+            format="json",
+        )
+        self.assertEqual(patch_response.status_code, 200)
+        customer.refresh_from_db()
+        self.assertEqual(customer.phone, "+919999000099")
+        customer.user.refresh_from_db()
+        self.assertEqual(customer.user.phone, "+919999000099")
+
+        # Convergence: the same user now authenticates via OTP.
+        self.client.credentials()
+        request_response = self.client.post(
+            "/api/v1/users/auth/otp/request/",
+            {"phone": "+919999000099"},
+            format="json",
+        )
+        self.assertEqual(request_response.status_code, 200)
+        verify_response = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": "+919999000099", "otp": "123456"},
+            format="json",
+        )
+        self.assertEqual(verify_response.status_code, 200)
+        self.assertIsNotNone(verify_response.data.get("token"))
+        self.assertEqual(
+            verify_response.data.get("user", {}).get("id"),
+            customer.user.id,  # SAME user — never a second identity
+        )

@@ -194,6 +194,24 @@ def get_or_create_customer_by_phone(phone: str, tenant: Tenant) -> User:
     Returns:
         An existing or newly created customer ``User``.
     """
+    # ADR-002 rule 2: reuse an existing owner-created customer user in the
+    # tenant before provisioning a synthetic phone-keyed identity.
+    existing = (
+        User.objects.filter(tenant=tenant, phone=phone, role=User.Role.CUSTOMER)
+        .order_by("id")
+        .first()
+    )
+    if existing is not None:
+        Customer.objects.get_or_create(
+            user=existing,
+            defaults={
+                "tenant": tenant,
+                "name": existing.get_full_name() or existing.email,
+                "email": existing.email,
+            },
+        )
+        return existing
+
     email = f"{phone}@fitnation.local"
     user, _ = User.objects.get_or_create(
         tenant=tenant,

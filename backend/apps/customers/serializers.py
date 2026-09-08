@@ -115,19 +115,101 @@ class CustomerSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data: dict) -> Customer:
-        """Create the customer, auto-provisioning the portal user when absent."""
+        """Create the customer, converging identities per ADR-002.
+
+        Rule 1: a payload phone matching an existing tenant user links that
+        user instead of provisioning a second identity (synthetic/empty email
+        → link + adopt the real email; a different real email → 400
+        ``phone_already_registered``). No phone or no match → blessed
+        provisioning flow.
+        """
         first_name = validated_data.pop("first_name", "")
         last_name = validated_data.pop("last_name", "")
-        if validated_data.get("user") is None:
-            user = self._provision_portal_user(validated_data, validated_data.get("tenant"), first_name, last_name)
+        user = validated_data.get("user")
+        phone = (validated_data.get("phone") or "").strip()
+        tenant = validated_data.get("tenant")
+
+        if user is None and phone:
+            match = self._phone_identity_match(tenant, phone)
+            if match is not None:
+                if not self._is_synthetic_identity(match, phone):
+                    raise serializers.ValidationError(
+                        {"phone": [serializers.ErrorDetail(
+                            "This phone is already registered to a different "
+                            "account. Resolve manually.",
+                            code="phone_already_registered",
+                        )]},
+                    )
+                # ADR-002 rule 1: LINK the synthetic phone-keyed identity and
+                # adopt the real email. Its OTP-provisioned customer row is
+                # adopted too (OneToOne forbids a second profile).
+                self._converge_phone_identity(match, validated_data)
+                validated_data["user"] = match
+                profile = Customer.objects.filter(user=match).first()
+                if profile is not None:
+                    return self._adopt_customer_profile(profile, validated_data)
+
+        if user is None:
+            user = self._provision_portal_user(validated_data, tenant, first_name, last_name)
             validated_data["user"] = user
         return super().create(validated_data)
 
+    @staticmethod
+    def _synthetic_otp_email(phone: str) -> str:
+        """The synthetic email scheme used by the phone-OTP flow."""
+        return f"{phone}@fitnation.local"
+
+    def _is_synthetic_identity(self, user: User, phone: str) -> bool:
+        """True when the user's identity is a phone-keyed synthetic OTP
+        account (synthetic email or no email at all) — safe to converge."""
+        return user.email == self._synthetic_otp_email(phone) or not user.email
+
+    def _phone_identity_match(self, tenant, phone: str):
+        """Return the tenant user already holding this phone, if any."""
+        return (
+            User.objects.filter(tenant=tenant, phone=phone)
+            .order_by("id")
+            .first()
+        )
+
+    def _converge_phone_identity(self, user: User, validated_data: dict) -> None:
+        """Replace a synthetic/empty email with the customer's real email."""
+        try:
+            with transaction.atomic():
+                user.email = validated_data.get("email")
+                user.save(update_fields=["email", "updated_at"])
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {"email": "A user with this email already exists."}
+            )
+
+    def _adopt_customer_profile(self, profile: Customer, validated_data: dict) -> Customer:
+        """Apply the payload to an existing (OTP-provisioned) customer row."""
+        for field in ("name", "email", "phone", "date_of_birth", "gender",
+                      "emergency_contact_name", "emergency_contact_phone"):
+            value = validated_data.get(field)
+            if value:
+                setattr(profile, field, value)
+        if validated_data.get("branch"):
+            profile.branch = validated_data["branch"]
+        profile.is_active = True
+        profile.save()
+        return profile
+
     def update(self, instance: Customer, validated_data: dict) -> Customer:
-        """Update the customer; write-only name parts never reach the model."""
+        """Update the customer; write-only name parts never reach the model.
+
+        ADR-002 rule 3: setting a phone on an email-only customer provisions
+        OTP capability on the SAME linked user — never a second identity.
+        """
         validated_data.pop("first_name", None)
         validated_data.pop("last_name", None)
-        return super().update(instance, validated_data)
+        customer = super().update(instance, validated_data)
+        new_phone = validated_data.get("phone")
+        if new_phone and customer.user and not customer.user.phone:
+            customer.user.phone = new_phone
+            customer.user.save(update_fields=["phone"])
+        return customer
 
     def _provision_portal_user(self, validated_data, tenant, first_name: str, last_name: str) -> User:
         """Auto-provision the linked customer-role portal account.
