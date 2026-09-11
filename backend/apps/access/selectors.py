@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from django.db import models
 from django.db.models import QuerySet
-from django.utils import timezone
 
 from apps.access.models import (
     AccessLog,

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from django.test import TestCase
 
-from apps.access.models import AccessLog, AccessOverride, BiometricCredential, BiometricDevice
+from apps.access.models import AccessLog, AccessOverride, BiometricDevice
 from apps.access.selectors import get_customer_access_state
 from apps.branches.models import Branch
 from apps.customers.models import Customer
@@ -23,7 +23,7 @@ class AccessTestBase(TestCase):
         self.branch = Branch.objects.create(tenant=self.tenant, name="Main Branch", branch_type="gym")
         self.user = User.objects.create_user(
             email="owner@test.com",
-            password="test",
+            password="test123",
             first_name="Gym",
             last_name="Owner",
             role="owner",

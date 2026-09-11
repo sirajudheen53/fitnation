@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from django.utils import timezone
 
 from apps.access.models import (
     AccessLog,
@@ -13,7 +12,6 @@ from apps.access.models import (
     BiometricDevice,
     ConnectionType,
     CredentialType,
-    Vendor,
 )
 
 if TYPE_CHECKING:

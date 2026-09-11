@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
 
 from django.core.validators import MinLengthValidator
 from django.db import models
 
-from apps.tenants.models import TenantModelMixin
 from apps.tenants.models import TenantModelMixin
 
 

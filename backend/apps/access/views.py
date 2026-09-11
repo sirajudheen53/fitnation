@@ -25,7 +25,6 @@ from apps.access.serializers import (
     BiometricCredentialSerializer,
     BiometricDeviceSerializer,
 )
-from apps.customers.models import Customer
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
