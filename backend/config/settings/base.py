@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "apps.analytics",
     "apps.inventory",
     "apps.reviews",
+    "apps.access",
 ]
 
 MIDDLEWARE = [

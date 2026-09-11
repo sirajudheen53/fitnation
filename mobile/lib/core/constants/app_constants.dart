@@ -2,16 +2,22 @@
 class AppConstants {
   AppConstants._();
 
-  /// Base URL for the FBOS API.
-  /// TODO: Make this configurable per environment (dev/staging/prod).
-  static const String apiBaseUrl = 'http://10.0.2.2:8000'; // Android emulator -> host localhost
+  /// Base URL for the FBOS API, resolved per build flavor.
+  ///
+  /// Presets: dev (emulator), dev-lan, cloud-dev, prod — see
+  /// ``lib/core/config/app_config.dart``. Override with:
+  /// ``flutter run --dart-define=API_BASE_URL=<url>``.
+  static const String apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://10.0.2.2:8000',
+  );
   static const String apiPrefix = '/api/v1';
 
   /// API endpoints.
-  static const String otpRequestEndpoint = '/auth/otp/request/';
-  static const String otpVerifyEndpoint = '/auth/otp/verify/';
-  static const String logoutEndpoint = '/auth/logout/';
-  static const String meEndpoint = '/auth/me/';
+  static const String otpRequestEndpoint = '/users/auth/otp/request/';
+  static const String otpVerifyEndpoint = '/users/auth/otp/verify/';
+  static const String logoutEndpoint = '/users/auth/logout/';
+  static const String meEndpoint = '/users/auth/me/';
 
   // Customer
   static const String customerProfileEndpoint = '/customers/customers/';
@@ -28,12 +34,12 @@ class AppConstants {
   static const String workoutLogsEndpoint = '/workouts/workout-logs/';
 
   // Diet
-  static const String dietAssignmentsEndpoint = '/diet/diet-assignments/';
-  static const String dietPlansEndpoint = '/diet/diet-plans/';
+  static const String dietAssignmentsEndpoint = '/diet-assignments/';
+  static const String dietPlansEndpoint = '/diet-plans/';
 
   // Attendance
-  static const String attendanceRecordsEndpoint = '/attendance/attendance-records/';
-  static const String attendanceCheckInEndpoint = '/attendance/attendance-records/check-in/';
+  static const String attendanceRecordsEndpoint = '/attendance/attendance/';
+  static const String attendanceCheckInEndpoint = '/attendance/check-in/';
 
   // Membership
   static const String membershipsEndpoint = '/memberships/memberships/';
@@ -44,7 +50,7 @@ class AppConstants {
   // AI Coach
   static const String aiCoachChatEndpoint = '/ai/coach/chat/';
   static const String aiCoachConversationsEndpoint = '/ai/coach/conversations/';
-  static const String aiCoachMessagesEndpoint = '/ai/coach/messages/';
+  static const String aiCoachMessagesEndpoint = '/ai/coach/conversations/{id}/messages/';
 
   // Body Analysis
   static const String bodyAnalysisEndpoint = '/ai/body/analyses/';
@@ -52,10 +58,10 @@ class AppConstants {
   static const String bodyAnalysisProgressEndpoint = '/ai/body/progress/';
 
   // AI Nutrition
-  static const String nutritionMealPlansEndpoint = '/ai/nutrition/meal-plans/';
-  static const String nutritionGenerateEndpoint = '/ai/nutrition/generate/';
+  static const String nutritionMealPlansEndpoint = '/ai/nutrition/meal-plan/';
+  static const String nutritionGenerateEndpoint = '/ai/nutrition/meal-plan/generate/';
   static const String nutritionShoppingListEndpoint = '/ai/nutrition/shopping-list/';
-  static const String nutritionMacrosEndpoint = '/ai/nutrition/macros/';
+  static const String nutritionMacrosEndpoint = '/ai/nutrition/track/';
 
   /// Storage keys.
   static const String authTokenKey = 'auth_token';
