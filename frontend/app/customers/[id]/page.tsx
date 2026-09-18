@@ -11,6 +11,7 @@ import { BodyMeasurementsTab } from "@/features/customers/components/BodyMeasure
 import { HealthProfileTab } from "@/features/customers/components/HealthProfileTab";
 import { ProgressPhotosTab } from "@/features/customers/components/ProgressPhotosTab";
 import { PaymentHistoryTab } from "@/features/customers/components/PaymentHistoryTab";
+import { AccessControlTab } from "@/features/access/components/AccessControlTab";
 import { Spinner, Alert, Button, Badge } from "@/components/ui";
 import { getToken } from "@/lib/auth";
 import {
@@ -331,6 +332,7 @@ export default function CustomerDetailPage() {
               />
             )}
             {activeTab === "payments" && <PaymentHistoryTab customer={customer} />}
+            {activeTab === "access" && <AccessControlTab customer={customer} />}
           </div>
         </div>
       )}

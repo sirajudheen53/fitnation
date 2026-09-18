@@ -158,6 +158,8 @@ class RolePermission(BasePermission):
         if allowed == "*":
             return True
 
+        if isinstance(required, (set, frozenset, list, tuple)):
+            return any(permission in allowed for permission in required)
         return required in allowed
 
     def has_object_permission(self, request: Any, view: Any, obj: Any) -> bool:

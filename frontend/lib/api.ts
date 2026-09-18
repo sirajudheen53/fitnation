@@ -1709,3 +1709,166 @@ export function fetchProgressSummary(
     { token },
   );
 }
+
+/* ── Access control (Sprint 8: issues #23, #25, #26) ──────────── */
+
+import {
+  AccessCredential,
+  AccessDevice,
+  AccessDeviceFormData,
+  AccessLog,
+  AccessOverride,
+  AccessOverrideFormData,
+  DeviceEventsResult,
+  DeviceSyncResult,
+  DeviceTestResult,
+  EnrollCredentialData,
+  EnrollCredentialResult,
+} from "@/types/access";
+
+/** Build the query string shared by the access list endpoints. */
+function buildAccessQuery(
+  params?: { device?: number | string; customer?: number | string },
+): string {
+  const query = new URLSearchParams();
+  if (params?.device !== undefined && params?.device !== "") {
+    query.set("device", String(params.device));
+  }
+  if (params?.customer !== undefined && params?.customer !== "") {
+    query.set("customer", String(params.customer));
+  }
+  const qs = query.toString();
+  return qs ? `?${qs}` : "";
+}
+
+/* Devices */
+
+export function fetchDevices(
+  token: string,
+  params?: { branch?: number | string },
+): Promise<AccessDevice[]> {
+  const query = new URLSearchParams();
+  if (params?.branch !== undefined && params?.branch !== "") {
+    query.set("branch", String(params.branch));
+  }
+  const qs = query.toString();
+  return request<AccessDevice[] | { results?: AccessDevice[] }>(
+    `/access/devices/${qs ? `?${qs}` : ""}`,
+    { token },
+  ).then(unwrapList);
+}
+
+export function createDevice(
+  data: AccessDeviceFormData,
+  token: string,
+): Promise<AccessDevice> {
+  return request<AccessDevice>("/access/devices/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateDevice(
+  id: number | string,
+  data: Partial<AccessDeviceFormData>,
+  token: string,
+): Promise<AccessDevice> {
+  return request<AccessDevice>(`/access/devices/${id}/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/** Run the vendor adapter connection test against a device. */
+export function testDeviceConnection(
+  id: number | string,
+  token: string,
+): Promise<DeviceTestResult> {
+  return request<DeviceTestResult>(`/access/devices/${id}/test-connection/`, {
+    method: "POST",
+    token,
+  });
+}
+
+/** Force an allow-list sync for a device now. */
+export function syncDevice(
+  id: number | string,
+  token: string,
+): Promise<DeviceSyncResult> {
+  return request<DeviceSyncResult>(`/access/devices/${id}/sync/`, {
+    method: "POST",
+    token,
+  });
+}
+
+/** Pull entry/exit events from a device and record them as logs. */
+export function fetchDeviceEvents(
+  id: number | string,
+  token: string,
+): Promise<DeviceEventsResult> {
+  return request<DeviceEventsResult>(`/access/devices/${id}/fetch-events/`, {
+    method: "POST",
+    token,
+  });
+}
+
+/* Credentials (enrollment records) */
+
+/** Enroll a biometric credential on a device and immediately sync it. */
+export function enrollBiometricCredential(
+  data: EnrollCredentialData,
+  token: string,
+): Promise<EnrollCredentialResult> {
+  return request<EnrollCredentialResult>("/access/devices/enroll/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function fetchAccessCredentials(
+  token: string,
+  params?: { device?: number | string; customer?: number | string },
+): Promise<AccessCredential[]> {
+  return request<AccessCredential[] | { results?: AccessCredential[] }>(
+    `/access/credentials/${buildAccessQuery(params)}`,
+    { token },
+  ).then(unwrapList);
+}
+
+/* Owner overrides */
+
+export function fetchAccessOverrides(
+  token: string,
+  params?: { device?: number | string; customer?: number | string },
+): Promise<AccessOverride[]> {
+  return request<AccessOverride[] | { results?: AccessOverride[] }>(
+    `/access/overrides/${buildAccessQuery(params)}`,
+    { token },
+  ).then(unwrapList);
+}
+
+export function createAccessOverride(
+  data: AccessOverrideFormData,
+  token: string,
+): Promise<AccessOverride> {
+  return request<AccessOverride>("/access/overrides/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/* Access logs (entry/exit history) */
+
+export function fetchAccessLogs(
+  token: string,
+  params?: { device?: number | string; customer?: number | string },
+): Promise<AccessLog[]> {
+  return request<AccessLog[] | { results?: AccessLog[] }>(
+    `/access/logs/${buildAccessQuery(params)}`,
+    { token },
+  ).then(unwrapList);
+}

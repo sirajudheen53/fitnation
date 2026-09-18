@@ -107,6 +107,9 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   "/memberships": ["memberships.view_membership"],
   "/payments": ["payments.view_payment"],
   "/attendance": ["attendance.view_attendance"],
+  // Sprint 8 access control — mirrors the backend matrix: only
+  // platform_admin / gym_owner hold access.* permissions.
+  "/devices": ["access.view_device"],
   "/workouts": ["workouts.view_workout"],
   "/workouts/plans/new": ["workouts.create_workout"],
   "/workouts/plans/[id]/edit": ["workouts.edit_workout"],

@@ -31,6 +31,9 @@ dependencies:
   cached_network_image: ^3.4.1
   flutter_animate: ^4.5.2
 
+  # QR codes
+  qr_flutter: ^4.1.0
+
   # Charts
   fl_chart: ^0.69.0
 

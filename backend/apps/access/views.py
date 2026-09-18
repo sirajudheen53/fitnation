@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
@@ -12,6 +14,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
+from apps.access.adapters import AdapterError, get_adapter
 from apps.access.models import (
     AccessLog,
     AccessOverride,
@@ -22,9 +25,15 @@ from apps.access.selectors import get_customer_access_state
 from apps.access.serializers import (
     AccessLogSerializer,
     AccessOverrideSerializer,
+    BiometricCredentialEnrollResultSerializer,
+    BiometricCredentialEnrollSerializer,
     BiometricCredentialSerializer,
     BiometricDeviceSerializer,
+    DeviceConnectionTestResultSerializer,
+    DeviceEventsFetchResultSerializer,
+    DeviceSyncResultSerializer,
 )
+from apps.access.services import enroll_credential, fetch_device_events, sync_device
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -59,6 +68,97 @@ class BiometricDeviceViewSet(ModelViewSet):
         return Response(
             BiometricDeviceSerializer(device).data,
             status=status.HTTP_201_CREATED,
+        )
+
+    ACTION_PERMISSIONS = {
+        "test_connection": "customers.edit_customer",
+        "sync": "customers.edit_customer",
+        "enroll": "customers.edit_customer",
+        # fetch-events is read-oriented: viewers may pull events too.
+        "fetch_events": ("customers.edit_customer", "customers.view_customer"),
+    }
+
+    def get_permissions(self) -> list:
+        """Apply action-specific permission strings before checks run.
+
+        RolePermission reads ``required_permission`` while evaluating
+        permissions (before the handler), so per-action overrides must
+        happen here rather than inside the action methods.
+        """
+        required = self.ACTION_PERMISSIONS.get(self.action)
+        if required is not None:
+            self.required_permission = required
+        return super().get_permissions()
+
+    @action(detail=True, methods=["post"], url_path="test-connection")
+    def test_connection(self, request: Request, pk: int | None = None) -> Response:  # noqa: ARG002
+        """Run the vendor adapter connection test against this device."""
+        device = self.get_object()
+        try:
+            result = get_adapter(device).test_connection(device)
+        except AdapterError as exc:
+            result = {"online": False, "detail": str(exc)}
+        if result.get("online"):
+            # Adapter already stamped last_seen_at; a successful round-trip
+            # also refreshes last_sync_at per the issue #22 contract.
+            device.last_sync_at = timezone.now()
+            device.save(update_fields=["last_seen_at", "last_sync_at", "updated_at"])
+        return Response(
+            DeviceConnectionTestResultSerializer(result).data,
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="sync")
+    def sync(self, request: Request, pk: int | None = None) -> Response:
+        """Force an allow-list sync for this device now."""
+        device = self.get_object()
+        result = sync_device(device)
+        return Response(DeviceSyncResultSerializer(result).data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="enroll")
+    def enroll(self, request: Request) -> Response:
+        """Enroll a credential on a device and immediately sync that device."""
+        serializer = BiometricCredentialEnrollSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        device = serializer.validated_data["device"]
+        credential = enroll_credential(
+            tenant=request.tenant,
+            device=device,
+            customer=serializer.validated_data["customer"],
+            credential_type=serializer.validated_data["credential_type"],
+            device_user_id=serializer.validated_data["device_user_id"],
+        )
+        sync_result = sync_device(device)
+        return Response(
+            BiometricCredentialEnrollResultSerializer(
+                {"credential": credential, "sync": sync_result}
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="fetch-events")
+    def fetch_events(self, request: Request, pk: int | None = None) -> Response:
+        """Pull access events from this device and record them as logs.
+
+        Optional query param: ``since`` (ISO-8601 timestamp).
+        """
+        device = self.get_object()
+        since = None
+        since_param = request.query_params.get("since")
+        if since_param:
+            try:
+                since = datetime.fromisoformat(since_param.replace("Z", "+00:00"))
+            except ValueError:
+                return Response(
+                    {"detail": "since must be an ISO-8601 timestamp."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        result = fetch_device_events(device=device, since=since)
+        return Response(
+            DeviceEventsFetchResultSerializer(result).data,
+            status=status.HTTP_200_OK,
         )
 
 

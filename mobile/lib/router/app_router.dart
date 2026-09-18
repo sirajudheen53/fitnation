@@ -8,6 +8,7 @@ import '../features/ai_nutrition/models/meal_plan.dart';
 import '../features/ai_nutrition/presentation/screens/meal_plan_detail_screen.dart';
 import '../features/ai_nutrition/presentation/screens/meal_plan_screen.dart';
 import '../features/ai_nutrition/presentation/screens/nutrition_screen.dart';
+import '../features/access/presentation/pages/enrollment_qr_page.dart';
 import '../features/auth/presentation/providers/auth_notifier.dart';
 import '../features/auth/presentation/screens/otp_verify_screen.dart';
 import '../features/auth/presentation/screens/phone_input_screen.dart';
@@ -146,6 +147,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile/membership',
         builder: (context, state) => const MembershipScreen(),
+      ),
+      // Access
+      GoRoute(
+        path: '/access/enrollment-qr',
+        builder: (context, state) => const EnrollmentQrPage(),
       ),
       // Feedback
       GoRoute(

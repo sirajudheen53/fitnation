@@ -22,6 +22,7 @@ import {
   LogOut,
   Menu,
   X,
+  Fingerprint,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout, getStoredUser } from "@/lib/auth";
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { href: "/memberships", label: "Memberships", icon: CreditCard },
   { href: "/payments", label: "Payments", icon: Wallet },
   { href: "/attendance", label: "Attendance", icon: CalendarCheck },
+  { href: "/devices", label: "Access Devices", icon: Fingerprint },
   { href: "/trainers/performance", label: "Trainer Performance", icon: TrendingUp },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/workouts", label: "Workouts", icon: Dumbbell },

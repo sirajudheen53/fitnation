@@ -67,8 +67,10 @@ def get_customer_access_state(*, customer: Customer, device: BiometricDevice) ->
     Returns:
         A dict with allow/deny, source (plan/override), and reason.
     """
+    from django.utils import timezone
+
     # 1. Check for a valid owner override first
-    now = __import__("django.utils.timezone", fromlist=["timezone"]).now()
+    now = timezone.now()
     override = (
         AccessOverride.objects.filter(
             customer=customer,
@@ -85,9 +87,12 @@ def get_customer_access_state(*, customer: Customer, device: BiometricDevice) ->
             "override_id": override.pk,
         }
 
-    # 2. Default: check membership plan status
+    # 2. Default: check membership plan status. Cancelled memberships are
+    # sticky (never auto-recomputed), so exclude them explicitly; time-based
+    # expiry is evaluated against end_date so stale status values don't matter.
     membership = (
         customer.memberships.filter(plan__is_active=True)
+        .exclude(status="cancelled")
         .select_related("plan")
         .first()
     )
@@ -98,16 +103,42 @@ def get_customer_access_state(*, customer: Customer, device: BiometricDevice) ->
             "reason": "No active membership at this branch",
         }
 
-    plan_expiry = membership.end_date or membership.plan_expires_at
-    if plan_expiry and plan_expiry < now:
+    today = timezone.localdate()
+    plan_expiry = membership.end_date
+    if plan_expiry and plan_expiry < today:
         return {
             "allowed": False,
             "source": "plan_expired",
-            "reason": f"Membership plan expired on {plan_expiry.date()}",
+            "reason": f"Membership plan expired on {plan_expiry}",
         }
 
     return {
         "allowed": True,
         "source": "plan_active",
-        "reason": f"Plan valid until {plan_expiry.date() if plan_expiry else 'N/A'}",
+        "reason": f"Plan valid until {plan_expiry or 'N/A'}",
     }
+
+
+def get_device_allow_list(*, device: BiometricDevice) -> list[BiometricCredential]:
+    """Resolve the credentials that should be on the device allow-list.
+
+    Active credentials whose customer currently passes the access rule
+    engine (active plan, no active DENY override; ALLOW overrides survive
+    plan expiry).
+
+    Args:
+        device: The biometric device to resolve the allow-list for.
+
+    Returns:
+        A list of ``BiometricCredential`` instances to push to the device.
+    """
+    credentials = list(
+        BiometricCredential.objects.for_tenant(device.tenant)
+        .filter(device=device, is_active=True)
+        .select_related("customer")
+    )
+    return [
+        credential
+        for credential in credentials
+        if get_customer_access_state(customer=credential.customer, device=device)["allowed"]
+    ]

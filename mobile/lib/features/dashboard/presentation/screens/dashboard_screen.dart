@@ -870,6 +870,12 @@ class _ProfileTab extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
         OutlinedButton.icon(
+          onPressed: () => context.push('/access/enrollment-qr'),
+          icon: const Icon(Icons.qr_code),
+          label: const Text('Enrollment QR'),
+        ),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
           onPressed: () => context.push('/profile/membership'),
           icon: const Icon(Icons.card_membership_outlined),
           label: const Text('View Membership'),

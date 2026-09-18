@@ -9,6 +9,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from apps.access.services import sync_customer_devices
 from apps.memberships.models import Coupon, Membership, MembershipPlan
 from apps.memberships.serializers import (
     CouponSerializer,
@@ -78,6 +79,14 @@ class MembershipViewSet(ModelViewSet):
             queryset = queryset.filter(customer__user=self.request.user)
         return queryset
 
+    def _propagate_access_change(self, membership: Membership) -> None:
+        """Push updated allow-lists to the customer's devices (issue #24).
+
+        Synchronous by design: access changes must reach door hardware
+        within ~5s and this project has no Celery.
+        """
+        sync_customer_devices(membership.customer)
+
     def create(self, request: Request) -> Response:
         """Create a new membership, validating dates and status."""
         self.required_permission = "memberships.create_membership"
@@ -86,10 +95,16 @@ class MembershipViewSet(ModelViewSet):
         membership = serializer.save(tenant=request.tenant)
         membership.refresh_status()
         membership.save(update_fields=["status"])
+        self._propagate_access_change(membership)
         return Response(
             MembershipSerializer(membership).data,
             status=status.HTTP_201_CREATED,
         )
+
+    def perform_update(self, serializer: MembershipSerializer) -> None:
+        """Save membership edits, then propagate access changes."""
+        membership = serializer.save()
+        self._propagate_access_change(membership)
 
     def update(self, request: Request, *args: object, **kwargs: object) -> Response:
         """Update a membership."""
@@ -114,6 +129,7 @@ class MembershipViewSet(ModelViewSet):
         if membership.status != "cancelled":
             membership.status = "cancelled"
             membership.save(update_fields=["status", "updated_at"])
+        self._propagate_access_change(membership)
         return Response(self.get_serializer(membership).data)
 
     @action(detail=True, methods=["post"])
@@ -149,6 +165,7 @@ class MembershipViewSet(ModelViewSet):
         membership.status = Membership.Status.ACTIVE
         membership.refresh_status()
         membership.save()
+        self._propagate_access_change(membership)
         return Response(MembershipSerializer(membership).data)
 
 
