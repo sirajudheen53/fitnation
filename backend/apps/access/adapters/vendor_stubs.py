@@ -18,6 +18,9 @@ if TYPE_CHECKING:
     from apps.access.models import BiometricDevice
 
 
+# Kept for backward compatibility with old DeviceRegistry service (if still in tree).
+
+
 class VendorStubAdapter(BiometricAdapter):
     """Base stub: connection tests report offline, data ops are unimplemented."""
 
@@ -51,31 +54,19 @@ class VendorStubAdapter(BiometricAdapter):
         }
 
 
-class HikvisionAdapter(VendorStubAdapter):
-    """Stub for Hikvision devices (ISAPI/Ehome integration pending)."""
-
-    vendor_label = "Hikvision"
-
-
 class ZKTecoAdapter(VendorStubAdapter):
     """Stub for ZKTeco devices (Push SDK/ADMS integration pending)."""
 
     vendor_label = "ZKTeco"
 
 
-class EsslAdapter(VendorStubAdapter):
-    """Stub for eSSL devices (cloud API integration pending)."""
-
-    vendor_label = "eSSL"
-
-
-class MatrixAdapter(VendorStubAdapter):
-    """Stub for Matrix devices (COSEC API integration pending)."""
-
-    vendor_label = "Matrix"
-
-
 class SupervisionAdapter(VendorStubAdapter):
     """Stub for Supervision devices (integration pending)."""
 
     vendor_label = "Supervision"
+
+
+class EsslAdapter(VendorStubAdapter):
+    """Stub for eSSL devices (cloud API integration pending)."""
+
+    vendor_label = "eSSL"

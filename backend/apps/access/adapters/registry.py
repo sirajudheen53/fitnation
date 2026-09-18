@@ -1,18 +1,10 @@
-"""Vendor string -> adapter class registry (Sprint 8, issue #22)."""
+"""Vendor string -> adapter class registry (Sprint 8/9, issues #22, #27)."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from apps.access.adapters.base import AdapterNotRegisteredError, BiometricAdapter
-from apps.access.adapters.generic_http import GenericHTTPAdapter
-from apps.access.adapters.vendor_stubs import (
-    EsslAdapter,
-    HikvisionAdapter,
-    MatrixAdapter,
-    SupervisionAdapter,
-    ZKTecoAdapter,
-)
 
 if TYPE_CHECKING:
     from apps.access.models import BiometricDevice
@@ -49,10 +41,31 @@ def registered_vendors() -> list[str]:
     return sorted(_REGISTRY)
 
 
-# Default registrations — must cover every Vendor model choice.
-register_adapter("generic", GenericHTTPAdapter)
-register_adapter("hikvision", HikvisionAdapter)
-register_adapter("zkteco", ZKTecoAdapter)
-register_adapter("essl", EsslAdapter)
-register_adapter("matrix", MatrixAdapter)
-register_adapter("supervision", SupervisionAdapter)
+def _bootstrap() -> None:
+    """Register all known vendor adapters (deferred imports avoid cycles)."""
+    from apps.access.adapters.anviz import AnvizAdapter
+    from apps.access.adapters.dahua import DahuaAdapter
+    from apps.access.adapters.essl import EsslAdapter
+    from apps.access.adapters.generic_http import GenericHTTPAdapter
+    from apps.access.adapters.hikvision import HikvisionAdapter
+    from apps.access.adapters.mantra import MantraAdapter
+    from apps.access.adapters.matrix import MatrixAdapter
+    from apps.access.adapters.realtime import RealtimeAdapter
+    from apps.access.adapters.suprema import SupremaAdapter
+    from apps.access.adapters.timewatch import TimeWatchAdapter
+    from apps.access.adapters.zkteco import ZKTecoADMSAdapter
+
+    register_adapter("generic", GenericHTTPAdapter)
+    register_adapter("hikvision", HikvisionAdapter)
+    register_adapter("zkteco", ZKTecoADMSAdapter)
+    register_adapter("essl", EsslAdapter)
+    register_adapter("matrix", MatrixAdapter)
+    register_adapter("suprema", SupremaAdapter)
+    register_adapter("anviz", AnvizAdapter)
+    register_adapter("dahua", DahuaAdapter)
+    register_adapter("realtime", RealtimeAdapter)
+    register_adapter("mantra", MantraAdapter)
+    register_adapter("timewatch", TimeWatchAdapter)
+
+
+_bootstrap()

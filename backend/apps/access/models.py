@@ -16,7 +16,12 @@ class Vendor(models.TextChoices):
     ZKTECO = "zkteco", "ZKTeco"
     ESSL = "essl", "eSSL"
     MATRIX = "matrix", "Matrix"
-    SUPERVISION = "supervision", "Supervision"
+    SUPREMA = "suprema", "Suprema"
+    ANVIZ = "anviz", "Anviz"
+    DAHUA = "dahua", "Dahua"
+    REALTIME = "realtime", "Realtime"
+    MANTRA = "mantra", "Mantra"
+    TIMEWATCH = "timewatch", "TimeWatch"
     GENERIC = "generic", "Generic HTTP/MQTT"
 
 

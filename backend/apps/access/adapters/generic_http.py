@@ -1,20 +1,8 @@
-"""Generic HTTP bridge adapter for ``vendor="generic"`` devices (issue #22).
-
-Talks to any device bridge that exposes a simple REST contract:
-
-- ``POST {api_endpoint}/allowlist`` — push the credential allow-list
-- ``GET  {api_endpoint}/events?since=<ISO-8601>`` — fetch access events
-- ``GET  {api_endpoint}/status`` — connection health check
-
-Authentication uses the device ``api_key`` as a bearer token.
-"""
+"""Generic HTTP/MQTT bridge adapter (Sprint 8, issue #27)."""
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
-
-from django.utils import timezone
 
 import requests
 
@@ -25,25 +13,24 @@ if TYPE_CHECKING:
 
     from apps.access.models import BiometricDevice
 
-logger = logging.getLogger(__name__)
-
-REQUEST_TIMEOUT_SECONDS = 5
-
 
 class GenericHTTPAdapter(BiometricAdapter):
-    """Adapter for bridges implementing the generic REST contract."""
+    """Generic adapter for devices behind an HTTP bridge/agent.
 
-    def _base_url(self, device: BiometricDevice) -> str:
-        """Return the device endpoint without a trailing slash."""
-        if not device.api_endpoint:
-            raise AdapterError(f"Device '{device.name}' has no api_endpoint configured.")
-        return device.api_endpoint.rstrip("/")
+    The gym's edge agent (bridge) exposes a simple HTTP API that
+    translates our calls into device-specific protocols.
+    """
 
-    def _headers(self, device: BiometricDevice) -> dict:
-        """Return auth headers for the device bridge."""
+    vendor_label = "Generic"
+    protocol = "generic_http"
+
+    def _url(self, device: BiometricDevice, path: str) -> str:
+        return f"{device.api_endpoint or ''}{path}"
+
+    def _headers(self, device: BiometricDevice) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {device.api_key}",
             "Content-Type": "application/json",
+            "Authorization": f"Bearer {device.api_key or ''}",
         }
 
     def sync_allow_list(
@@ -51,103 +38,78 @@ class GenericHTTPAdapter(BiometricAdapter):
         device: BiometricDevice,
         credentials: Any,
     ) -> dict:
-        """Push the allow-list of credentials to the device bridge."""
-        payload = {
-            "credentials": [
-                {
-                    "device_user_id": credential.device_user_id,
-                    "credential_type": credential.credential_type,
-                    "is_active": credential.is_active,
-                }
-                for credential in credentials
-            ]
-        }
+        """Push the allow-list to the bridge."""
+        endpoint = device.api_endpoint
+        if not endpoint:
+            raise AdapterError("Device has no API endpoint configured.")
+
+        payload = [
+            {
+                "user_id": cred.device_user_id,
+                "name": cred.customer.name,
+                "credential_type": cred.credential_type,
+            }
+            for cred in credentials
+        ]
         try:
-            response = requests.post(
-                f"{self._base_url(device)}/allowlist",
-                json=payload,
+            resp = requests.post(
+                self._url(device, "/v1/access/allow-list"),
+                json={"users": payload},
                 headers=self._headers(device),
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=15,
             )
-        except requests.RequestException as exc:
-            raise AdapterError(f"Allow-list push failed for '{device.name}': {exc}") from exc
-
-        if response.status_code in (401, 403):
-            raise AdapterError(
-                f"Allow-list push rejected: authentication failed (HTTP {response.status_code})."
-            )
-        if response.status_code >= 400:
-            raise AdapterError(
-                f"Allow-list push rejected by '{device.name}' with HTTP {response.status_code}."
-            )
-
-        device.last_sync_at = timezone.now()
-        device.save(update_fields=["last_sync_at", "updated_at"])
-        pushed = len(payload["credentials"])
-        return {"ok": True, "pushed": pushed, "detail": f"Pushed {pushed} credentials to '{device.name}'."}
+            resp.raise_for_status()
+            return {
+                "ok": True,
+                "pushed": len(payload),
+                "detail": f"Bridge accepted {len(payload)} users.",
+                "protocol": self.protocol,
+            }
+        except requests.exceptions.RequestException as exc:
+            raise AdapterError(f"Bridge sync failed: {exc}") from exc
 
     def fetch_events(
         self,
         device: BiometricDevice,
         since: datetime | None = None,
     ) -> list[dict]:
-        """Fetch access events from the device bridge since a timestamp."""
-        params = {"since": since.isoformat()} if since else {}
+        """Pull events from the bridge."""
+        params: dict[str, str] = {"limit": "100"}
+        if since is not None:
+            params["since"] = since.isoformat()
         try:
-            response = requests.get(
-                f"{self._base_url(device)}/events",
+            resp = requests.get(
+                self._url(device, "/v1/access/events"),
                 params=params,
                 headers=self._headers(device),
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=15,
             )
-        except requests.RequestException as exc:
-            raise AdapterError(f"Event fetch failed for '{device.name}': {exc}") from exc
-
-        if response.status_code in (401, 403):
-            raise AdapterError(
-                f"Event fetch rejected: authentication failed (HTTP {response.status_code})."
-            )
-        if response.status_code >= 400:
-            raise AdapterError(
-                f"Event fetch rejected by '{device.name}' with HTTP {response.status_code}."
-            )
-
-        try:
-            body = response.json()
-        except ValueError as exc:
-            raise AdapterError(f"Device bridge '{device.name}' returned invalid JSON.") from exc
-
-        if isinstance(body, dict):
-            return list(body.get("events", []))
-        if isinstance(body, list):
-            return body
+            if resp.status_code == 200:
+                return resp.json().get("events", [])
+        except requests.exceptions.RequestException:
+            pass
         return []
 
     def test_connection(self, device: BiometricDevice) -> dict:
-        """Probe the device bridge status endpoint; report reachability."""
-        if not device.api_endpoint:
-            return {"online": False, "detail": "Device has no api_endpoint configured."}
+        """Ping the bridge health endpoint."""
+        endpoint = device.api_endpoint
+        if not endpoint:
+            return {
+                "online": False,
+                "detail": "No API endpoint configured on the device.",
+                "protocol": self.protocol,
+            }
         try:
-            response = requests.get(
-                f"{self._base_url(device)}/status",
+            resp = requests.get(
+                self._url(device, "/health"),
                 headers=self._headers(device),
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=8,
             )
-        except requests.RequestException as exc:
-            logger.warning("Connection test failed for device %s: %s", device.pk, exc)
-            return {"online": False, "detail": f"Device bridge unreachable: {exc}"}
-
-        if response.status_code in (401, 403):
+            online = resp.status_code == 200
             return {
-                "online": False,
-                "detail": f"Authentication failed (HTTP {response.status_code}).",
+                "online": online,
+                "detail": f"Bridge {'reachable' if online else f'HTTP {resp.status_code}'}.",
+                "protocol": self.protocol,
             }
-        if response.status_code >= 400:
-            return {
-                "online": False,
-                "detail": f"Device bridge returned HTTP {response.status_code}.",
-            }
-
-        device.last_seen_at = timezone.now()
-        device.save(update_fields=["last_seen_at", "updated_at"])
-        return {"online": True, "detail": "Device bridge is reachable."}
+        except requests.exceptions.RequestException as exc:
+            return {"online": False, "detail": f"Bridge unreachable: {exc}", "protocol": self.protocol}
