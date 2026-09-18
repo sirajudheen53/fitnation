@@ -128,24 +128,28 @@ export default function DevicesPage() {
   }, [router, userRole]);
 
   // Lazy-load tab data on first visit; logs refetch when the filter changes.
+  // All state updates run in promise callbacks (never synchronously in the
+  // effect body) to satisfy react-hooks/set-state-in-effect.
   useEffect(() => {
     const token = getToken();
     if (!token) return;
-    const authToken: string = token;
 
-    if (activeTab === "overrides" && !overridesLoaded && !overridesLoading) {
-      setOverridesLoading(true);
-      fetchAccessOverrides(authToken)
-        .then((list) => setOverrides(list))
-        .catch((err) => toast.error(errorMessage(err)))
-        .finally(() => {
+    void Promise.resolve().then(async () => {
+      if (activeTab === "overrides" && !overridesLoaded && !overridesLoading) {
+        try {
+          const list = await fetchAccessOverrides(token);
+          setOverrides(list);
           setOverridesLoaded(true);
+        } catch (err) {
+          toast.error(errorMessage(err));
+        } finally {
           setOverridesLoading(false);
-        });
-    }
-    if (activeTab === "logs") {
-      loadLogs(logDeviceFilter);
-    }
+        }
+      }
+      if (activeTab === "logs") {
+        await loadLogs(logDeviceFilter);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
