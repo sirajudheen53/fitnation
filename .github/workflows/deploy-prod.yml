@@ -1,0 +1,193 @@
+# FBOS Deploy to Production (yougetfitwithus)
+# Manual / tag-based deploy → GCP Cloud Run (prod backend) + Vercel (prod frontend)
+#
+# Backend:  test → build → push → migrate → deploy to fitnation-backend-prod
+# Frontend: build → deploy to a SEPARATE Vercel prod project (skipped until
+#           the VERCEL_PROD_PROJECT_ID repo variable is set)
+#
+# Prerequisites (one-time, see issue #12):
+#   - PROD_DATABASE_URL secret (prod Supabase project connection string)
+#   - PROD_SECRET_KEY secret (Django SECRET_KEY for prod)
+#   - GCS bucket yougetfitwithus-media-prod
+#   - Vercel prod project + VERCEL_PROD_PROJECT_ID repo variable (frontend)
+
+name: Deploy Prod
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+  GCP_PROJECT: yougetfitwithus
+  GCP_REGION: asia-south1
+  BACKEND_IMAGE: asia-south1-docker.pkg.dev/yougetfitwithus/backend/fitnation-backend-prod
+  CLOUD_RUN_SERVICE: fitnation-backend-prod
+  PROD_FRONTEND_URL: https://app.yougetfitwithus.com
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Backend: test, build, push, migrate, deploy to Cloud Run (prod)
+  # ─────────────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend Deploy (Cloud Run Prod)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # for Workload Identity Federation
+
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: fitnation_test
+          POSTGRES_USER: fitnation
+          POSTGRES_PASSWORD: testpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fitnation"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    outputs:
+      prod_url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install backend deps
+        run: |
+          pip install --upgrade pip
+          pip install -c constraints.txt -r requirements.txt
+
+      - name: Run tests (80% coverage gate)
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.test
+          DATABASE_URL: postgres://fitnation:testpass@localhost:5432/fitnation_test
+          SECRET_KEY: ci-test-key
+          REDIS_URL: redis://localhost:6379/1
+        run: |
+          pytest --cov=. --cov-report=term-missing --cov-fail-under=80
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/35318880783/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: fitnation-deploy@yougetfitwithus.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push backend image
+        run: |
+          IMAGE="${{ env.BACKEND_IMAGE }}:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          docker tag "$IMAGE" "${{ env.BACKEND_IMAGE }}:latest"
+          docker push "$IMAGE"
+          docker push "${{ env.BACKEND_IMAGE }}:latest"
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Run database migrations (prod DB)
+        run: |
+          DATABASE_URL=$(gcloud secrets versions access latest --secret=PROD_DATABASE_URL --project=yougetfitwithus)
+          MIGRATION_IMAGE="${{ env.BACKEND_IMAGE }}:migration-${{ github.sha }}"
+          docker build -t "$MIGRATION_IMAGE" .
+          docker run --rm \
+            -e DJANGO_SETTINGS_MODULE=config.settings.cloudrun \
+            -e DATABASE_URL="$DATABASE_URL" \
+            "$MIGRATION_IMAGE" \
+            python manage.py migrate --no-input
+
+      - name: Deploy to Cloud Run (prod)
+        id: deploy
+        run: |
+          gcloud run deploy ${{ env.CLOUD_RUN_SERVICE }} \
+            --image "$IMAGE" \
+            --project ${{ env.GCP_PROJECT }} \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars "DJANGO_SETTINGS_MODULE=config.settings.cloudrun,ALLOWED_HOSTS=*,CORS_ALLOWED_ORIGINS=${{ env.PROD_FRONTEND_URL }},GS_BUCKET_NAME=yougetfitwithus-media-prod" \
+            --set-secrets "DATABASE_URL=PROD_DATABASE_URL:latest,SECRET_KEY=PROD_SECRET_KEY:latest,SENDGRID_API_KEY=SENDGRID_API_KEY:latest,DEFAULT_FROM_EMAIL=DEFAULT_FROM_EMAIL:latest" \
+            --port 8000 \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 3 \
+            --timeout 120
+          URL=$(gcloud run services describe ${{ env.CLOUD_RUN_SERVICE }} \
+            --project ${{ env.GCP_PROJECT }} --region ${{ env.GCP_REGION }} \
+            --format "value(status.url)")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify prod health
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          for i in $(seq 1 12); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/health/" || true)
+            if [ "$CODE" = "200" ]; then
+              echo "Prod health check OK ($URL/api/health/)"
+              exit 0
+            fi
+            echo "Attempt $i: health returned $CODE — retrying in 10s"
+            sleep 10
+          done
+          echo "::error::Prod health check failed after 2 minutes"
+          exit 1
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Frontend: deploy to the SEPARATE Vercel prod project.
+  # Skipped until the repository variable VERCEL_PROD_PROJECT_ID is set
+  # (creating it is a one-time user action — issue #15).
+  # ─────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend Deploy (Vercel Prod)
+    runs-on: ubuntu-latest
+    needs: backend
+    if: ${{ vars.VERCEL_PROD_PROJECT_ID != '' }}
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Deploy to Vercel (Production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROD_PROJECT_ID }}
+          NEXT_PUBLIC_API_URL: ${{ needs.backend.outputs.url }}/api/v1
+        run: |
+          npx vercel deploy --prod --token "$VERCEL_TOKEN" --yes
