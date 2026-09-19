@@ -2023,3 +2023,29 @@ export function respondToReview(
     token,
   });
 }
+
+/* ── Platform admin (Sprint 10, issues #39/#41/#42) ────────────── */
+
+import {
+  AdminOnboardGymFormData,
+  AdminOnboardGymResult,
+  AdminTenant,
+} from "@/types/admin";
+
+export function fetchAdminTenants(token: string): Promise<AdminTenant[]> {
+  return request<AdminTenant[] | { results?: AdminTenant[] }>(
+    "/admin/tenants/",
+    { token },
+  ).then(unwrapList);
+}
+
+export function onboardGym(
+  data: AdminOnboardGymFormData,
+  token: string,
+): Promise<AdminOnboardGymResult> {
+  return request<AdminOnboardGymResult>("/admin/tenants/onboard/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}

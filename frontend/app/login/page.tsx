@@ -69,7 +69,7 @@ function LoginForm() {
       }
 
       toast.success(`Welcome back, ${result.user.name || result.user.email}!`);
-      router.push(next);
+      router.push(result.user.role === "platform_admin" ? "/admin" : next);
     } catch (err) {
       if (err instanceof ApiError) {
         setServerError((err.data?.detail || err.data?.error || err.message) as string);

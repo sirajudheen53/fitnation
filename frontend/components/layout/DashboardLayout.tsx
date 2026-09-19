@@ -24,6 +24,7 @@ import {
   Menu,
   X,
   Fingerprint,
+  UserPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout, getStoredUser } from "@/lib/auth";
@@ -60,6 +61,15 @@ export function DashboardLayout({ children, title, actions }: DashboardLayoutPro
   const user = typeof window !== "undefined" ? getStoredUser() : null;
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Platform admins are tenant-less — they get the operator nav only.
+  const navItems =
+    user?.role === "platform_admin"
+      ? [
+          { href: "/admin", label: "Gyms", icon: Building2 },
+          { href: "/admin/onboard", label: "Onboard Gym", icon: UserPlus },
+        ]
+      : NAV_ITEMS;
+
   const handleLogout = () => {
     logout();
     router.replace("/login");
@@ -68,7 +78,7 @@ export function DashboardLayout({ children, title, actions }: DashboardLayoutPro
   const renderNav = (onNavigate?: () => void) => (
     <>
       <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-4">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
