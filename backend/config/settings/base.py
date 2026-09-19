@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     "apps.inventory",
     "apps.reviews",
     "apps.access",
+    "apps.admin_ops",
 ]
 
 MIDDLEWARE = [

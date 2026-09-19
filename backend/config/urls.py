@@ -40,6 +40,7 @@ urlpatterns = [
     path("api/v1/inventory/", include("apps.inventory.urls")),
     path("api/v1/", include("apps.reviews.urls")),  # reviews/
     path("api/v1/access/", include("apps.access.urls")),  # biometric access control
+    path("api/v1/admin/", include("apps.admin_ops.urls")),  # platform admin (Sprint 10)
     path("api/v1/auth/", include("apps.vendors.urls")),
     path(
         "api/v1/subscriptions/plans/",
