@@ -56,6 +56,7 @@ class DietMealSerializer(serializers.ModelSerializer):
             "protein",
             "carbs",
             "fat",
+            "is_completed",
         ]
         read_only_fields = ["id", "calories", "protein", "carbs", "fat"]
         extra_kwargs = {"diet_day": {"required": False}}

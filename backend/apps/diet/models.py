@@ -226,6 +226,10 @@ class DietMeal(TenantModelMixin):
         default=0,
         help_text="Auto-calculated = food_item.fat × quantity.",
     )
+    is_completed = models.BooleanField(
+        default=False,
+        help_text="Whether the customer has logged this meal as eaten.",
+    )
 
     class Meta:
         """DietMeal model metadata."""

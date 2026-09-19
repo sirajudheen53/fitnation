@@ -27,6 +27,20 @@ class DietRemoteDataSource {
     }
   }
 
+  /// Marks a diet meal as completed (or un-completed).
+  ///
+  /// PATCH /api/v1/diet/diet-meals/{id}/  {"is_completed": true|false}
+  Future<void> setMealCompleted(int mealId, bool isCompleted) async {
+    try {
+      await _dio.patch(
+        '${AppConstants.dietMealsEndpoint}$mealId/',
+        data: {'is_completed': isCompleted},
+      );
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
   /// Fetches a diet plan by id (with days, meals, and food items).
   ///
   /// GET /api/v1/diet/diet-plans/{id}/

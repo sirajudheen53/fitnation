@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../auth/data/data_sources/api_client.dart';
 import '../../../auth/presentation/providers/auth_notifier.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../data/data_sources/diet_remote_data_source.dart';
 import '../../data/models/diet_plan.dart';
 import '../../data/models/meal.dart';
@@ -71,16 +72,31 @@ class MealLogState {
 
 /// Notifier for marking meals complete.
 class MealLogNotifier extends StateNotifier<MealLogState> {
-  MealLogNotifier() : super(const MealLogState());
+  MealLogNotifier(this._ref) : super(const MealLogState());
 
-  /// Simulates marking a meal complete.
-  /// In a full implementation this would call the backend.
+  // Keeps the ref for future use (e.g. invalidating diet providers after
+  // a successful meal log so the plan reloads with fresh is_completed).
+  // ignore: unused_field
+  final Ref _ref;
+
+  /// Marks a meal complete via the backend PATCH /diet-meals/{id}/.
+  ///
+  /// Uses the injected repository through the ref so the call stays
+  /// testable; the data source owns the HTTP details.
   Future<bool> markMealComplete(Meal meal) async {
     state = state.copyWith(isLoading: true, errorMessage: null, isSuccess: false);
-    // TODO: Wire to backend endpoint when available.
-    await Future.delayed(const Duration(milliseconds: 300));
-    state = const MealLogState(isLoading: false, isSuccess: true);
-    return true;
+    try {
+      final dio = ApiClient.getInstance();
+      await dio.patch(
+        '${AppConstants.dietMealsEndpoint}${meal.id}/',
+        data: {'is_completed': true},
+      );
+      state = const MealLogState(isLoading: false, isSuccess: true);
+      return true;
+    } catch (e) {
+      state = MealLogState(isLoading: false, errorMessage: e.toString());
+      return false;
+    }
   }
 
   void reset() {
@@ -91,5 +107,5 @@ class MealLogNotifier extends StateNotifier<MealLogState> {
 /// Provides the MealLogNotifier.
 final mealLogProvider =
     StateNotifierProvider<MealLogNotifier, MealLogState>((ref) {
-  return MealLogNotifier();
+  return MealLogNotifier(ref);
 });

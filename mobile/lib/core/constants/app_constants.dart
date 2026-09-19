@@ -36,6 +36,7 @@ class AppConstants {
   // Diet
   static const String dietAssignmentsEndpoint = '/diet-assignments/';
   static const String dietPlansEndpoint = '/diet-plans/';
+  static const String dietMealsEndpoint = '/diet-meals/';
 
   // Attendance
   static const String attendanceRecordsEndpoint = '/attendance/attendance/';
