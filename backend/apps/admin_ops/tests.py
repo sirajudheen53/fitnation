@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
+from django.contrib.auth.hashers import make_password
 from rest_framework.test import APITestCase
 
 from apps.branches.models import Branch
@@ -10,6 +13,7 @@ from apps.tenants.models import Tenant
 from apps.tenants.services import provision_tenant
 from apps.users.models import User
 from apps.users.services import create_owner_user, issue_token
+from apps.vendors.models import SubscriptionPlan
 
 
 class AdminTenantAPITests(APITestCase):
@@ -91,3 +95,87 @@ class AdminTenantAPITests(APITestCase):
         assert response.data["name"] == "Gym One"
         assert response.data["member_count"] == 1
         assert response.data["branch_count"] == 1
+
+
+class AdminOnboardGymTests(APITestCase):
+    """Admin-driven gym provisioning (issue #40)."""
+
+    def setUp(self) -> None:
+        """Create admin, a subscription plan, and the onboarding payload."""
+        self.admin = User.objects.create_superuser(email="root@fbos.test", password="pw123456!")
+        self.admin_token = issue_token(self.admin, None)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+        self.plan = SubscriptionPlan.objects.create(
+            code="starter",
+            name="Starter",
+            price_monthly=Decimal("999.00"),
+            price_yearly=Decimal("9999.00"),
+            max_branches=2,
+            max_customers=100,
+            max_trainers=5,
+        )
+        self.payload = {
+            "gym_name": "Iron Temple",
+            "contact_name": "Ravi Kumar",
+            "owner_email": "owner@irontemple.test",
+            "branch_name": "Main Branch",
+            "plan_code": "starter",
+        }
+
+    def test_onboard_creates_tenant_owner_branch(self) -> None:
+        """POST onboard → 201 with tenant, owner credentials, branch."""
+        response = self.client.post("/api/v1/admin/tenants/onboard/", self.payload, format="json")
+        assert response.status_code == 201
+        assert response.data["tenant_name"] == "Iron Temple"
+        assert response.data["owner_email"] == "owner@irontemple.test"
+        assert len(response.data["owner_password"]) >= 16
+        assert Tenant.objects.filter(name="Iron Temple").exists()
+
+    def test_owner_can_login_with_generated_password(self) -> None:
+        """The generated password works immediately on the login endpoint."""
+        onboard = self.client.post("/api/v1/admin/tenants/onboard/", self.payload, format="json")
+        password = onboard.data["owner_password"]
+        login = self.client.post(
+            "/api/v1/users/auth/login/",
+            {"email": self.payload["owner_email"], "password": password},
+            format="json",
+        )
+        assert login.status_code == 200
+        assert login.data.get("token")
+
+    def test_duplicate_owner_email_rejected(self) -> None:
+        """Same owner email (case-insensitive) → 400."""
+        self.client.post("/api/v1/admin/tenants/onboard/", self.payload, format="json")
+        dup = {**self.payload, "gym_name": "Another Gym", "owner_email": self.payload["owner_email"].upper()}
+        response = self.client.post("/api/v1/admin/tenants/onboard/", dup, format="json")
+        assert response.status_code == 400
+        assert "owner_email" in response.data
+
+    def test_duplicate_gym_name_rejected(self) -> None:
+        """Same gym name → 400."""
+        self.client.post("/api/v1/admin/tenants/onboard/", self.payload, format="json")
+        dup = {**self.payload, "owner_email": "other@irontemple.test"}
+        response = self.client.post("/api/v1/admin/tenants/onboard/", dup, format="json")
+        assert response.status_code == 400
+        assert "gym_name" in response.data
+
+    def test_unknown_plan_rejected(self) -> None:
+        """Invalid plan code → 400."""
+        response = self.client.post(
+            "/api/v1/admin/tenants/onboard/", {**self.payload, "plan_code": "gold"}, format="json"
+        )
+        assert response.status_code == 400
+
+    def test_non_superuser_forbidden(self) -> None:
+        """A gym owner cannot onboard other gyms."""
+        some_tenant = provision_tenant(name="Some Gym", contact_email="someowner@gym.test")
+        owner = create_owner_user(
+            tenant=some_tenant,
+            email="someowner@gym.test",
+            password_hash=make_password("pw123456!"),
+            contact_name="S O",
+        )
+        token = issue_token(owner, some_tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        response = self.client.post("/api/v1/admin/tenants/onboard/", self.payload, format="json")
+        assert response.status_code == 403
