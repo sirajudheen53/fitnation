@@ -225,3 +225,32 @@ class AccessLog(TenantModelMixin):
     def __str__(self) -> str:
         """Return human-readable log identifier."""
         return f"{self.customer} {self.event_type} at {self.event_timestamp}"
+
+
+class DeviceCommandQueue(TenantModelMixin):
+    """A queued outbound command for an ADMS device.
+
+    ADMS devices poll our endpoint; commands are held here until the
+    device's next poll delivers them (``executed_at`` is stamped on
+    delivery).
+    """
+
+    device = models.ForeignKey(
+        BiometricDevice,
+        on_delete=models.CASCADE,
+        related_name="pending_commands",
+    )
+    command = models.CharField(max_length=64)
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    executed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        """Model metadata."""
+
+        ordering = ["created_at"]
+
+    def __str__(self) -> str:
+        """Return a human-readable command label."""
+        status = "executed" if self.executed_at else "pending"
+        return f"{self.device.name}: {self.command} ({status})"

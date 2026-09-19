@@ -142,6 +142,10 @@ def sync_device(device: BiometricDevice) -> dict:
         logger.warning("Allow-list sync failed for device %s: %s", device.pk, exc)
         return {"synced": False, "detail": str(exc)}
 
+    if not result.get("ok", True):
+        logger.warning("Allow-list sync reported failure for device %s", device.pk)
+        return {"synced": False, "detail": result.get("detail", "Sync reported failure.")}
+
     device.last_sync_at = timezone.now()
     device.save(update_fields=["last_sync_at", "updated_at"])
     return {
