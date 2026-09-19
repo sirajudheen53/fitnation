@@ -1977,3 +1977,49 @@ export function createMaintenanceLog(
     token,
   });
 }
+
+/* ── Reviews & ratings (Sprint 6 residual, issue #7) ──────────── */
+
+import {
+  Review,
+  ReviewFormData,
+  ReviewListEnvelope,
+  ReviewRespondData,
+} from "@/types/reviews";
+
+export function fetchReviews(
+  token: string,
+  params?: { branch_id?: number | string },
+): Promise<ReviewListEnvelope> {
+  const query = new URLSearchParams();
+  if (params?.branch_id !== undefined && params?.branch_id !== "") {
+    query.set("branch_id", String(params.branch_id));
+  }
+  const qs = query.toString();
+  return request<ReviewListEnvelope>(`/reviews/${qs ? `?${qs}` : ""}`, {
+    token,
+  });
+}
+
+export function createReview(
+  data: ReviewFormData,
+  token: string,
+): Promise<Review> {
+  return request<Review>("/reviews/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function respondToReview(
+  id: number | string,
+  data: ReviewRespondData,
+  token: string,
+): Promise<unknown> {
+  return request<unknown>(`/reviews/${id}/respond/`, {
+    method: "POST",
+    body: data,
+    token,
+  });
+}

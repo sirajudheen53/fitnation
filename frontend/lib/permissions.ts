@@ -43,6 +43,7 @@ export const ROLE_PERMISSIONS: Record<string, Set<string>> = {
     "dashboard.view_dashboard",
     "reports.view_report",
     "inventory.view_equipment",
+    "reviews.view_review",
     "feedback.view_feedback",
     "feedback.create_feedback",
   ]),
@@ -112,6 +113,7 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   // platform_admin / gym_owner hold access.* permissions.
   "/devices": ["access.view_device"],
   "/inventory": ["inventory.view_equipment"],
+  "/reviews": ["reviews.view_review"],
   "/workouts": ["workouts.view_workout"],
   "/workouts/plans/new": ["workouts.create_workout"],
   "/workouts/plans/[id]/edit": ["workouts.edit_workout"],
