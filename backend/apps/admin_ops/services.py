@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import secrets
+from datetime import timedelta
 
 from django.contrib.auth.hashers import make_password
 from django.db import transaction
-from rest_framework.exceptions import ValidationError
+from django.utils import timezone
+from rest_framework.exceptions import NotFound, ValidationError
 
+from apps.admin_ops.models import ImpersonationLog
 from apps.branches.models import Branch
 from apps.tenants.models import Tenant
 from apps.tenants.services import provision_tenant
 from apps.users.models import User
-from apps.users.services import create_owner_user
+from apps.users.services import create_owner_user, issue_token
 from apps.vendors.models import SubscriptionPlan
+
+IMPERSONATION_TOKEN_MINUTES = 30
 
 
 def onboard_gym(
@@ -95,3 +100,31 @@ def _gym_name_taken(gym_name: str) -> bool:
     from apps.tenants.models import Tenant
 
     return Tenant.objects.filter(name__iexact=gym_name.strip()).exists()
+
+
+def impersonate_owner(*, admin: User, tenant: Tenant) -> dict:
+    """Issue a short-lived owner session token and audit it (issue #45).
+
+    Args:
+        admin: The authenticated platform admin requesting impersonation.
+        tenant: The gym whose owner will be impersonated.
+
+    Returns:
+        ``{"owner": User, "token": AuthToken}`` — the token expires in
+        ``IMPERSONATION_TOKEN_MINUTES`` minutes.
+
+    Raises:
+        NotFound: If the gym has no owner user to impersonate.
+    """
+    owner = (
+        User.objects.filter(tenant=tenant, role=User.Role.GYM_OWNER)
+        .order_by("-is_owner", "id")
+        .first()
+    )
+    if owner is None:
+        raise NotFound("This gym has no owner user to impersonate.")
+
+    expires_at = timezone.now() + timedelta(minutes=IMPERSONATION_TOKEN_MINUTES)
+    token = issue_token(owner, tenant, expires_at=expires_at)
+    ImpersonationLog.objects.create(admin=admin, owner=owner, tenant=tenant, token=token)
+    return {"owner": owner, "token": token}

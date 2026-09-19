@@ -48,6 +48,7 @@ MIGRATION_MODULES = {
         "inventory",
         "reviews",
         "access",
+        "admin_ops",
         "admin",
         "auth",
         "contenttypes",

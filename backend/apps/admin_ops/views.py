@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
 from apps.admin_ops.selectors import list_tenants
-from apps.admin_ops.services import onboard_gym
+from apps.admin_ops.services import impersonate_owner, onboard_gym
 from apps.admin_ops.serializers import (
     AdminOnboardGymSerializer,
     SubscriptionPlanAdminSerializer,
@@ -51,6 +51,24 @@ class AdminTenantViewSet(ReadOnlyModelViewSet):
         # Re-fetch through the annotated queryset so counts stay populated.
         tenant = list_tenants().get(pk=tenant.pk)
         return Response(TenantAdminSerializer(tenant).data)
+
+    @action(detail=True, methods=["post"], url_path="impersonate")
+    def impersonate(self, request: Any, pk: int | None = None) -> Response:
+        """Start a short-lived session as the gym's owner (issue #45).
+
+        The issued token expires in 30 minutes and the action is recorded
+        in the impersonation audit log.
+        """
+        tenant = self.get_object()
+        result = impersonate_owner(admin=request.user, tenant=tenant)
+        return Response(
+            {
+                "token": result["token"].key,
+                "expires_at": result["token"].expires_at,
+                "owner_email": result["owner"].email,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=["post"], url_path="onboard")
     def onboard_gym(self, request: Any) -> Response:

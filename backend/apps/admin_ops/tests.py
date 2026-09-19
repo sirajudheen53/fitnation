@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth.hashers import make_password
 from rest_framework.test import APITestCase
 
+from apps.admin_ops.models import ImpersonationLog
 from apps.branches.models import Branch
 from apps.customers.models import Customer
 from apps.tenants.models import Tenant
@@ -382,3 +384,68 @@ class AdminPlanManagementTests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {owner_token.key}")
         assert self.client.get("/api/v1/admin/plans/").status_code == 403
         assert self.client.post("/api/v1/admin/plans/", {}, format="json").status_code == 403
+
+
+class ImpersonationTests(APITestCase):
+    """Admin impersonation of gym owners (issue #45)."""
+
+    def setUp(self) -> None:
+        """Create admin, tenant, and its owner."""
+        self.admin = User.objects.create_superuser(email="root@fbos.test", password="pw123456!")
+        self.admin_token = issue_token(self.admin, None)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+        self.tenant = provision_tenant(name="Impersonate Gym", contact_email="owner@imp.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@imp.test",
+            password_hash=make_password("pw123456!"),
+            contact_name="Imp Owner",
+        )
+
+    def test_admin_impersonates_owner(self) -> None:
+        """The issued token authenticates as the gym owner and is audited."""
+        response = self.client.post(
+            f"/api/v1/admin/tenants/{self.tenant.pk}/impersonate/", format="json"
+        )
+        assert response.status_code == 200
+        assert response.data["owner_email"] == "owner@imp.test"
+        assert response.data["token"]
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {response.data['token']}")
+        me = self.client.get("/api/v1/users/auth/me/")
+        assert me.status_code == 200
+        assert me.data["user"]["email"] == "owner@imp.test"
+        assert me.data["user"]["tenant_id"] == self.tenant.pk
+
+        assert ImpersonationLog.objects.filter(
+            admin=self.admin, owner=self.owner, tenant=self.tenant
+        ).exists()
+
+    def test_impersonation_token_expires_in_30_minutes(self) -> None:
+        """The token carries a ~30 minute absolute expiry."""
+        from django.utils import timezone as dj_timezone
+
+        before = dj_timezone.now()
+        response = self.client.post(
+            f"/api/v1/admin/tenants/{self.tenant.pk}/impersonate/", format="json"
+        )
+        after = dj_timezone.now()
+        expires_at = response.data["expires_at"]
+        assert (before + timedelta(minutes=30)) <= expires_at <= (after + timedelta(minutes=30))
+
+    def test_tenant_without_owner_returns_404(self) -> None:
+        """A gym with no owner user cannot be impersonated."""
+        orphan = provision_tenant(name="No Owner Gym", contact_email="x@noowner.test")
+        response = self.client.post(
+            f"/api/v1/admin/tenants/{orphan.pk}/impersonate/", format="json"
+        )
+        assert response.status_code == 404
+
+    def test_non_admin_forbidden(self) -> None:
+        """A gym owner cannot impersonate anyone."""
+        owner_token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {owner_token.key}")
+        response = self.client.post(
+            f"/api/v1/admin/tenants/{self.tenant.pk}/impersonate/", format="json"
+        )
+        assert response.status_code == 403

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from django.db import transaction
@@ -130,6 +131,7 @@ def issue_token(
     user: User,
     tenant: Tenant | None,
     device_type: str = "",
+    expires_at: datetime | None = None,
 ) -> AuthToken:
     """Issue a new active auth token for the user.
 
@@ -137,6 +139,8 @@ def issue_token(
         user: The authenticated user.
         tenant: The tenant context (``None`` for platform admins).
         device_type: Optional device type string.
+        expires_at: Optional absolute expiry (``None`` = no expiry). Short
+            expiries are used for admin impersonation sessions.
 
     Returns:
         The created ``AuthToken`` instance.
@@ -145,6 +149,7 @@ def issue_token(
         user=user,
         tenant=tenant,
         device_type=device_type or AuthToken.DeviceType.WEB,
+        expires_at=expires_at,
     )
     return token
 
