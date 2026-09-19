@@ -4,6 +4,7 @@ from io import StringIO
 
 from django.contrib.auth.hashers import check_password
 from django.core.management import call_command
+from django.test import override_settings
 from django.utils import timezone as dj_timezone
 from rest_framework.test import APITestCase
 
@@ -21,12 +22,21 @@ from apps.workouts.models import WorkoutPlan
 class HealthCheckTests(APITestCase):
     """Tests for the liveness/readiness health endpoint."""
 
+    def setUp(self) -> None:
+        """Pin the cache to LocMemCache (the local env has no Redis)."""
+        cache_override = override_settings(CACHES={
+            "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+        })
+        cache_override.enable()
+        self.addCleanup(cache_override.disable)
+
     def test_health_endpoint_returns_healthy(self) -> None:
-        """The health endpoint reports database and cache status."""
+        """The health endpoint reports database, cache and storage status."""
         response = self.client.get("/api/health/")
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, str(response.data))
         self.assertEqual(response.data["status"], "healthy")
         self.assertEqual(response.data["db"], "ok")
+        self.assertEqual(response.data["storage"], "ok")
 
 
 def _run_seed_qa(*args: str) -> StringIO:
@@ -180,3 +190,54 @@ class SeedQACommandTests(APITestCase):
         _backfill_paid_at(payment, fallback_date=dt.date(2026, 7, 1))
         payment.refresh_from_db()
         self.assertEqual(dj_timezone.localdate(payment.paid_at), dt.date(2026, 6, 1))
+
+
+class HealthCheckResilienceTests(APITestCase):
+    """P0 prod health 500 — the health view must never 500.
+
+    Any component check that crashes degrades the response to 503 with the
+    error detail; the endpoint itself never raises.
+    """
+
+    def _get(self):
+        return self.client.get("/api/health/")
+
+    def test_health_never_500_when_db_check_crashes(self) -> None:
+        """A crashing db check degrades to 503 with the error detail."""
+        from unittest.mock import patch
+
+        from apps.core import healthcheck as hc
+
+        with patch.object(
+            hc.HealthCheckView, "_check_db", side_effect=RuntimeError("db boom")
+        ):
+            response = self._get()
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("db boom", str(response.data["db"]))
+        self.assertEqual(response.data["status"], "unhealthy")
+
+    def test_health_never_500_when_cache_check_crashes(self) -> None:
+        """A crashing cache check degrades to 503 with the error detail."""
+        from unittest.mock import patch
+
+        from apps.core import healthcheck as hc
+
+        with patch.object(
+            hc.HealthCheckView, "_check_cache", side_effect=RuntimeError("cache boom")
+        ):
+            response = self._get()
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("cache boom", str(response.data["cache"]))
+
+    def test_health_never_500_when_storage_check_crashes(self) -> None:
+        """A crashing storage check degrades to 503 with the error detail."""
+        from unittest.mock import patch
+
+        from apps.core import healthcheck as hc
+
+        with patch.object(
+            hc.HealthCheckView, "_check_storage", side_effect=RuntimeError("storage boom")
+        ):
+            response = self._get()
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("storage boom", str(response.data["storage"]))
