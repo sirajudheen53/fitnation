@@ -264,3 +264,121 @@ class GymSuspensionTests(APITestCase):
             f"/api/v1/admin/tenants/{self.tenant.pk}/", {"status": "suspended"}, format="json"
         )
         assert response.status_code == 403
+
+
+class AdminPlanManagementTests(APITestCase):
+    """Subscription plan CRUD for platform admins (issue #44)."""
+
+    def setUp(self) -> None:
+        """Create admin token and one existing plan."""
+        self.admin = User.objects.create_superuser(email="root@fbos.test", password="pw123456!")
+        self.admin_token = issue_token(self.admin, None)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+        self.plan = SubscriptionPlan.objects.create(
+            code="starter",
+            name="Starter",
+            price_monthly=Decimal("999.00"),
+            price_yearly=Decimal("9999.00"),
+            max_branches=2,
+            max_customers=100,
+            max_trainers=5,
+            features={"whatsapp": False},
+            sort_order=1,
+        )
+
+    def test_list_plans(self) -> None:
+        """Admin lists the whole catalog including inactive plans."""
+        SubscriptionPlan.objects.create(
+            code="professional",
+            name="Professional",
+            price_monthly=Decimal("2499.00"),
+            price_yearly=Decimal("24999.00"),
+            max_branches=5,
+            max_customers=1000,
+            max_trainers=50,
+            is_active=False,
+        )
+        response = self.client.get("/api/v1/admin/plans/")
+        assert response.status_code == 200
+        results = response.data.get("results", response.data)
+        assert {plan["code"] for plan in results} == {"starter", "professional"}
+
+    def test_retrieve_plan(self) -> None:
+        """Admin retrieves a single plan."""
+        response = self.client.get(f"/api/v1/admin/plans/{self.plan.pk}/")
+        assert response.status_code == 200
+        assert response.data["code"] == "starter"
+        assert response.data["features"] == {"whatsapp": False}
+
+    def test_create_plan(self) -> None:
+        """Admin creates a plan with the full field set."""
+        response = self.client.post(
+            "/api/v1/admin/plans/",
+            {
+                "code": "enterprise",
+                "name": "Enterprise",
+                "price_monthly": "4999.00",
+                "price_yearly": "49999.00",
+                "max_branches": 50,
+                "max_customers": 10000,
+                "max_trainers": 500,
+                "features": {"api": True},
+                "sort_order": 3,
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+        assert response.data["code"] == "enterprise"
+        assert SubscriptionPlan.objects.filter(code="enterprise").exists()
+
+    def test_create_duplicate_code_rejected(self) -> None:
+        """Plan codes are unique."""
+        response = self.client.post(
+            "/api/v1/admin/plans/",
+            {
+                "code": "starter",
+                "name": "Starter Again",
+                "price_monthly": "1.00",
+                "price_yearly": "10.00",
+                "max_branches": 1,
+                "max_customers": 10,
+                "max_trainers": 1,
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+
+    def test_update_plan(self) -> None:
+        """Admin patches pricing and limits."""
+        response = self.client.patch(
+            f"/api/v1/admin/plans/{self.plan.pk}/",
+            {"price_monthly": "1299.00", "max_customers": 250},
+            format="json",
+        )
+        assert response.status_code == 200
+        self.plan.refresh_from_db()
+        assert str(self.plan.price_monthly) == "1299.00"
+        assert self.plan.max_customers == 250
+
+    def test_delete_deactivates(self) -> None:
+        """DELETE soft-deactivates; the row survives."""
+        response = self.client.delete(f"/api/v1/admin/plans/{self.plan.pk}/")
+        assert response.status_code == 200
+        assert response.data["is_active"] is False
+        self.plan.refresh_from_db()
+        assert self.plan.is_active is False
+        assert SubscriptionPlan.objects.filter(pk=self.plan.pk).exists()
+
+    def test_non_admin_forbidden(self) -> None:
+        """Gym owners cannot manage plans (list or create)."""
+        tenant = provision_tenant(name="Plan Gym", contact_email="owner@plan.test")
+        owner = create_owner_user(
+            tenant=tenant,
+            email="owner@plan.test",
+            password_hash=make_password("pw123456!"),
+            contact_name="Plan Owner",
+        )
+        owner_token = issue_token(owner, tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {owner_token.key}")
+        assert self.client.get("/api/v1/admin/plans/").status_code == 403
+        assert self.client.post("/api/v1/admin/plans/", {}, format="json").status_code == 403

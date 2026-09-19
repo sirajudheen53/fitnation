@@ -50,3 +50,28 @@ class TenantStatusUpdateSerializer(serializers.Serializer):
     """Payload for PATCH /api/v1/admin/tenants/{id}/ (issue #43)."""
 
     status = serializers.ChoiceField(choices=["active", "suspended"])
+
+
+class SubscriptionPlanAdminSerializer(serializers.ModelSerializer):
+    """Platform-admin CRUD serializer for subscription plans (issue #44)."""
+
+    class Meta:
+        """Serializer metadata."""
+
+        model = SubscriptionPlan
+        fields = [
+            "id",
+            "code",
+            "name",
+            "price_monthly",
+            "price_yearly",
+            "max_branches",
+            "max_customers",
+            "max_trainers",
+            "features",
+            "is_active",
+            "sort_order",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]

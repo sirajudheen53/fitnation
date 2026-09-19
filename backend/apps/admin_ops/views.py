@@ -8,17 +8,19 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.viewsets import ReadOnlyModelViewSet
+from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
 from apps.admin_ops.selectors import list_tenants
 from apps.admin_ops.services import onboard_gym
 from apps.admin_ops.serializers import (
     AdminOnboardGymSerializer,
+    SubscriptionPlanAdminSerializer,
     TenantAdminSerializer,
     TenantStatusUpdateSerializer,
 )
 from apps.permissions.permissions import IsPlatformAdmin
 from apps.users.authentication import TenantTokenAuthentication
+from apps.vendors.models import SubscriptionPlan
 
 
 class AdminTenantViewSet(ReadOnlyModelViewSet):
@@ -70,3 +72,26 @@ class AdminTenantViewSet(ReadOnlyModelViewSet):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class AdminPlanViewSet(ModelViewSet):
+    """Subscription plan catalog management (issue #44).
+
+    DELETE is a soft delete: it flips ``is_active`` so historical tenants
+    keep a resolvable plan code.
+    """
+
+    authentication_classes = [TenantTokenAuthentication]
+    permission_classes = [IsAuthenticated, IsPlatformAdmin]
+    serializer_class = SubscriptionPlanAdminSerializer
+
+    def get_queryset(self):
+        """Return every plan (including inactive), catalog order."""
+        return SubscriptionPlan.objects.all()
+
+    def destroy(self, request: Any, pk: int | None = None) -> Response:
+        """Deactivate a plan instead of deleting the row."""
+        plan = self.get_object()
+        plan.is_active = False
+        plan.save(update_fields=["is_active"])
+        return Response(SubscriptionPlanAdminSerializer(plan).data)
