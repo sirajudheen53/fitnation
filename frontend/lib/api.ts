@@ -2024,12 +2024,13 @@ export function respondToReview(
   });
 }
 
-/* ── Platform admin (Sprint 10, issues #39/#41/#42) ────────────── */
+/* ── Platform admin (Sprint 10, issues #39/#41/#42/#43-#47) ────── */
 
 import {
   AdminOnboardGymFormData,
   AdminOnboardGymResult,
   AdminTenant,
+  AdminTenantSwitchStatus,
 } from "@/types/admin";
 
 export function fetchAdminTenants(token: string): Promise<AdminTenant[]> {
@@ -2046,6 +2047,19 @@ export function onboardGym(
   return request<AdminOnboardGymResult>("/admin/tenants/onboard/", {
     method: "POST",
     body: data,
+    token,
+  });
+}
+
+/** Suspend or reactivate a gym (issue #43). Returns the updated tenant. */
+export function updateAdminTenantStatus(
+  id: number | string,
+  status: AdminTenantSwitchStatus,
+  token: string,
+): Promise<AdminTenant> {
+  return request<AdminTenant>(`/admin/tenants/${id}/`, {
+    method: "PATCH",
+    body: { status },
     token,
   });
 }

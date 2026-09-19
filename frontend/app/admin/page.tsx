@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge, Button, Card, CardBody, Spinner } from "@/components/ui";
-import { errorMessage, fetchAdminTenants } from "@/lib/api";
+import { GymStatusAction } from "@/features/admin/components/GymStatusAction";
+import { errorMessage, fetchAdminTenants, updateAdminTenantStatus } from "@/lib/api";
 import { getToken, getStoredUser } from "@/lib/auth";
-import type { AdminTenant } from "@/types/admin";
+import type { AdminTenant, AdminTenantSwitchStatus } from "@/types/admin";
 
 const STATUS_VARIANTS: Record<string, "success" | "danger" | "warning" | "default"> = {
   active: "success",
@@ -47,6 +49,24 @@ export default function AdminGymsPage() {
     void load();
   }, [router, user]);
 
+  async function changeStatus(tenant: AdminTenant, status: AdminTenantSwitchStatus) {
+    const token = getToken();
+    if (!token) return;
+    try {
+      const updated = await updateAdminTenantStatus(tenant.id, status, token);
+      setTenants((rows) =>
+        rows.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)),
+      );
+      toast.success(
+        status === "suspended"
+          ? `${updated.name} suspended — members lose access.`
+          : `${updated.name} reactivated.`,
+      );
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  }
+
   return (
     <DashboardLayout
       title="Gyms — Platform Admin"
@@ -85,6 +105,7 @@ export default function AdminGymsPage() {
                     <th className="px-4 py-3 text-left font-medium text-gray-500">Members</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-500">Branches</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-500">Onboarded</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -106,6 +127,9 @@ export default function AdminGymsPage() {
                       <td className="px-4 py-3 font-mono text-gray-600">{t.branch_count}</td>
                       <td className="px-4 py-3 text-xs text-gray-500">
                         {new Date(t.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <GymStatusAction tenant={t} onChangeStatus={changeStatus} />
                       </td>
                     </tr>
                   ))}

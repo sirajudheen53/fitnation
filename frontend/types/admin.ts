@@ -17,6 +17,9 @@ export type SubscriptionPlanCode = (typeof SUBSCRIPTION_PLANS)[number]["code"];
 
 // ── Tenant (gym) as seen by the platform admin ──────────────────
 
+/** Statuses the admin can move a gym between via PATCH (issue #43). */
+export type AdminTenantSwitchStatus = "active" | "suspended";
+
 /** A gym (tenant) in the admin gyms list (GET /api/v1/admin/tenants/). */
 export interface AdminTenant {
   id: number;
