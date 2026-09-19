@@ -254,3 +254,53 @@ class DeviceCommandQueue(TenantModelMixin):
         """Return a human-readable command label."""
         status = "executed" if self.executed_at else "pending"
         return f"{self.device.name}: {self.command} ({status})"
+
+
+class AccessDecisionLog(TenantModelMixin):
+    """A logged access-control decision from the rule engine (issue #19).
+
+    Every evaluation of ``decide_and_log`` persists one row so gyms can
+    audit why a member was granted or denied entry.
+    """
+
+    SOURCES = [
+        ("override", "Owner Override"),
+        ("plan_active", "Active Plan"),
+        ("plan_expired", "Plan Expired"),
+        ("no_membership", "No Membership"),
+    ]
+
+    customer = models.ForeignKey(
+        "customers.Customer",
+        on_delete=models.CASCADE,
+        related_name="access_decisions",
+    )
+    device = models.ForeignKey(
+        BiometricDevice,
+        on_delete=models.CASCADE,
+        related_name="decision_logs",
+    )
+    allowed = models.BooleanField(help_text="True = entry granted, False = denied.")
+    source = models.CharField(max_length=32, choices=SOURCES)
+    reason = models.CharField(max_length=255, blank=True)
+    override = models.ForeignKey(
+        AccessOverride,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="decision_logs",
+        help_text="Set when the decision came from an owner override.",
+    )
+    checked_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """Model metadata."""
+
+        ordering = ["-checked_at"]
+
+    def __str__(self) -> str:
+        """Return a human-readable decision label."""
+        verdict = "ALLOW" if self.allowed else "DENY"
+        return f"{verdict} {self.customer} at {self.device} ({self.source})"

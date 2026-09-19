@@ -6,12 +6,14 @@ from datetime import datetime
 from typing import Any
 
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
 from apps.access.adapters import AdapterError, get_adapter
@@ -33,7 +35,14 @@ from apps.access.serializers import (
     DeviceEventsFetchResultSerializer,
     DeviceSyncResultSerializer,
 )
-from apps.access.services import enroll_credential, fetch_device_events, sync_device
+from apps.access.services import (
+    decide_and_log,
+    enroll_credential,
+    fetch_device_events,
+    ingest_event,
+    sync_device,
+)
+from apps.customers.models import Customer
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -278,3 +287,93 @@ class AccessLogViewSet(ReadOnlyModelViewSet):
             )
         result = get_customer_access_state(customer=customer, device=device)
         return Response(result, status=status.HTTP_200_OK)
+
+
+class AccessCheckView(APIView):
+    """GET /api/v1/access/check/ — rule-engine evaluation with audit log.
+
+    Query params: ``customer_id`` and ``device_id`` (both required).
+    Every call persists an :class:`~apps.access.models.AccessDecisionLog`
+    row so gyms can audit why a member was granted or denied entry (#19).
+    """
+
+    authentication_classes = [TenantTokenAuthentication]
+    permission_classes = [IsAuthenticated, IsTenantMember]
+
+    def get(self, request: Request) -> Response:
+        """Evaluate and log the access decision for a customer + device."""
+        customer_id = request.query_params.get("customer_id")
+        device_id = request.query_params.get("device_id")
+        if not customer_id or not device_id:
+            return Response(
+                {"detail": "customer_id and device_id are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        customer = Customer.objects.filter(pk=customer_id, tenant=request.tenant).first()
+        device = BiometricDevice.objects.filter(pk=device_id, tenant=request.tenant).first()
+        if customer is None or device is None:
+            return Response(
+                {"detail": "Customer or device not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        result = decide_and_log(customer=customer, device=device)
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class AccessEventIngestView(APIView):
+    """POST /api/v1/access/events/ — device event ingestion (issue #21).
+
+    Accepts events pushed by device bridges/adapters, resolves the
+    customer from the device's credential map, records the access log
+    (idempotent), and auto-creates an attendance check-in on entry.
+    """
+
+    authentication_classes = [TenantTokenAuthentication]
+    permission_classes = [IsAuthenticated, IsTenantMember]
+
+    def post(self, request: Request) -> Response:
+        """Ingest one access event."""
+        device_id = request.data.get("device_id")
+        device_user_id = request.data.get("device_user_id")
+        event_type = request.data.get("event_type")
+        raw_ts = request.data.get("event_timestamp")
+        if not device_id or not device_user_id or not event_type or not raw_ts:
+            return Response(
+                {"detail": "device_id, device_user_id, event_type, event_timestamp are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        device = BiometricDevice.objects.filter(pk=device_id, tenant=request.tenant).first()
+        if device is None:
+            return Response(
+                {"detail": "Device not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        ts = parse_datetime(str(raw_ts)) if isinstance(raw_ts, str) else raw_ts
+        if ts is None:
+            return Response(
+                {"detail": "event_timestamp must be an ISO-8601 datetime."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if timezone.is_naive(ts):
+            ts = timezone.make_aware(ts)
+        try:
+            result = ingest_event(
+                device=device,
+                device_user_id=str(device_user_id),
+                event_type=event_type,
+                event_timestamp=ts,
+                credential_type=request.data.get("credential_type", "fingerprint"),
+                raw_payload=request.data.get("raw_payload"),
+            )
+        except AdapterError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                "duplicate": result["duplicate"],
+                "customer_id": result["log"].customer_id,
+                "event_type": result["log"].event_type,
+                "attendance_created": result["attendance_created"],
+            },
+            status=status.HTTP_200_OK if result["duplicate"] else status.HTTP_201_CREATED,
+        )

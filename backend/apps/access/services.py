@@ -246,3 +246,133 @@ def fetch_device_events(*, device: BiometricDevice, since: datetime | None = Non
         recorded += 1
 
     return {"fetched": True, "recorded": recorded, "detail": f"Recorded {recorded} events."}
+
+
+def decide_and_log(
+    *,
+    customer: Customer,
+    device: BiometricDevice,
+) -> dict:
+    """Evaluate the access rule for a customer at a device and log the decision.
+
+    Wraps :func:`apps.access.selectors.get_customer_access_state` and
+    persists one :class:`~apps.access.models.AccessDecisionLog` row per
+    evaluation so gyms can audit why a member was granted or denied
+    entry (issue #19).
+
+    Args:
+        customer: The customer attempting entry.
+        device: The biometric device being accessed.
+
+    Returns:
+        The rule-engine state dict (``allowed``, ``source``, ``reason``,
+        and ``override_id`` when an override decided the outcome).
+    """
+    from apps.access.models import AccessDecisionLog
+    from apps.access.selectors import get_customer_access_state
+
+    state = get_customer_access_state(customer=customer, device=device)
+    AccessDecisionLog.objects.create(
+        tenant=device.tenant,
+        customer=customer,
+        device=device,
+        allowed=state["allowed"],
+        source=state["source"],
+        reason=state.get("reason", "")[:255],
+        override_id=state.get("override_id"),
+    )
+    return state
+
+
+def ingest_event(
+    *,
+    device: BiometricDevice,
+    device_user_id: str,
+    event_type: str,
+    event_timestamp: datetime,
+    credential_type: str = "fingerprint",
+    raw_payload: dict | None = None,
+) -> dict:
+    """Ingest a device access event — idempotent, with attendance wiring.
+
+    Resolves the customer from the device's credential map, records the
+    :class:`~apps.access.models.AccessLog` entry (skipping exact
+    duplicates), and auto-creates a customer attendance check-in on
+    entry events (issue #21).
+
+    Args:
+        device: The device reporting the event.
+        device_user_id: The device-side user id from the event.
+        event_type: One of ``entry`` / ``exit`` / ``denied`` / ``error``.
+        event_timestamp: Timezone-aware event time.
+        credential_type: Credential type reported by the device.
+        raw_payload: Optional raw vendor payload for debugging.
+
+    Returns:
+        A dict with ``duplicate`` (bool), ``log`` (the AccessLog — new or
+        pre-existing), and ``attendance_created`` (bool).
+
+    Raises:
+        AdapterError: If ``event_type`` is not a supported device event.
+    """
+    from apps.access.models import AccessLog, BiometricCredential
+
+    if event_type not in _DEVICE_EVENT_TYPES:
+        raise AdapterError(f"Unsupported event type '{event_type}'.")
+
+    duplicate = AccessLog.objects.filter(
+        device=device,
+        device_user_id=device_user_id,
+        event_type=event_type,
+        event_timestamp=event_timestamp,
+    ).first()
+    if duplicate is not None:
+        return {"duplicate": True, "log": duplicate, "attendance_created": False}
+
+    credential = (
+        BiometricCredential.objects.filter(
+            device=device,
+            device_user_id=device_user_id,
+            is_active=True,
+        )
+        .select_related("customer")
+        .first()
+    )
+    customer = credential.customer if credential else None
+
+    log = record_event(
+        device=device,
+        customer=customer,
+        credential_type=credential_type,
+        device_user_id=device_user_id,
+        event_type=event_type,
+        event_timestamp=event_timestamp,
+        raw_payload=raw_payload,
+    )
+
+    device.last_seen_at = timezone.now()
+    device.save(update_fields=["last_seen_at"])
+
+    attendance_created = False
+    if customer is not None and event_type == "entry":
+        from rest_framework.exceptions import ValidationError
+
+        try:
+            from apps.attendance.services import log_check_in
+
+            log_check_in(
+                tenant=device.tenant,
+                person_id=customer.id,
+                person_type="customer",
+                branch_id=device.branch_id,
+            )
+            attendance_created = True
+        except ValidationError:
+            # Already checked in today — the attendance side is idempotent;
+            # the access log itself is still recorded.
+            logger.info(
+                "Attendance check-in skipped for customer %s (already open).",
+                customer.pk,
+            )
+
+    return {"duplicate": False, "log": log, "attendance_created": attendance_created}
