@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  Boxes,
   Building2,
   Users,
   CreditCard,
@@ -41,6 +42,7 @@ const NAV_ITEMS = [
   { href: "/payments", label: "Payments", icon: Wallet },
   { href: "/attendance", label: "Attendance", icon: CalendarCheck },
   { href: "/devices", label: "Access Devices", icon: Fingerprint },
+  { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/trainers/performance", label: "Trainer Performance", icon: TrendingUp },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/workouts", label: "Workouts", icon: Dumbbell },

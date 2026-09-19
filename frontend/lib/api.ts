@@ -1872,3 +1872,108 @@ export function fetchAccessLogs(
     { token },
   ).then(unwrapList);
 }
+
+/* ── Equipment & inventory (Sprint 6 residual, issue #6) ──────── */
+
+import {
+  Equipment,
+  EquipmentFormData,
+  InventoryItem,
+  InventoryItemFormData,
+  MaintenanceLog,
+  MaintenanceLogFormData,
+} from "@/types/inventory";
+
+/* Equipment */
+
+export function fetchEquipment(token: string): Promise<Equipment[]> {
+  return request<Equipment[] | { results?: Equipment[] }>(
+    "/inventory/equipment/",
+    { token },
+  ).then(unwrapList);
+}
+
+export function createEquipment(
+  data: EquipmentFormData,
+  token: string,
+): Promise<Equipment> {
+  return request<Equipment>("/inventory/equipment/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateEquipment(
+  id: number | string,
+  data: Partial<EquipmentFormData>,
+  token: string,
+): Promise<Equipment> {
+  return request<Equipment>(`/inventory/equipment/${id}/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+export function deleteEquipment(
+  id: number | string,
+  token: string,
+): Promise<void> {
+  return request<void>(`/inventory/equipment/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+/* Inventory items (stock per equipment) */
+
+export function fetchInventoryItems(token: string): Promise<InventoryItem[]> {
+  return request<InventoryItem[] | { results?: InventoryItem[] }>(
+    "/inventory/inventory-items/",
+    { token },
+  ).then(unwrapList);
+}
+
+export function createInventoryItem(
+  data: InventoryItemFormData,
+  token: string,
+): Promise<InventoryItem> {
+  return request<InventoryItem>("/inventory/inventory-items/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateInventoryItem(
+  id: number | string,
+  data: Partial<InventoryItemFormData>,
+  token: string,
+): Promise<InventoryItem> {
+  return request<InventoryItem>(`/inventory/inventory-items/${id}/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/* Maintenance logs */
+
+export function fetchMaintenanceLogs(token: string): Promise<MaintenanceLog[]> {
+  return request<MaintenanceLog[] | { results?: MaintenanceLog[] }>(
+    "/inventory/maintenance-logs/",
+    { token },
+  ).then(unwrapList);
+}
+
+export function createMaintenanceLog(
+  data: MaintenanceLogFormData,
+  token: string,
+): Promise<MaintenanceLog> {
+  return request<MaintenanceLog>("/inventory/maintenance-logs/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
