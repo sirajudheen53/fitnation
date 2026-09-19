@@ -12,7 +12,11 @@ from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from apps.admin_ops.selectors import list_tenants
 from apps.admin_ops.services import onboard_gym
-from apps.admin_ops.serializers import AdminOnboardGymSerializer, TenantAdminSerializer
+from apps.admin_ops.serializers import (
+    AdminOnboardGymSerializer,
+    TenantAdminSerializer,
+    TenantStatusUpdateSerializer,
+)
 from apps.permissions.permissions import IsPlatformAdmin
 from apps.users.authentication import TenantTokenAuthentication
 
@@ -30,6 +34,21 @@ class AdminTenantViewSet(ReadOnlyModelViewSet):
     def get_queryset(self):
         """Return all tenants with counts, newest first."""
         return list_tenants()
+
+    def partial_update(self, request: Any, pk: int | None = None) -> Response:
+        """Suspend or reactivate a gym (issue #43).
+
+        Suspension immediately blocks the gym's API tokens (see
+        ``TenantTokenAuthentication``) and owner logins.
+        """
+        tenant = self.get_object()
+        serializer = TenantStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        tenant.status = serializer.validated_data["status"]
+        tenant.save(update_fields=["status"])
+        # Re-fetch through the annotated queryset so counts stay populated.
+        tenant = list_tenants().get(pk=tenant.pk)
+        return Response(TenantAdminSerializer(tenant).data)
 
     @action(detail=False, methods=["post"], url_path="onboard")
     def onboard_gym(self, request: Any) -> Response:

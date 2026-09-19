@@ -43,6 +43,11 @@ class TenantTokenAuthentication(BaseAuthentication):
         if token.expires_at and token.expires_at < timezone.now():
             raise AuthenticationFailed("Token expired")
 
+        # Suspended gyms lose API access immediately, including tokens
+        # issued before suspension (login blocks them at issue time).
+        if token.tenant and token.tenant.status == "suspended":
+            raise AuthenticationFailed("Tenant is suspended")
+
         token.last_used_at = timezone.now()
         token.save(update_fields=["last_used_at"])
 

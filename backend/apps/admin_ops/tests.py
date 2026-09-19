@@ -179,3 +179,88 @@ class AdminOnboardGymTests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
         response = self.client.post("/api/v1/admin/tenants/onboard/", self.payload, format="json")
         assert response.status_code == 403
+
+
+class GymSuspensionTests(APITestCase):
+    """Gym suspension and reactivation (issue #43)."""
+
+    def setUp(self) -> None:
+        """Create admin, an active tenant, and an owner with a real password."""
+        self.admin = User.objects.create_superuser(email="root@fbos.test", password="pw123456!")
+        self.admin_token = issue_token(self.admin, None)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+        self.tenant = provision_tenant(name="Suspend Gym", contact_email="owner@suspend.test")
+        self.tenant.status = Tenant.Status.ACTIVE
+        self.tenant.save(update_fields=["status"])
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@suspend.test",
+            password_hash=make_password("pw123456!"),
+            contact_name="Suspend Owner",
+        )
+
+    def _login(self):
+        """POST the owner's credentials to the login endpoint."""
+        return self.client.post(
+            "/api/v1/users/auth/login/",
+            {"email": "owner@suspend.test", "password": "pw123456!"},
+            format="json",
+        )
+
+    def test_suspend_blocks_owner_login(self) -> None:
+        """Suspending a gym rejects its owner's login with 403."""
+        response = self.client.patch(
+            f"/api/v1/admin/tenants/{self.tenant.pk}/", {"status": "suspended"}, format="json"
+        )
+        assert response.status_code == 200
+        assert response.data["status"] == "suspended"
+        assert self._login().status_code == 403
+
+    def test_reactivate_restores_login(self) -> None:
+        """Reactivation unblocks owner login."""
+        self.client.patch(
+            f"/api/v1/admin/tenants/{self.tenant.pk}/", {"status": "suspended"}, format="json"
+        )
+        response = self.client.patch(
+            f"/api/v1/admin/tenants/{self.tenant.pk}/", {"status": "active"}, format="json"
+        )
+        assert response.status_code == 200
+        assert response.data["status"] == "active"
+        login = self._login()
+        assert login.status_code == 200
+        assert login.data["token"]
+
+    def test_suspension_revokes_existing_tokens(self) -> None:
+        """Tokens issued before suspension stop authenticating immediately."""
+        owner_token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {owner_token.key}")
+        assert self.client.get("/api/v1/users/auth/me/").status_code == 200
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+        self.client.patch(
+            f"/api/v1/admin/tenants/{self.tenant.pk}/", {"status": "suspended"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {owner_token.key}")
+        response = self.client.get("/api/v1/users/auth/me/")
+        # 401, not 403: raised inside the authenticator, which advertises a
+        # WWW-Authenticate challenge (DRF renders 403 only without one).
+        assert response.status_code == 401
+        assert response.data["detail"] == "Tenant is suspended"
+
+    def test_invalid_status_rejected(self) -> None:
+        """Only active/suspended are accepted via this endpoint."""
+        response = self.client.patch(
+            f"/api/v1/admin/tenants/{self.tenant.pk}/", {"status": "trial"}, format="json"
+        )
+        assert response.status_code == 400
+        self.tenant.refresh_from_db()
+        assert self.tenant.status == Tenant.Status.ACTIVE
+
+    def test_non_admin_cannot_suspend(self) -> None:
+        """A gym owner cannot suspend their own (or any) gym."""
+        owner_token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {owner_token.key}")
+        response = self.client.patch(
+            f"/api/v1/admin/tenants/{self.tenant.pk}/", {"status": "suspended"}, format="json"
+        )
+        assert response.status_code == 403

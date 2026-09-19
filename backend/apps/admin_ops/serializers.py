@@ -44,3 +44,9 @@ class AdminOnboardGymSerializer(serializers.Serializer):
     branch_name = serializers.CharField(max_length=200)
     branch_type = serializers.ChoiceField(choices=["main", "sub"], default="main")
     plan_code = serializers.ChoiceField(choices=SubscriptionPlan.PlanCode.choices)
+
+
+class TenantStatusUpdateSerializer(serializers.Serializer):
+    """Payload for PATCH /api/v1/admin/tenants/{id}/ (issue #43)."""
+
+    status = serializers.ChoiceField(choices=["active", "suspended"])
