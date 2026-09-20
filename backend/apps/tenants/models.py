@@ -46,6 +46,11 @@ class Tenant(models.Model):
     wati_endpoint = models.URLField(blank=True)
     is_wati_enabled = models.BooleanField(default=False)
     settings = models.JSONField(default=dict, blank=True)
+    features = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Feature toggles for this gym, e.g. {marketplace: true}",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
