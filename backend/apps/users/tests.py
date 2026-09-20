@@ -1,7 +1,9 @@
 """Tests for the users app."""
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -929,3 +931,203 @@ class EmailVerificationTests(APITestCase):
             f"/api/v1/users/auth/verify-email/{token2.token}/",
         )
         self.assertEqual(response.status_code, 200)
+
+
+class OTPAnchorsAndHardeningTests(APITestCase):
+    """P0-1 gym anchors + P0-2 real OTP hardening (ADR-003).
+
+    Explicit gym anchors only (no Tenant.objects.first()); real hashed
+    6-digit codes with expiry, attempts, cooldown and daily caps; the stub
+    survives only behind DEBUG.
+    """
+
+    def setUp(self) -> None:
+        """Two tenants, an owner, and DEBUG-stub OTP settings."""
+        self.tenant_a = provision_tenant(name="Gym A", contact_email="a@local.test")
+        self.tenant_b = provision_tenant(name="Gym B", contact_email="b@local.test")
+        cache_settings = override_settings(CACHES={
+            "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+        })
+        cache_settings.enable()
+        self.addCleanup(cache_settings.disable)
+        stub_settings = override_settings(DEBUG=True, OTP_SENDER="stub", OTP_RESEND_COOLDOWN_SECONDS=0)
+        stub_settings.enable()
+        self.addCleanup(stub_settings.disable)
+
+    def _create_customer(self, email: str, phone: str, tenant) -> User:
+        """Create a customer user directly (simulating an existing account)."""
+        return User.objects.create_user(
+            email=email,
+            password="***",
+            first_name="Cust",
+            last_name="User",
+            role=User.Role.CUSTOMER,
+            tenant=tenant,
+            phone=phone,
+        )
+
+    def _request_otp(self, payload):
+        return self.client.post("/api/v1/users/auth/otp/request/", payload, format="json")
+
+    def test_no_anchor_zero_matches_generic_400(self) -> None:
+        """An unregistered phone + no gym anchor → generic 400, no enumeration."""
+        response = self._request_otp({"phone": "+9199000000001"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Specify your gym", str(response.data))
+        self.assertNotIn("otp", response.data)
+
+    def test_phone_lookup_single_match_auto_pins(self) -> None:
+        """A phone registered in exactly one gym auto-pins that gym."""
+        self._create_customer("single@example.com", "+9199000000002", self.tenant_a)
+        response = self._request_otp({"phone": "+9199000000002"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data.get("sent"))
+        # DEBUG+stub returns the code in the body; in prod real mode it never appears.
+        self.assertEqual(len(response.data.get("otp", "")), 6)
+
+    def test_phone_lookup_multiple_matches_returns_disambiguation(self) -> None:
+        """>1 tenant matches → minimal disambiguation list (uuid + name only)."""
+        self._create_customer("multi-a@example.com", "+9199000000003", self.tenant_a)
+        self._create_customer("multi-b@example.com", "+9199000000003", self.tenant_b)
+        response = self._request_otp({"phone": "+9199000000003"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data.get("action"), "select_gym")
+        gyms = response.data.get("gyms", [])
+        self.assertEqual(len(gyms), 2)
+        for gym in gyms:
+            self.assertEqual(sorted(gym.keys()), ["name", "tenant"])
+        self.assertNotIn("otp", response.data)
+
+    def test_disambiguation_then_gym_anchor_issues_otp(self) -> None:
+        """After the disambiguation, the explicit gym anchor issues the OTP."""
+        self._create_customer("multi2-a@example.com", "+9199000000004", self.tenant_a)
+        self._create_customer("multi2-b@example.com", "+9199000000004", self.tenant_b)
+        disambiguation = self._request_otp({"phone": "+9199000000004"})
+        self.assertEqual(disambiguation.status_code, 200)
+        gym_uuid = disambiguation.data["gyms"][0]["tenant"]
+
+        anchored = self._request_otp(
+            {"phone": "+9199000000004", "gym": gym_uuid}
+        )
+        self.assertEqual(anchored.status_code, 200)
+        self.assertTrue(anchored.data.get("sent"))
+        code = anchored.data.get("otp")  # DEBUG stub response
+        self.assertEqual(len(code), 6)
+
+        verify = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": "+9199000000004", "otp": code, "gym": gym_uuid},
+            format="json",
+        )
+        self.assertEqual(verify.status_code, 200)
+        self.assertIsNotNone(verify.data.get("token"))
+
+    def test_unknown_gym_anchor_400(self) -> None:
+        """An unknown gym anchor is a clean 400 field error."""
+        response = self._request_otp(
+            {"phone": "+9199000000005", "gym": "00000000-0000-0000-0000-000000000000"}
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("gym", response.data)
+
+    def test_otp_verify_wrong_code_then_too_many_attempts(self) -> None:
+        """5 wrong attempts exhaust the code; the next verify says too many."""
+        self._create_customer("attempts@example.com", "+9199000000006", self.tenant_a)
+        issued = self._request_otp({"phone": "+9199000000006"})
+        code = issued.data.get("otp")
+        for _ in range(5):
+            wrong = self.client.post(
+                "/api/v1/users/auth/otp/verify/",
+                {"phone": "+9199000000006", "otp": "000000", "gym": str(self.tenant_a.uuid)},
+                format="json",
+            )
+            self.assertEqual(wrong.status_code, 400)
+        exhausted = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": "+9199000000006", "otp": code, "gym": str(self.tenant_a.uuid)},
+            format="json",
+        )
+        self.assertEqual(exhausted.status_code, 400)
+        self.assertIn("Too many attempts", str(exhausted.data))
+
+    def test_otp_verify_expired_code(self) -> None:
+        """An expired code is rejected (not consumed)."""
+        from django.utils import timezone
+
+        from apps.users.models import OtpCode
+
+        self._create_customer("expired@example.com", "+9199000000007", self.tenant_a)
+        from apps.users.otp import _hash_code
+
+        OtpCode.objects.create(
+            phone="+9199000000007",
+            tenant=self.tenant_a,
+            code_hash=_hash_code("expired@local.test", "123456"),
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        response = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": "+9199000000007", "otp": "123456"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("expired", str(response.data))
+
+    def test_otp_resend_cooldown(self) -> None:
+        """An immediate resend inside the cooldown window is rejected."""
+        self._create_customer("cooldown@example.com", "+9199000000008", self.tenant_a)
+        cooldown_settings = override_settings(OTP_RESEND_COOLDOWN_SECONDS=60)
+        cooldown_settings.enable()
+        self.addCleanup(cooldown_settings.disable)
+        first = self._request_otp({"phone": "+9199000000008"})
+        self.assertEqual(first.status_code, 200)
+        second = self._request_otp({"phone": "+9199000000008"})
+        self.assertEqual(second.status_code, 400)
+        self.assertIn("wait", str(second.data))
+
+    def test_otp_daily_cap_per_phone(self) -> None:
+        """The per-phone daily cap returns 429 once exhausted."""
+        self._create_customer("capped@example.com", "+9199000000009", self.tenant_a)
+        cap_settings = override_settings(OTP_RESEND_COOLDOWN_SECONDS=0, OTP_DAILY_LIMIT_PER_PHONE=3)
+        cap_settings.enable()
+        self.addCleanup(cap_settings.disable)
+        for i in range(3):
+            issued = self._request_otp({"phone": "+9199000000009"})
+            self.assertEqual(issued.status_code, 200)
+        exhausted = self._request_otp({"phone": "+9199000000009"})
+        self.assertEqual(exhausted.status_code, 429)
+
+    def test_otp_daily_cap_per_ip(self) -> None:
+        """The per-IP daily cap returns 429 once exhausted (distinct phones)."""
+        self._create_customer("ipcap1@example.com", "+9199000000010", self.tenant_a)
+        self._create_customer("ipcap2@example.com", "+9199000000011", self.tenant_a)
+        self._create_customer("ipcap3@example.com", "+9199000000012", self.tenant_a)
+        ip_settings = override_settings(OTP_RESEND_COOLDOWN_SECONDS=0, OTP_DAILY_LIMIT_PER_IP=2)
+        ip_settings.enable()
+        self.addCleanup(ip_settings.disable)
+        first = self._request_otp({"phone": "+9199000000010"})
+        self.assertEqual(first.status_code, 200)
+        second = self._request_otp({"phone": "+9199000000011"})
+        self.assertEqual(second.status_code, 200)
+        third = self._request_otp({"phone": "+9199000000012"})
+        self.assertEqual(third.status_code, 429)
+
+    def test_otp_tenant_binding_isolation(self) -> None:
+        """A code issued for gym A does not verify under gym B (isolation)."""
+        self._create_customer("iso@example.com", "+9199000000013", self.tenant_a)
+        issued = self._request_otp({"phone": "+9199000000013", "gym": str(self.tenant_a.uuid)})
+        code = issued.data.get("otp")
+        response = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": "+9199000000013", "otp": code, "gym": str(self.tenant_b.uuid)},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_verify_requires_phone(self) -> None:
+        """OTP verify without a phone is a clean 400 field error."""
+        response = self.client.post(
+            "/api/v1/users/auth/otp/verify/", {"otp": "123456"}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("phone", response.data)

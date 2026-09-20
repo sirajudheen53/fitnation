@@ -20,7 +20,7 @@ class UserManager(BaseUserManager):
         """Create and save a user with the given email and password."""
         if not email:
             raise ValueError("Email is required")
-        email = self.normalize_email(email)
+        email = self.normalize_email(email).strip().lower()
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
@@ -339,3 +339,41 @@ class AuthToken(models.Model):
         import uuid
 
         return uuid.uuid4().hex + uuid.uuid4().hex
+
+class OtpCode(models.Model):
+    """A hashed one-time code issued for a phone (P0-2 real OTP).
+
+    Rows carry the binding (phone + tenant), the hashed 6-digit code, the
+    expiry, the verify-attempt counter and the requesting IP for rate limits
+    (per-phone + per-IP daily caps).
+    """
+
+    phone = models.CharField(max_length=20, db_index=True)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="otp_codes",
+    )
+    code_hash = models.CharField(max_length=64)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    is_used = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        """Model metadata."""
+
+        db_table = "otp_codes"
+        ordering: ClassVar[list] = ["-created_at"]
+        indexes: ClassVar[list] = [
+            models.Index(fields=["phone", "created_at"], name="idx_otp_phone_created"),
+            models.Index(fields=["ip", "created_at"], name="idx_otp_ip_created"),
+        ]
+
+    def __str__(self) -> str:
+        """Return a redacted label (never the code)."""
+        return f"OTP {self.phone} ({'used' if self.is_used else 'active'})"
+

@@ -9,6 +9,7 @@ from django.db import transaction
 
 from apps.branches.models import Branch, BranchTrainerAssignment
 from apps.customers.models import Customer
+from apps.tenants.models import Tenant
 from apps.users.auth import AuthToken
 from apps.users.models import User
 
@@ -184,6 +185,81 @@ def get_user_permissions(user: User) -> list[str]:
     if perms == "*":
         return ["*"]
     return sorted(perms)
+
+
+class TenantResolutionError(Exception):
+    """An OTP tenant-resolution error (P0-1: explicit anchors only)."""
+
+    def __init__(self, detail: dict, status_code: int = 400):
+        super().__init__(str(detail))
+        self.detail = detail
+        self.status_code = status_code
+
+
+def _throttle_lookup(phone: str, ip: str | None) -> None:
+    """Rate-limit cross-tenant phone lookups (per phone + IP, 10 per 10 min).
+
+    Best-effort: a cache failure skips the throttle (fail-open) — the hard
+    daily caps in the OTP issue path remain the enforcement layer.
+    """
+    from django.core.cache import cache
+
+    try:
+        key = f"otp-anchor:{phone}:{ip or 'noip'}"
+        count = (cache.get(key) or 0) + 1
+        cache.set(key, count, timeout=600)
+        if count > 10:
+            raise TenantResolutionError(
+                {"detail": "Too many requests. Try again later."}, status_code=429
+            )
+    except Exception:
+        logger.warning("OTP anchor throttle skipped (cache unavailable)")
+
+
+def resolve_tenant_for_otp(phone: str, gym_anchor: str | None, ip: str | None = None):
+    """Resolve the tenant for an OTP flow — explicit anchors ONLY (P0-1).
+
+    Ladder (ADR-003 P0-1):
+    1. Device-bound gym anchor (tenant uuid) → explicit, validated.
+    2. Rate-limited cross-tenant phone lookup: exactly one customer user →
+       auto-pin; several → a minimal disambiguation list (tenant uuid +
+       display name only, throttled, non-enumerating shape); zero matches →
+       a generic non-enumerating error.
+
+    Returns:
+        (tenant, None) on resolution, or (None, disambiguation_payload).
+
+    Raises:
+        TenantResolutionError: on anchor failures (never a fallback).
+    """
+    from apps.customers.models import Customer
+
+    if gym_anchor:
+        _throttle_lookup(phone, ip)
+        try:
+            return Tenant.objects.get(uuid=gym_anchor), None
+        except (Tenant.DoesNotExist, ValueError, TypeError):
+            raise TenantResolutionError({"gym": "Unknown gym."}, status_code=400)
+
+    _throttle_lookup(phone, ip)
+    users = list(
+        User.objects.filter(role=User.Role.CUSTOMER, phone=phone).select_related("tenant")
+    )
+    tenants = {u.tenant for u in users if u.tenant is not None}
+    if len(tenants) == 1:
+        return next(iter(tenants)), None
+    if len(tenants) > 1:
+        return None, {
+            "action": "select_gym",
+            "gyms": [
+                {"tenant": str(t.uuid), "name": t.name}
+                for t in sorted(tenants, key=lambda x: x.name.lower())
+            ],
+        }
+    # Zero matches — generic, non-enumerating; never reveals registration state.
+    raise TenantResolutionError(
+        {"detail": "Specify your gym to continue."}, status_code=400
+    )
 
 
 def get_or_create_customer_by_phone(phone: str, tenant: Tenant) -> User:

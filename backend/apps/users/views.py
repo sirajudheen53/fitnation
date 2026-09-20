@@ -1,5 +1,6 @@
 """User and authentication API views."""
 
+from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework import status
 from rest_framework.decorators import action
@@ -19,6 +20,7 @@ from apps.tenants.permissions import IsTenantMember
 from apps.users.auth import AuthToken
 from apps.users.authentication import TenantTokenAuthentication
 from apps.users.models import EmailVerificationToken
+from apps.users.otp import OtpError, OtpRateLimited, get_otp_sender, issue_otp, verify_otp
 from apps.users.selectors import user_get_by_id, user_list
 from apps.users.serializers import (
     LoginSerializer,
@@ -35,10 +37,12 @@ from apps.users.serializers import (
     UserUpdateSerializer,
 )
 from apps.users.services import (
+    TenantResolutionError,
     create_user,
     get_or_create_customer_by_phone,
     get_user_permissions,
     issue_token,
+    resolve_tenant_for_otp,
 )
 from apps.users.trainer_selectors import (
     trainer_assignment_list,
@@ -56,6 +60,8 @@ from apps.users.trainer_services import (
     update_trainer,
 )
 
+User = get_user_model()
+
 
 class LoginView(APIView):
     """Authenticate an email/password pair and issue an auth token."""
@@ -68,6 +74,13 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+
+        # Case-insensitive login: resolve the stored email form (Postgres
+        # lookups are case-sensitive; users may type any casing).
+        email = data["email"].strip().lower()
+        stored = User.objects.filter(email__iexact=email).first()
+        if stored is not None:
+            data["email"] = stored.email
 
         user = authenticate(
             request,
@@ -126,53 +139,75 @@ class MeView(APIView):
         )
 
 
+def _client_ip(request: Request) -> str | None:
+    """Client IP for rate limits (Cloud Run sets X-Forwarded-For)."""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    return forwarded.split(",")[0].strip() or request.META.get("REMOTE_ADDR") or None
+
+
 class OTPRequestView(APIView):
-    """Request a fake deterministic OTP for mobile login."""
+    """Request a real OTP (P0-2) with explicit gym anchors (P0-1)."""
 
     authentication_classes = []
     permission_classes = [AllowAny]
 
-    FAKE_OTP = "123456"
-
     def post(self, request: Request) -> Response:
-        """Return the deterministic fake OTP."""
+        """Resolve the gym anchor, then issue + deliver a hashed 6-digit OTP."""
         serializer = OTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         phone = serializer.validated_data["phone"]
-        return Response(
-            {
-                "phone": phone,
-                "otp": self.FAKE_OTP,
-                "expires_in_seconds": 300,
-                "message": "OTP generated (stub).",
-            }
-        )
+        gym_anchor = serializer.validated_data.get("gym")
+        ip = _client_ip(request)
+
+        try:
+            tenant, disambiguation = resolve_tenant_for_otp(phone, gym_anchor, ip=ip)
+        except TenantResolutionError as exc:
+            return Response(exc.detail, status=exc.status_code)
+        if disambiguation is not None:
+            return Response(disambiguation, status=status.HTTP_200_OK)
+
+        sender = get_otp_sender()
+        try:
+            expires_in = issue_otp(phone, tenant, ip=ip, sender=sender)
+        except OtpRateLimited as exc:
+            return Response({"detail": str(exc)}, status=429)
+        except OtpError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        data = {"phone": phone, "expires_in": expires_in, "sent": True}
+        if settings.DEBUG and getattr(sender, "name", "") == "stub":
+            data["otp"] = getattr(sender, "code", None)  # DEBUG/test only
+        return Response(data)
 
 
 class OTPVerifyView(APIView):
-    """Verify the fake deterministic OTP and return an auth token."""
+    """Verify the real OTP and return an auth token (P0-2 + P0-1 anchors)."""
 
     authentication_classes = []
     permission_classes = [AllowAny]
 
-    EXPECTED_OTP = "123456"
-
     def post(self, request: Request) -> Response:
-        """Validate OTP and issue a token."""
+        """Validate the code, converge the identity and issue a token."""
         serializer = OTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        phone = data["phone"]
+        gym_anchor = data.get("gym")
+        ip = _client_ip(request)
 
-        if data["otp"] != self.EXPECTED_OTP:
-            raise ValidationError("Invalid OTP")
+        try:
+            tenant, disambiguation = resolve_tenant_for_otp(phone, gym_anchor, ip=ip)
+        except TenantResolutionError as exc:
+            return Response(exc.detail, status=exc.status_code)
+        if disambiguation is not None:
+            return Response(disambiguation, status=200)
 
-        tenant = request.tenant
-        if tenant is None:
-            tenant = Tenant.objects.first()
-            if tenant is None:
-                raise ValidationError("No tenant available for OTP login")
+        try:
+            verify_otp(phone, data["otp"], tenant=tenant)
+        except OtpError as exc:
+            return Response({"detail": str(exc)}, status=400)
 
-        user = get_or_create_customer_by_phone(data["phone"], tenant)
+        user = get_or_create_customer_by_phone(phone, tenant)
         token = issue_token(
             user,
             tenant,

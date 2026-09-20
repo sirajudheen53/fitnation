@@ -125,18 +125,24 @@ class LoginSerializer(serializers.Serializer):
         allow_blank=True,
     )
 
+    def validate_email(self, value: str) -> str:
+        """Normalize the login email: trim + lowercase (case-insensitive auth)."""
+        return value.strip().lower()
+
 
 class OTPRequestSerializer(serializers.Serializer):
-    """Serializer for OTP request."""
+    """OTP request — explicit gym anchors only (ADR-003 P0-1)."""
 
     phone = serializers.CharField(max_length=20)
+    gym = serializers.UUIDField(required=False)  # device-bound gym anchor
 
 
 class OTPVerifySerializer(serializers.Serializer):
-    """Serializer for OTP verification."""
+    """OTP verification — explicit gym anchors only (ADR-003 P0-1)."""
 
     phone = serializers.CharField(max_length=20)
     otp = serializers.CharField(max_length=6)
+    gym = serializers.UUIDField(required=False)
     device_type = serializers.ChoiceField(
         choices=AuthToken.DeviceType.choices,
         required=False,
