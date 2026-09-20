@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from django.db import transaction
 
@@ -13,8 +13,7 @@ from apps.tenants.models import Tenant
 from apps.users.auth import AuthToken
 from apps.users.models import User
 
-if TYPE_CHECKING:
-    from apps.tenants.models import Tenant
+logger = logging.getLogger(__name__)
 
 
 def create_user(
@@ -232,8 +231,6 @@ def resolve_tenant_for_otp(phone: str, gym_anchor: str | None, ip: str | None = 
     Raises:
         TenantResolutionError: on anchor failures (never a fallback).
     """
-    from apps.customers.models import Customer
-
     if gym_anchor:
         _throttle_lookup(phone, ip)
         try:

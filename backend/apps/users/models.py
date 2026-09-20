@@ -1,5 +1,7 @@
 """Custom tenant-aware user model and related profiles."""
 
+from typing import ClassVar
+
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
@@ -340,6 +342,7 @@ class AuthToken(models.Model):
 
         return uuid.uuid4().hex + uuid.uuid4().hex
 
+
 class OtpCode(models.Model):
     """A hashed one-time code issued for a phone (P0-2 real OTP).
 
@@ -376,4 +379,3 @@ class OtpCode(models.Model):
     def __str__(self) -> str:
         """Return a redacted label (never the code)."""
         return f"OTP {self.phone} ({'used' if self.is_used else 'active'})"
-
