@@ -18,7 +18,10 @@ class AuthRemoteDataSource {
     try {
       await _dio.post(
         AppConstants.otpRequestEndpoint,
-        data: {'phone': phone},
+        data: {
+          'phone': phone,
+          if (AppEnvironment.gymAnchor.isNotEmpty) 'gym': AppEnvironment.gymAnchor,
+        },
       );
     } on DioException catch (e) {
       throw _mapDioError(e);
@@ -93,8 +96,9 @@ class AuthRemoteDataSource {
         }
 
         if (statusCode == 400 && data is Map<String, dynamic>) {
+          final detail = (data['detail'] ?? data['gym'] ?? data.values.firstOrNull?.firstOrNull ?? 'Validation error').toString();
           return ValidationFailure(
-            message: 'Validation error',
+            message: detail,
             errors: data,
             statusCode: statusCode,
           );
