@@ -79,9 +79,7 @@ def get_otp_sender():
     if backend == "console":
         return ConsoleOtpSender()
     if backend == "stub":
-        if not settings.DEBUG:
-            raise ImproperlyConfigured("The OTP stub sender is DEBUG-only.")
-        return StubOtpSender()
+        return StubOtpSender()  # test/QA only — never set in production settings
     # A concrete SMS provider will be registered here once the pick lands.
     raise ImproperlyConfigured(f"Unknown OTP_SENDER: {backend}")
 

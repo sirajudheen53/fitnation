@@ -2,7 +2,8 @@
 
 from .base import *  # noqa: F401, F403
 
-DEBUG = False
+DEBUG = True  # the OTP request view exposes the code (DEBUG + stub gate)
+OTP_SENDER = "stub"  # the stub sender carries .code for tests
 ALLOWED_HOSTS = ["*"]
 
 # Pin storage backends: tests must never touch GCS (FileSystemStorage for

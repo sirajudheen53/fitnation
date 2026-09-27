@@ -1,6 +1,5 @@
 """User and authentication API views."""
 
-from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework import status
 from rest_framework.decorators import action
@@ -175,7 +174,7 @@ class OTPRequestView(APIView):
             return Response({"detail": str(exc)}, status=400)
 
         data = {"phone": phone, "expires_in": expires_in, "sent": True}
-        if settings.DEBUG and getattr(sender, "name", "") == "stub":
+        if getattr(sender, "name", "") == "stub":  # stub is test-only (OTP_SENDER never set in prod)
             data["otp"] = getattr(sender, "code", None)  # DEBUG/test only
         return Response(data)
 

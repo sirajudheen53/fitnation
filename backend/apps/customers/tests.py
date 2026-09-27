@@ -1861,14 +1861,15 @@ class CustomerCreationContractTests(APITestCase):
 
         request_response = self.client.post(
             "/api/v1/users/auth/otp/request/",
-            {"phone": "+919999000001"},
+            {"phone": "+919999000001", "gym": str(self.tenant.uuid)},
             format="json",
         )
         self.assertEqual(request_response.status_code, 200)
 
+        otp_code = request_response.data["otp"]  # exposed in test mode
         verify_response = self.client.post(
             "/api/v1/users/auth/otp/verify/",
-            {"phone": "+919999000001", "otp": "123456"},
+            {"phone": "+919999000001", "otp": otp_code},
             format="json",
         )
         self.assertEqual(verify_response.status_code, 200)
@@ -2127,13 +2128,14 @@ class ADR002CustomerIdentityTests(APITestCase):
         self.client.credentials()  # OTP endpoints are anonymous
         request_response = self.client.post(
             "/api/v1/users/auth/otp/request/",
-            {"phone": "+919999000002"},
+            {"phone": "+919999000002", "gym": str(self.tenant.uuid)},
             format="json",
         )
         self.assertEqual(request_response.status_code, 200)
+        otp_code = request_response.data["otp"]  # exposed in test mode
         verify_response = self.client.post(
             "/api/v1/users/auth/otp/verify/",
-            {"phone": "+919999000002", "otp": "123456"},
+            {"phone": "+919999000002", "otp": otp_code},
             format="json",
         )
         self.assertEqual(verify_response.status_code, 200)
@@ -2175,7 +2177,7 @@ class ADR002CustomerIdentityTests(APITestCase):
 
         patch_response = self.client.patch(
             f"/api/v1/customers/customers/{customer.id}/",
-            {"phone": "+919999000099"},
+            {"phone": "+919999000099", "gym": str(self.tenant.uuid)},
             format="json",
         )
         self.assertEqual(patch_response.status_code, 200)
@@ -2188,13 +2190,14 @@ class ADR002CustomerIdentityTests(APITestCase):
         self.client.credentials()
         request_response = self.client.post(
             "/api/v1/users/auth/otp/request/",
-            {"phone": "+919999000099"},
+            {"phone": "+919999000099", "gym": str(self.tenant.uuid)},
             format="json",
         )
         self.assertEqual(request_response.status_code, 200)
+        otp_code = request_response.data["otp"]  # exposed in test mode
         verify_response = self.client.post(
             "/api/v1/users/auth/otp/verify/",
-            {"phone": "+919999000099", "otp": "123456"},
+            {"phone": "+919999000099", "otp": otp_code},
             format="json",
         )
         self.assertEqual(verify_response.status_code, 200)
