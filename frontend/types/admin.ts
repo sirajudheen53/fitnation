@@ -52,3 +52,26 @@ export interface AdminOnboardGymResult {
   branch_name: string;
   plan_code: string;
 }
+
+// ── Gym edit & lifecycle (admin platform gap fix) ───────────────
+
+/**
+ * Body for PATCH /api/v1/admin/tenants/{id}/ — all fields optional.
+ *
+ * `status` only accepts "active"/"suspended" (suspend/reactivate);
+ * archiving a gym happens via DELETE, never via PATCH.
+ */
+export interface AdminTenantUpdateFormData {
+  name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  subscription_plan?: SubscriptionPlanCode | string;
+  status?: "active" | "suspended";
+}
+
+/** Result of POST /api/v1/admin/tenants/{id}/rotate-credentials/. */
+export interface AdminRotateCredentialsResult {
+  owner_email: string;
+  /** Generated once — shown to the admin exactly once for handover. */
+  owner_password: string;
+}

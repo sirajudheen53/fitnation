@@ -2029,7 +2029,9 @@ export function respondToReview(
 import {
   AdminOnboardGymFormData,
   AdminOnboardGymResult,
+  AdminRotateCredentialsResult,
   AdminTenant,
+  AdminTenantUpdateFormData,
 } from "@/types/admin";
 
 export function fetchAdminTenants(token: string): Promise<AdminTenant[]> {
@@ -2046,6 +2048,48 @@ export function onboardGym(
   return request<AdminOnboardGymResult>("/admin/tenants/onboard/", {
     method: "POST",
     body: data,
+    token,
+  });
+}
+
+/** Partially update a gym — edit fields and/or suspend/reactivate. */
+export function updateAdminTenant(
+  id: number | string,
+  data: AdminTenantUpdateFormData,
+  token: string,
+): Promise<AdminTenant> {
+  return request<AdminTenant>(`/admin/tenants/${id}/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/**
+ * Generate a new password for a gym owner. The plaintext password comes
+ * back exactly once for handover and is never retrievable again; all of
+ * the owner's active sessions are logged out.
+ */
+export function rotateAdminTenantCredentials(
+  id: number | string,
+  token: string,
+): Promise<AdminRotateCredentialsResult> {
+  return request<AdminRotateCredentialsResult>(
+    `/admin/tenants/${id}/rotate-credentials/`,
+    { method: "POST", token },
+  );
+}
+
+/**
+ * Archive a gym (soft delete — status becomes "archived"). There is no
+ * un-archive endpoint, so this is not reversible from the UI.
+ */
+export function deleteAdminTenant(
+  id: number | string,
+  token: string,
+): Promise<AdminTenant> {
+  return request<AdminTenant>(`/admin/tenants/${id}/`, {
+    method: "DELETE",
     token,
   });
 }
