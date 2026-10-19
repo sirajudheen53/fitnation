@@ -27,6 +27,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         required=False,
     )
     invoice_id = serializers.SerializerMethodField()
+    kind = serializers.ChoiceField(choices=Payment.Kind.choices, required=False)
     method = serializers.ChoiceField(source="payment_method", choices=Payment.PaymentMethod.choices)
     payment_date = serializers.DateTimeField(source="paid_at", allow_null=True, required=False)
 
@@ -40,6 +41,7 @@ class PaymentSerializer(serializers.ModelSerializer):
             "customer_name",
             "membership_id",
             "invoice_id",
+            "kind",
             "amount",
             "method",
             "status",
@@ -101,12 +103,25 @@ class InvoiceSerializer(serializers.ModelSerializer):
         ]
 
 
-class RevenueSummarySerializer(serializers.Serializer):
-    """Revenue totals for today, this week and this month."""
+class RevenueSplitSerializer(serializers.Serializer):
+    """Revenue totals for a single payment kind."""
 
     today = serializers.FloatField(default=0.0)
     this_week = serializers.FloatField(default=0.0)
     this_month = serializers.FloatField(default=0.0)
+
+
+class RevenueSummarySerializer(serializers.Serializer):
+    """Revenue totals for today, this week and this month.
+
+    The top-level split covers membership payments only; ``admission``
+    carries the same split for admission-kind payments (msg 2438, additive).
+    """
+
+    today = serializers.FloatField(default=0.0)
+    this_week = serializers.FloatField(default=0.0)
+    this_month = serializers.FloatField(default=0.0)
+    admission = RevenueSplitSerializer(required=False, default=dict)
 
 
 class CreateOrderSerializer(serializers.Serializer):

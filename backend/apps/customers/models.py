@@ -40,7 +40,11 @@ class Customer(TenantModelMixin):
         related_name="customers",
     )
     name = models.CharField(max_length=200)
-    email = models.EmailField()
+    # Email is optional (msg 2438): phone-only customers carry a NULL email and
+    # a phone-keyed synthetic user (`{phone}@fitnation.local`). NULLs are
+    # distinct in the tenant+email unique constraint on both Postgres and
+    # SQLite, so any number of emailless customers per tenant is allowed.
+    email = models.EmailField(null=True, blank=True)
     phone = models.CharField(max_length=20, blank=True)
     date_of_birth = models.DateField(null=True, blank=True)
     gender = models.CharField(

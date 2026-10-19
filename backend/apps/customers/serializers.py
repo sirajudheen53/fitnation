@@ -28,10 +28,16 @@ class CustomerSerializer(serializers.ModelSerializer):
     password — customers log in via OTP; ``is_email_verified=True`` since the
     owner vouches for the address). ``name``/``user``/``branch`` remain
     writable for mobile/tests.
+
+    Email is optional (msg 2438): a phone-only customer gets a portal user
+    under the synthetic OTP email ``{phone}@fitnation.local`` while
+    ``Customer.email`` stays NULL, and adding a real email later adopts it
+    onto the same user (ADR-002 convergence).
     """
 
     first_name = serializers.CharField(required=False, allow_blank=True, write_only=True, max_length=150)
     last_name = serializers.CharField(required=False, allow_blank=True, write_only=True, max_length=150)
+    email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
     name = serializers.CharField(max_length=200, required=False)
 
@@ -88,13 +94,19 @@ class CustomerSerializer(serializers.ModelSerializer):
     def validate(self, data: dict) -> dict:
         """Ensure a tenant does not contain duplicate customer emails.
 
-        Name composition (ADR customer-creation blessing): when either
-        ``first_name`` or ``last_name`` is present, the whitespace-collapsed
-        ``"{first} {last}".strip()`` composition wins over a provided ``name``.
+        Email is optional (msg 2438): an empty string normalizes to None and
+        skips the duplicate check, and a create with neither email nor phone
+        is rejected. Name composition (ADR customer-creation blessing): when
+        either ``first_name`` or ``last_name`` is present, the whitespace-
+        collapsed ``"{first} {last}".strip()`` composition wins over a
+        provided ``name``.
         """
         request = self.context.get("request")
         tenant = getattr(request, "tenant", None) if request else None
+        if "email" in data:
+            data["email"] = (data.get("email") or "").strip() or None
         email = data.get("email")
+        phone = (data.get("phone") or "").strip()
         if tenant and email:
             queryset = Customer.objects.filter(tenant=tenant, email=email)
             if self.instance:
@@ -103,6 +115,8 @@ class CustomerSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"email": "A customer with this email already exists."},
                 )
+        if self.instance is None and not email and not phone:
+            raise serializers.ValidationError({"detail": "Provide an email or a phone number."})
         # Name composition: first/last wins over name when either is present.
         first = (data.get("first_name") or "").strip()
         last = (data.get("last_name") or "").strip()
@@ -120,8 +134,11 @@ class CustomerSerializer(serializers.ModelSerializer):
         Rule 1: a payload phone matching an existing tenant user links that
         user instead of provisioning a second identity (synthetic/empty email
         → link + adopt the real email; a different real email → 400
-        ``phone_already_registered``). No phone or no match → blessed
-        provisioning flow.
+        ``phone_already_registered``). A phone-only payload links the
+        synthetic identity as-is — there is no email to adopt.
+        No phone or no match → blessed provisioning flow; a phone-only
+        payload provisions the portal user under the synthetic OTP email
+        while ``Customer.email`` stays NULL.
         """
         first_name = validated_data.pop("first_name", "")
         last_name = validated_data.pop("last_name", "")
@@ -144,8 +161,9 @@ class CustomerSerializer(serializers.ModelSerializer):
                         },
                     )
                 # ADR-002 rule 1: LINK the synthetic phone-keyed identity and
-                # adopt the real email. Its OTP-provisioned customer row is
-                # adopted too (OneToOne forbids a second profile).
+                # adopt the real email (no-op for a phone-only payload). Its
+                # OTP-provisioned customer row is adopted too (OneToOne
+                # forbids a second profile).
                 self._converge_phone_identity(match, validated_data)
                 validated_data["user"] = match
                 profile = Customer.objects.filter(user=match).first()
@@ -172,10 +190,17 @@ class CustomerSerializer(serializers.ModelSerializer):
         return User.objects.filter(tenant=tenant, phone=phone).order_by("id").first()
 
     def _converge_phone_identity(self, user: User, validated_data: dict) -> None:
-        """Replace a synthetic/empty email with the customer's real email."""
+        """Replace a synthetic/empty email with the customer's real email.
+
+        A phone-only payload (msg 2438) has no email to adopt — the linked
+        user keeps its synthetic email untouched.
+        """
+        new_email = validated_data.get("email")
+        if not new_email:
+            return
         try:
             with transaction.atomic():
-                user.email = validated_data.get("email")
+                user.email = new_email
                 user.save(update_fields=["email", "updated_at"])
         except IntegrityError:
             raise serializers.ValidationError({"email": "A user with this email already exists."})
@@ -194,6 +219,13 @@ class CustomerSerializer(serializers.ModelSerializer):
             value = validated_data.get(field)
             if value:
                 setattr(profile, field, value)
+        # Phone-only payload: an OTP-provisioned row carries the synthetic
+        # email — normalize it to the NULL-email shape a direct phone-only
+        # create produces (msg 2438: Customer.email stays NULL).
+        if not validated_data.get("email") and profile.email:
+            phone = (validated_data.get("phone") or profile.phone or "").strip()
+            if profile.email == self._synthetic_otp_email(phone):
+                profile.email = None
         if validated_data.get("branch"):
             profile.branch = validated_data["branch"]
         profile.is_active = True
@@ -205,9 +237,13 @@ class CustomerSerializer(serializers.ModelSerializer):
 
         ADR-002 rule 3: setting a phone on an email-only customer provisions
         OTP capability on the SAME linked user — never a second identity.
+        Msg 2438: adding a real email to a synthetic-identity customer adopts
+        it onto the SAME user (atomic; a collision → 400 field error) — a
+        non-synthetic user email is never overwritten.
         """
         validated_data.pop("first_name", None)
         validated_data.pop("last_name", None)
+        self._adopt_real_email(instance, validated_data)
         customer = super().update(instance, validated_data)
         new_phone = validated_data.get("phone")
         if new_phone and customer.user and not customer.user.phone:
@@ -215,19 +251,51 @@ class CustomerSerializer(serializers.ModelSerializer):
             customer.user.save(update_fields=["phone"])
         return customer
 
+    def _adopt_real_email(self, instance: Customer, validated_data: dict) -> None:
+        """Adopt a real payload email onto a synthetic-identity customer.
+
+        Runs before the customer row update so an email collision rolls back
+        cleanly (400, nothing written). Only a synthetic user (synthetic/empty
+        email) whose customer email is still NULL/matching-synthetic is
+        eligible; the adopted account stays verified — the owner vouches.
+        """
+        new_email = (validated_data.get("email") or "").strip()
+        if not new_email or not instance.user_id:
+            return
+        user = instance.user
+        if not self._is_synthetic_identity(user, user.phone or ""):
+            return
+        if instance.email and instance.email != user.email:
+            return
+        try:
+            with transaction.atomic():
+                user.email = new_email
+                user.is_email_verified = True
+                user.save(update_fields=["email", "is_email_verified", "updated_at"])
+        except IntegrityError:
+            raise serializers.ValidationError({"email": "A user with this email already exists."})
+        validated_data["email"] = new_email
+
     def _provision_portal_user(self, validated_data, tenant, first_name: str, last_name: str) -> User:
         """Auto-provision the linked customer-role portal account.
 
         Unusable password (customers authenticate via OTP); the owner vouches
-        for the email so the account starts verified. Email conflicts surface
+        for the email so the account starts verified. A phone-only customer
+        (msg 2438) is provisioned under the synthetic OTP email
+        ``{phone}@fitnation.local`` — the same scheme as the phone-OTP flow,
+        so a later OTP login reuses this identity. Email conflicts surface
         as a 400 field error — never silently link an existing user.
         """
+        email = validated_data.get("email")
+        if not email:
+            phone = (validated_data.get("phone") or "").strip()
+            email = self._synthetic_otp_email(phone) if phone else None
         try:
             # Nested atomic: a uniqueness violation rolls back to the savepoint
             # so the surrounding request transaction stays usable for the 400.
             with transaction.atomic():
                 user = User.objects.create_user(
-                    email=validated_data.get("email"),
+                    email=email,
                     password=None,
                     first_name=first_name,
                     last_name=last_name,

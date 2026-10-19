@@ -50,10 +50,22 @@ class Payment(TenantModelMixin):
         FAILED = "failed", "Failed"
         REFUNDED = "refunded", "Refunded"
 
+    class Kind(models.TextChoices):
+        """What the payment is for (msg 2438 admission fees)."""
+
+        MEMBERSHIP = "membership", "Membership"
+        ADMISSION = "admission", "Admission"
+
     customer = models.ForeignKey(
         "customers.Customer",
         on_delete=models.CASCADE,
         related_name="payments",
+    )
+    # kind=membership is the default so pre-existing rows are unaffected.
+    kind = models.CharField(
+        max_length=20,
+        choices=Kind.choices,
+        default=Kind.MEMBERSHIP,
     )
     membership = models.ForeignKey(
         "memberships.Membership",

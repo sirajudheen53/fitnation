@@ -219,11 +219,20 @@ class RevenueSummaryView(APIView):
     required_permission = "payments.view_payment"
 
     def get(self, request: Request) -> Response:
-        """Return revenue totals for the current tenant."""
+        """Return revenue totals for the current tenant.
+
+        Membership and admission revenue are reported separately (msg 2438):
+        the top-level split counts membership-kind payments only, so
+        admission fees never pollute the membership numbers; the additive
+        ``admission`` key carries the same today/week/month split for
+        admission-kind payments.
+        """
         paid = Payment.objects.for_tenant(request.tenant).filter(
             status=Payment.Status.COMPLETED,
             paid_at__isnull=False,
         )
+        membership_paid = paid.filter(kind=Payment.Kind.MEMBERSHIP)
+        admission_paid = paid.filter(kind=Payment.Kind.ADMISSION)
         now = timezone.localtime()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today_start - timezone.timedelta(days=now.weekday())
@@ -239,9 +248,14 @@ class RevenueSummaryView(APIView):
             return round(float(total), 2)
 
         data = {
-            "today": _sum(paid.filter(paid_at__gte=today_start)),
-            "this_week": _sum(paid.filter(paid_at__gte=week_start)),
-            "this_month": _sum(paid.filter(paid_at__gte=month_start)),
+            "today": _sum(membership_paid.filter(paid_at__gte=today_start)),
+            "this_week": _sum(membership_paid.filter(paid_at__gte=week_start)),
+            "this_month": _sum(membership_paid.filter(paid_at__gte=month_start)),
+            "admission": {
+                "today": _sum(admission_paid.filter(paid_at__gte=today_start)),
+                "this_week": _sum(admission_paid.filter(paid_at__gte=week_start)),
+                "this_month": _sum(admission_paid.filter(paid_at__gte=month_start)),
+            },
         }
         return Response(RevenueSummarySerializer(data).data)
 
@@ -269,6 +283,9 @@ class PaymentViewSet(ModelViewSet):
         status_param = self.request.query_params.get("status")
         if status_param:
             queryset = queryset.filter(status=status_param)
+        kind_param = self.request.query_params.get("kind")
+        if kind_param:
+            queryset = queryset.filter(kind=kind_param)
         paid_at_gte = self.request.query_params.get("paid_at__gte")
         if paid_at_gte:
             queryset = queryset.filter(paid_at__gte=paid_at_gte)

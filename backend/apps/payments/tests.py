@@ -64,6 +64,16 @@ class PaymentModelTests(TestCase):
         )
         self.assertEqual(payment.status, Payment.Status.PENDING)
 
+    def test_payment_kind_defaults_to_membership(self) -> None:
+        """A payment without an explicit kind defaults to membership."""
+        payment = Payment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            amount="1500.00",
+            payment_method=Payment.PaymentMethod.CASH,
+        )
+        self.assertEqual(payment.kind, Payment.Kind.MEMBERSHIP)
+
     def test_payment_tenant_isolation(self) -> None:
         """Payments are scoped to their tenant."""
         payment = Payment.objects.create(
@@ -339,6 +349,61 @@ class PaymentAPITests(APITestCase):
         response = self.client.get(f"/api/v1/payments/?paid_at__gte={start}&paid_at__lte={end}")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
+
+    def test_filter_payments_by_kind(self) -> None:
+        """Payments can be filtered by kind (?kind=admission)."""
+        Payment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            amount="1500.00",
+            payment_method=Payment.PaymentMethod.CASH,
+            status=Payment.Status.COMPLETED,
+        )
+        Payment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            amount="500.00",
+            payment_method=Payment.PaymentMethod.UPI,
+            status=Payment.Status.COMPLETED,
+            kind=Payment.Kind.ADMISSION,
+        )
+        response = self.client.get("/api/v1/payments/?kind=admission")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["kind"], "admission")
+
+    def test_record_payment_defaults_to_membership_kind(self) -> None:
+        """Omitting kind records a membership payment (existing clients unaffected)."""
+        response = self.client.post(
+            "/api/v1/payments/",
+            {
+                "customer_id": self.customer.id,
+                "amount": "1500.00",
+                "method": "cash",
+                "status": "completed",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["kind"], "membership")
+
+    def test_record_admission_payment(self) -> None:
+        """kind=admission records an admission fee with no membership link."""
+        response = self.client.post(
+            "/api/v1/payments/",
+            {
+                "customer_id": self.customer.id,
+                "amount": "500.00",
+                "method": "upi",
+                "status": "completed",
+                "kind": "admission",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["kind"], "admission")
+        self.assertIsNone(response.data["membership_id"])
+        self.assertIsNotNone(response.data["payment_date"])  # paid now → paid_at set
 
     def test_generate_invoice(self) -> None:
         """The generate action creates an invoice from a payment."""
@@ -894,3 +959,77 @@ class RazorpayAPITests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 404)
+
+
+class RevenueSummaryAPITests(APITestCase):
+    """Revenue summary splits membership and admission revenue (msg 2438)."""
+
+    def setUp(self) -> None:
+        """Create tenant, owner, customer, and auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+        self.user = User.objects.create_user(
+            email="rev-cust@local.test",
+            password="F1tNati0n!",
+            first_name="Rev",
+            last_name="Customer",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Rev Customer",
+            email="rev-cust@local.test",
+        )
+
+    def _paid(self, amount: str, kind: str, paid_at, status: str = Payment.Status.COMPLETED) -> Payment:
+        """Create a payment in the fixture tenant."""
+        return Payment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            amount=amount,
+            payment_method=Payment.PaymentMethod.CASH,
+            status=status,
+            kind=kind,
+            paid_at=paid_at,
+        )
+
+    def test_membership_and_admission_reported_separately(self) -> None:
+        """Membership metrics exclude admission fees; admission has its own split."""
+        now = timezone.now()
+        long_ago = now - timedelta(days=40)  # outside the today/week/month windows
+        self._paid("1500.00", Payment.Kind.MEMBERSHIP, now)  # membership, all windows
+        self._paid("250.00", Payment.Kind.MEMBERSHIP, long_ago)  # membership, no window
+        self._paid("500.00", Payment.Kind.ADMISSION, now)  # admission, all windows
+        self._paid("900.00", Payment.Kind.ADMISSION, long_ago)  # admission, no window
+        self._paid("700.00", Payment.Kind.ADMISSION, None, status=Payment.Status.PENDING)  # excluded
+
+        response = self.client.get("/api/v1/payments/revenue-summary/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["today"], 1500.0)  # admission fee did not pollute
+        self.assertEqual(response.data["this_week"], 1500.0)
+        self.assertEqual(response.data["this_month"], 1500.0)
+        self.assertEqual(
+            response.data["admission"],
+            {"today": 500.0, "this_week": 500.0, "this_month": 500.0},
+        )
+
+    def test_empty_tenant_zero_filled(self) -> None:
+        """A tenant with no payments gets zeroed membership and admission splits."""
+        response = self.client.get("/api/v1/payments/revenue-summary/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["today"], 0.0)
+        self.assertEqual(response.data["this_week"], 0.0)
+        self.assertEqual(response.data["this_month"], 0.0)
+        self.assertEqual(
+            response.data["admission"],
+            {"today": 0.0, "this_week": 0.0, "this_month": 0.0},
+        )

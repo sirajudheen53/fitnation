@@ -88,6 +88,25 @@ class CustomerModelTests(TestCase):
                 email="a@local.test",
             )
 
+    def test_null_emails_unique_within_tenant(self) -> None:
+        """Multiple emailless customers per tenant are allowed (NULLs distinct)."""
+        user_a = self._create_user("null-a@local.test")
+        customer_a = Customer.objects.create(
+            tenant=self.tenant,
+            user=user_a,
+            name="Customer A",
+            email=None,
+        )
+        user_b = self._create_user("null-b@local.test")
+        customer_b = Customer.objects.create(
+            tenant=self.tenant,
+            user=user_b,
+            name="Customer B",
+            email=None,
+        )
+        self.assertNotEqual(customer_a.id, customer_b.id)
+        self.assertEqual(Customer.objects.for_tenant(self.tenant).filter(email__isnull=True).count(), 2)
+
     def test_health_profile_bmi_auto_calc(self) -> None:
         """BMI is auto-calculated when height and weight are set."""
         user = self._create_user("bmi@local.test")
@@ -2209,3 +2228,197 @@ class ADR002CustomerIdentityTests(APITestCase):
             verify_response.data.get("user", {}).get("id"),
             customer.user.id,  # SAME user — never a second identity
         )
+
+
+class OptionalContactCustomerTests(APITestCase):
+    """Optional email/last-name customers (msg 2438) — phone-keyed identity.
+
+    A customer needs a first name and an email OR a phone. Phone-only creates
+    provision the portal user under the synthetic OTP email with a NULL
+    customer email; adding a real email later adopts it onto the same user;
+    the phone-OTP login path reuses the same identity (no duplicate rows).
+    """
+
+    def setUp(self) -> None:
+        """Tenant, owner, branch, and owner auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.owner_token = issue_token(self.owner, self.tenant)
+        self.branch = Branch.objects.create(
+            tenant=self.tenant,
+            name="Main Branch",
+            address_line1="MG Road",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.owner_token.key}")
+
+    def test_phone_only_create_provisions_synthetic_identity(self) -> None:
+        """No email + phone → user keyed on the synthetic OTP email, NULL customer email."""
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            {
+                "first_name": "Ravi",
+                "last_name": "Kumar",
+                "phone": "+919999000101",
+                "branch": self.branch.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, str(response.data))
+        self.assertIsNone(response.data["email"])
+
+        customer = Customer.objects.get(phone="+919999000101")
+        self.assertIsNone(customer.email)
+        self.assertEqual(customer.name, "Ravi Kumar")
+        user = customer.user
+        self.assertEqual(user.role, User.Role.CUSTOMER)
+        self.assertEqual(user.email, "+919999000101@fitnation.local")
+        self.assertEqual(user.phone, "+919999000101")
+        self.assertTrue(user.is_email_verified)  # owner vouches
+        self.assertFalse(user.has_usable_password())  # OTP login path
+
+    def test_last_name_optional(self) -> None:
+        """first_name alone composes the name; last_name may be omitted."""
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            {
+                "email": "single@local.test",
+                "first_name": "Meera",
+                "phone": "+919999000102",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, str(response.data))
+        self.assertEqual(response.data["name"], "Meera")
+
+    def test_both_email_and_phone_empty_returns_400(self) -> None:
+        """Creating with neither email nor phone is a clean 400."""
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            {"first_name": "No", "last_name": "Contact"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Provide an email or a phone number.", str(response.data["detail"]))
+        self.assertEqual(Customer.objects.count(), 0)
+
+    @override_settings(OTP_SENDER="stub")  # stub sender echoes the code (test-only)
+    def test_otp_verify_reuses_phone_only_customer(self) -> None:
+        """OTP verify after a phone-only create logs in the SAME user/profile."""
+        create_response = self.client.post(
+            "/api/v1/customers/customers/",
+            {
+                "first_name": "Ravi",
+                "phone": "+919999000103",
+                "branch": self.branch.id,
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        created_user_id = create_response.data["user"]
+        customers_before = Customer.objects.count()
+
+        self.client.credentials()  # OTP endpoints are anonymous
+        request_response = self.client.post(
+            "/api/v1/users/auth/otp/request/",
+            {"phone": "+919999000103", "gym": str(self.tenant.uuid)},
+            format="json",
+        )
+        self.assertEqual(request_response.status_code, 200)
+        otp_code = request_response.data["otp"]  # stub sender echoes the code
+        verify_response = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": "+919999000103", "otp": otp_code},
+            format="json",
+        )
+        self.assertEqual(verify_response.status_code, 200)
+        self.assertIsNotNone(verify_response.data.get("token"))
+        self.assertEqual(
+            verify_response.data.get("user", {}).get("id"),
+            created_user_id,  # SAME user — rule 2 reuse, no synthetic second identity
+        )
+        self.assertEqual(User.objects.count(), 2)  # owner + the one customer
+        self.assertEqual(Customer.objects.count(), customers_before)  # no duplicate profile
+
+    def test_patch_adopts_real_email_on_synthetic_customer(self) -> None:
+        """Adding a real email to a phone-only customer adopts it on the SAME user."""
+        create_response = self.client.post(
+            "/api/v1/customers/customers/",
+            {"first_name": "Ravi", "phone": "+919999000104"},
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        customer = Customer.objects.get(phone="+919999000104")
+
+        patch_response = self.client.patch(
+            f"/api/v1/customers/customers/{customer.id}/",
+            {"email": "ravi@local.test"},
+            format="json",
+        )
+        self.assertEqual(patch_response.status_code, 200, str(patch_response.data))
+        customer.refresh_from_db()
+        self.assertEqual(customer.email, "ravi@local.test")
+        user = customer.user
+        user.refresh_from_db()
+        self.assertEqual(user.email, "ravi@local.test")  # SAME user, adopted email
+        self.assertTrue(user.is_email_verified)  # owner vouches
+
+    def test_patch_email_conflict_returns_400_and_mutates_nothing(self) -> None:
+        """Adopting an email held by another user → 400; nothing is written."""
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        User.objects.create_user(
+            email="taken@local.test",
+            password="F1tNati0n!",
+            first_name="Taken",
+            last_name="Elsewhere",
+            role=User.Role.CUSTOMER,
+            tenant=other_tenant,
+        )
+        create_response = self.client.post(
+            "/api/v1/customers/customers/",
+            {"first_name": "Ravi", "phone": "+919999000105"},
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        customer = Customer.objects.get(phone="+919999000105")
+        user_email_before = customer.user.email
+
+        patch_response = self.client.patch(
+            f"/api/v1/customers/customers/{customer.id}/",
+            {"email": "taken@local.test"},
+            format="json",
+        )
+        self.assertEqual(patch_response.status_code, 400)
+        self.assertIn("email", patch_response.data)
+        customer.refresh_from_db()
+        self.assertIsNone(customer.email)  # customer email untouched
+        customer.user.refresh_from_db()
+        self.assertEqual(customer.user.email, user_email_before)  # synthetic email untouched
+
+    def test_phone_only_create_links_existing_synthetic_otp_user(self) -> None:
+        """A phone-only create matching an OTP synthetic user links it — no dup rows."""
+        from apps.users.services import get_or_create_customer_by_phone
+
+        synthetic_user = get_or_create_customer_by_phone("+919999000106", self.tenant)
+        users_before = User.objects.count()
+
+        response = self.client.post(
+            "/api/v1/customers/customers/",
+            {"first_name": "Ravi", "last_name": "Kumar", "phone": "+919999000106"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, str(response.data))
+        self.assertIsNone(response.data["email"])
+
+        customer = Customer.objects.get(phone="+919999000106")
+        self.assertEqual(customer.user.id, synthetic_user.id)  # LINKED, no second user
+        self.assertEqual(User.objects.count(), users_before)
+        self.assertEqual(Customer.objects.filter(user=synthetic_user).count(), 1)  # OTP profile adopted
+        self.assertIsNone(customer.email)  # nothing to adopt — synthetic email kept
+        synthetic_user.refresh_from_db()
+        self.assertEqual(synthetic_user.email, "+919999000106@fitnation.local")  # untouched
+        self.assertEqual(customer.name, "Ravi Kumar")
