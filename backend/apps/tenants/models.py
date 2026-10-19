@@ -25,6 +25,7 @@ class Tenant(models.Model):
         ACTIVE = "active", "Active"
         SUSPENDED = "suspended", "Suspended"
         CANCELLED = "cancelled", "Cancelled"
+        ARCHIVED = "archived", "Archived"
 
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
     name = models.CharField(max_length=200)

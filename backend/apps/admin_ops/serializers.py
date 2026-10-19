@@ -38,18 +38,41 @@ class AdminOnboardGymSerializer(serializers.Serializer):
     gym_name = serializers.CharField(max_length=200)
     contact_name = serializers.CharField(max_length=200)
     owner_email = serializers.EmailField()
-    owner_phone = serializers.CharField(
-        max_length=20, required=False, allow_blank=True, default=""
-    )
+    owner_phone = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
     branch_name = serializers.CharField(max_length=200)
     branch_type = serializers.ChoiceField(choices=["main", "sub"], default="main")
     plan_code = serializers.ChoiceField(choices=SubscriptionPlan.PlanCode.choices)
 
 
-class TenantStatusUpdateSerializer(serializers.Serializer):
-    """Payload for PATCH /api/v1/admin/tenants/{id}/ (issue #43)."""
+class TenantAdminUpdateSerializer(serializers.ModelSerializer):
+    """Payload for PUT/PATCH /api/v1/admin/tenants/{id}/ (gym edit + suspension).
 
-    status = serializers.ChoiceField(choices=["active", "suspended"])
+    All fields optional on PATCH; PUT requires ``name`` and ``contact_email``.
+    ``status`` stays limited to active/suspended — archiving a gym happens
+    only via DELETE (soft delete). ``contact_email`` is validated against
+    the model's unique constraint (the current tenant is excluded) and
+    normalized to lowercase, matching onboarding.
+    """
+
+    class Meta:
+        """Serializer metadata."""
+
+        model = Tenant
+        fields = [
+            "name",
+            "contact_email",
+            "contact_phone",
+            "subscription_plan",
+            "status",
+        ]
+        extra_kwargs = {
+            "subscription_plan": {"choices": SubscriptionPlan.PlanCode.choices},
+            "status": {"choices": ["active", "suspended"]},
+        }
+
+    def validate_contact_email(self, value: str) -> str:
+        """Normalize the contact email to lowercase (onboarding invariant)."""
+        return value.strip().lower()
 
 
 class SubscriptionPlanAdminSerializer(serializers.ModelSerializer):

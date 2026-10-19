@@ -11,14 +11,15 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
 from apps.admin_ops.selectors import list_tenants
-from apps.admin_ops.services import impersonate_owner, onboard_gym
+from apps.admin_ops.services import impersonate_owner, onboard_gym, rotate_owner_credentials
 from apps.admin_ops.serializers import (
     AdminOnboardGymSerializer,
     SubscriptionPlanAdminSerializer,
     TenantAdminSerializer,
-    TenantStatusUpdateSerializer,
+    TenantAdminUpdateSerializer,
 )
 from apps.permissions.permissions import IsPlatformAdmin
+from apps.tenants.models import Tenant
 from apps.users.authentication import TenantTokenAuthentication
 from apps.vendors.models import SubscriptionPlan
 
@@ -37,18 +38,64 @@ class AdminTenantViewSet(ReadOnlyModelViewSet):
         """Return all tenants with counts, newest first."""
         return list_tenants()
 
-    def partial_update(self, request: Any, pk: int | None = None) -> Response:
-        """Suspend or reactivate a gym (issue #43).
+    def update(self, request: Any, pk: int | None = None) -> Response:
+        """Edit gym details — name, contact, plan (platform gap fix).
 
-        Suspension immediately blocks the gym's API tokens (see
-        ``TenantTokenAuthentication``) and owner logins.
+        PUT requires ``name`` and ``contact_email``; the response is the
+        annotated ``TenantAdminSerializer`` payload so member/branch counts
+        stay populated.
         """
         tenant = self.get_object()
-        serializer = TenantStatusUpdateSerializer(data=request.data)
+        serializer = TenantAdminUpdateSerializer(tenant, data=request.data)
         serializer.is_valid(raise_exception=True)
-        tenant.status = serializer.validated_data["status"]
-        tenant.save(update_fields=["status"])
+        serializer.save()
+        tenant = list_tenants().get(pk=tenant.pk)
+        return Response(TenantAdminSerializer(tenant).data)
+
+    def partial_update(self, request: Any, pk: int | None = None) -> Response:
+        """Edit gym details or suspend/reactivate (issue #43) — fields optional.
+
+        Suspension immediately blocks the gym's API tokens (see
+        ``TenantTokenAuthentication``) and owner logins. Archiving a gym is
+        done via DELETE, not by patching ``status``.
+        """
+        tenant = self.get_object()
+        serializer = TenantAdminUpdateSerializer(tenant, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         # Re-fetch through the annotated queryset so counts stay populated.
+        tenant = list_tenants().get(pk=tenant.pk)
+        return Response(TenantAdminSerializer(tenant).data)
+
+    @action(detail=True, methods=["post"], url_path="rotate-credentials")
+    def rotate_credentials(self, request: Any, pk: int | None = None) -> Response:
+        """Rotate the gym owner's password (platform gap fix).
+
+        Generates a new password (returned exactly once, same contract as
+        onboard) and deactivates all of the owner's active tokens so old
+        credentials and sessions stop working immediately.
+        """
+        tenant = self.get_object()
+        result = rotate_owner_credentials(tenant=tenant)
+        return Response(
+            {
+                "owner_email": result["owner"].email,
+                "owner_password": result["password"],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def destroy(self, request: Any, pk: int | None = None) -> Response:
+        """Archive a gym (soft delete — platform gap fix).
+
+        The row is never hard-deleted (branches, members, and tokens
+        reference it): the status flips to ``archived``, which blocks owner
+        logins and API tokens exactly like suspension. Archived gyms stay
+        visible in the admin list.
+        """
+        tenant = self.get_object()
+        tenant.status = Tenant.Status.ARCHIVED
+        tenant.save(update_fields=["status"])
         tenant = list_tenants().get(pk=tenant.pk)
         return Response(TenantAdminSerializer(tenant).data)
 

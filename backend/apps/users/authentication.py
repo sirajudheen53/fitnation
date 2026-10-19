@@ -6,7 +6,15 @@ from django.utils import timezone
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
+from apps.tenants.models import Tenant
 from apps.users.auth import AuthToken
+
+# Tenant statuses that lose API access immediately, including tokens issued
+# before the status change (login blocks them at issue time).
+BLOCKED_TENANT_STATUSES = {
+    Tenant.Status.SUSPENDED: "Tenant is suspended",
+    Tenant.Status.ARCHIVED: "Tenant is archived",
+}
 
 
 class TenantTokenAuthentication(BaseAuthentication):
@@ -43,10 +51,11 @@ class TenantTokenAuthentication(BaseAuthentication):
         if token.expires_at and token.expires_at < timezone.now():
             raise AuthenticationFailed("Token expired")
 
-        # Suspended gyms lose API access immediately, including tokens
-        # issued before suspension (login blocks them at issue time).
-        if token.tenant and token.tenant.status == "suspended":
-            raise AuthenticationFailed("Tenant is suspended")
+        # Suspended/archived gyms lose API access immediately, including
+        # tokens issued before the status change.
+        blocked_message = BLOCKED_TENANT_STATUSES.get(token.tenant.status) if token.tenant else None
+        if blocked_message:
+            raise AuthenticationFailed(blocked_message)
 
         token.last_used_at = timezone.now()
         token.save(update_fields=["last_used_at"])
