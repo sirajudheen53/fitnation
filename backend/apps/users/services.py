@@ -208,9 +208,7 @@ def _throttle_lookup(phone: str, ip: str | None) -> None:
         count = (cache.get(key) or 0) + 1
         cache.set(key, count, timeout=600)
         if count > 10:
-            raise TenantResolutionError(
-                {"detail": "Too many requests. Try again later."}, status_code=429
-            )
+            raise TenantResolutionError({"detail": "Too many requests. Try again later."}, status_code=429)
     except Exception:
         logger.warning("OTP anchor throttle skipped (cache unavailable)")
 
@@ -239,24 +237,17 @@ def resolve_tenant_for_otp(phone: str, gym_anchor: str | None, ip: str | None = 
             raise TenantResolutionError({"gym": "Unknown gym."}, status_code=400)
 
     _throttle_lookup(phone, ip)
-    users = list(
-        User.objects.filter(role=User.Role.CUSTOMER, phone=phone).select_related("tenant")
-    )
+    users = list(User.objects.filter(role=User.Role.CUSTOMER, phone=phone).select_related("tenant"))
     tenants = {u.tenant for u in users if u.tenant is not None}
     if len(tenants) == 1:
         return next(iter(tenants)), None
     if len(tenants) > 1:
         return None, {
             "action": "select_gym",
-            "gyms": [
-                {"tenant": str(t.uuid), "name": t.name}
-                for t in sorted(tenants, key=lambda x: x.name.lower())
-            ],
+            "gyms": [{"tenant": str(t.uuid), "name": t.name} for t in sorted(tenants, key=lambda x: x.name.lower())],
         }
     # Zero matches — generic, non-enumerating; never reveals registration state.
-    raise TenantResolutionError(
-        {"detail": "Specify your gym to continue."}, status_code=400
-    )
+    raise TenantResolutionError({"detail": "Specify your gym to continue."}, status_code=400)
 
 
 def get_or_create_customer_by_phone(phone: str, tenant: Tenant) -> User:

@@ -945,9 +945,11 @@ class OTPAnchorsAndHardeningTests(APITestCase):
         """Two tenants, an owner, and DEBUG-stub OTP settings."""
         self.tenant_a = provision_tenant(name="Gym A", contact_email="a@local.test")
         self.tenant_b = provision_tenant(name="Gym B", contact_email="b@local.test")
-        cache_settings = override_settings(CACHES={
-            "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
-        })
+        cache_settings = override_settings(
+            CACHES={
+                "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+            }
+        )
         cache_settings.enable()
         self.addCleanup(cache_settings.disable)
         stub_settings = override_settings(DEBUG=True, OTP_SENDER="stub", OTP_RESEND_COOLDOWN_SECONDS=0)
@@ -1006,9 +1008,7 @@ class OTPAnchorsAndHardeningTests(APITestCase):
         self.assertEqual(disambiguation.status_code, 200)
         gym_uuid = disambiguation.data["gyms"][0]["tenant"]
 
-        anchored = self._request_otp(
-            {"phone": "+9199000000004", "gym": gym_uuid}
-        )
+        anchored = self._request_otp({"phone": "+9199000000004", "gym": gym_uuid})
         self.assertEqual(anchored.status_code, 200)
         self.assertTrue(anchored.data.get("sent"))
         code = anchored.data.get("otp")  # DEBUG stub response
@@ -1024,9 +1024,7 @@ class OTPAnchorsAndHardeningTests(APITestCase):
 
     def test_unknown_gym_anchor_400(self) -> None:
         """An unknown gym anchor is a clean 400 field error."""
-        response = self._request_otp(
-            {"phone": "+9199000000005", "gym": "00000000-0000-0000-0000-000000000000"}
-        )
+        response = self._request_otp({"phone": "+9199000000005", "gym": "00000000-0000-0000-0000-000000000000"})
         self.assertEqual(response.status_code, 400)
         self.assertIn("gym", response.data)
 
@@ -1126,8 +1124,6 @@ class OTPAnchorsAndHardeningTests(APITestCase):
 
     def test_verify_requires_phone(self) -> None:
         """OTP verify without a phone is a clean 400 field error."""
-        response = self.client.post(
-            "/api/v1/users/auth/otp/verify/", {"otp": "123456"}, format="json"
-        )
+        response = self.client.post("/api/v1/users/auth/otp/verify/", {"otp": "123456"}, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("phone", response.data)

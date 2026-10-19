@@ -141,9 +141,7 @@ class ZKTecoADMSAdapter(BiometricAdapter):
             pin = payload.get("pin", "")
             name = payload.get("name", "")
             cardno = payload.get("cardno", "")
-            commands.append(
-                f"DATA UPDATE USER\tPIN={pin}\tName={name}\tPri=0\tPasswd=\tCard={cardno}\tGrp=1"
-            )
+            commands.append(f"DATA UPDATE USER\tPIN={pin}\tName={name}\tPri=0\tPasswd=\tCard={cardno}\tGrp=1")
             cmd.executed_at = timezone.now()
             cmd.save(update_fields=["executed_at"])
         return commands

@@ -68,6 +68,7 @@ class HikvisionAdapter(BiometricAdapter):
                     pushed += 1
             except requests.exceptions.RequestException as exc:
                 import logging
+
                 logging.getLogger(__name__).warning("Hikvision push failed: %s", exc)
         return {
             "ok": pushed > 0,
@@ -86,8 +87,7 @@ class HikvisionAdapter(BiometricAdapter):
             return []
         try:
             resp = requests.get(
-                f"{self._base(device)}/ISAPI/AccessControl/AcsEvent?format=json"
-                "&searchID=all&maxResults=100",
+                f"{self._base(device)}/ISAPI/AccessControl/AcsEvent?format=json" "&searchID=all&maxResults=100",
                 auth=self._auth(device),
                 timeout=10,
                 verify=False,

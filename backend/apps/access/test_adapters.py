@@ -11,8 +11,9 @@ from __future__ import annotations
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
-import requests
 from django.utils import timezone
+
+import requests
 
 from apps.access.adapters.base import AdapterError, AdapterNotRegisteredError, BiometricAdapter
 from apps.access.adapters.generic_http import GenericHTTPAdapter
@@ -77,9 +78,7 @@ class ZKTecoADMSAdapterTest(AccessTestBase):
         assert len(commands) == 1
         assert "PIN=U001" in commands[0]
         assert "Name=John Doe" in commands[0]
-        assert DeviceCommandQueue.objects.filter(
-            device=self.device, executed_at__isnull=True
-        ).count() == 0
+        assert DeviceCommandQueue.objects.filter(device=self.device, executed_at__isnull=True).count() == 0
 
     def test_test_connection_never_seen(self) -> None:
         """A device that has never connected reports offline."""

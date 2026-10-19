@@ -53,9 +53,7 @@ class DahuaAdapter(BiometricAdapter):
             "protocol": self.protocol,
         }
 
-    def fetch_events(
-        self, device: BiometricDevice, since: datetime | None = None
-    ) -> list[dict]:
+    def fetch_events(self, device: BiometricDevice, since: datetime | None = None) -> list[dict]:
         """Fetch access events from DSS event center."""
         params: dict[str, str] = {"pageSize": "100"}
         if since:

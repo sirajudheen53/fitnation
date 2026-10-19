@@ -51,17 +51,13 @@ class MantraAdapter(BiometricAdapter):
             "protocol": self.protocol,
         }
 
-    def fetch_events(
-        self, device: BiometricDevice, since: datetime | None = None
-    ) -> list[dict]:
+    def fetch_events(self, device: BiometricDevice, since: datetime | None = None) -> list[dict]:
         """Fetch attendance/access events from the device."""
         params: dict[str, str] = {"limit": "100"}
         if since:
             params["from"] = since.strftime("%Y-%m-%dT%H:%M:%SZ")
         try:
-            resp = requests.get(
-                f"{self._base(device)}/attendance", params=params, timeout=15
-            )
+            resp = requests.get(f"{self._base(device)}/attendance", params=params, timeout=15)
             if resp.status_code == 200:
                 return resp.json().get("records", [])
         except requests.exceptions.RequestException:

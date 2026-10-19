@@ -26,16 +26,10 @@ def list_tenants() -> QuerySet[Tenant]:
         ``member_count`` and ``branch_count``.
     """
     member_sq = (
-        Customer.objects.filter(tenant_id=OuterRef("pk"))
-        .values("tenant_id")
-        .annotate(c=Count("id"))
-        .values("c")[:1]
+        Customer.objects.filter(tenant_id=OuterRef("pk")).values("tenant_id").annotate(c=Count("id")).values("c")[:1]
     )
     branch_sq = (
-        Branch.objects.filter(tenant_id=OuterRef("pk"))
-        .values("tenant_id")
-        .annotate(c=Count("id"))
-        .values("c")[:1]
+        Branch.objects.filter(tenant_id=OuterRef("pk")).values("tenant_id").annotate(c=Count("id")).values("c")[:1]
     )
     return Tenant.objects.annotate(
         member_count=Coalesce(Subquery(member_sq, output_field=IntegerField()), 0),

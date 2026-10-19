@@ -34,9 +34,7 @@ class RuleEngineTestBase(TestCase):
     def setUp(self) -> None:
         """Create tenant, branch, owner, customer user, customer, device."""
         self.tenant = provision_tenant(name="Rule Gym", contact_email="owner@rule.test")
-        self.branch = Branch.objects.create(
-            tenant=self.tenant, name="Main Branch", branch_type="gym"
-        )
+        self.branch = Branch.objects.create(tenant=self.tenant, name="Main Branch", branch_type="gym")
         self.owner = create_owner_user(
             tenant=self.tenant,
             email="owner@rule.test",
@@ -190,9 +188,7 @@ class IngestEventTest(RuleEngineTestBase):
         assert result["duplicate"] is False
         assert result["log"].customer_id == self.customer.pk
         assert result["attendance_created"] is True
-        assert AttendanceRecord.objects.for_tenant(self.tenant).filter(
-            customer=self.customer
-        ).exists()
+        assert AttendanceRecord.objects.for_tenant(self.tenant).filter(customer=self.customer).exists()
 
     def test_duplicate_event_is_idempotent(self) -> None:
         """The same event twice yields one log row and one attendance row."""
@@ -301,23 +297,18 @@ class AccessCheckAPITest(RuleEngineTestBase, APITestCase):
 
     def test_check_unknown_ids_404(self) -> None:
         """Unknown customer or device → 404."""
-        response = self.client.get(
-            "/api/v1/access/check/?customer_id=99999&device_id=99999"
-        )
+        response = self.client.get("/api/v1/access/check/?customer_id=99999&device_id=99999")
         assert response.status_code == 404
 
     def test_check_logs_decision(self) -> None:
         """A check call returns the state and persists a decision row."""
         self._add_membership(days=30)
         response = self.client.get(
-            f"/api/v1/access/check/?customer_id={self.customer.pk}"
-            f"&device_id={self.device.pk}"
+            f"/api/v1/access/check/?customer_id={self.customer.pk}" f"&device_id={self.device.pk}"
         )
         assert response.status_code == 200
         assert response.data["allowed"] is True
-        assert (
-            AccessDecisionLog.objects.filter(customer=self.customer).count() == 1
-        )
+        assert AccessDecisionLog.objects.filter(customer=self.customer).count() == 1
 
 
 class AccessEventsAPITest(RuleEngineTestBase, APITestCase):
@@ -343,9 +334,7 @@ class AccessEventsAPITest(RuleEngineTestBase, APITestCase):
 
     def test_events_endpoint_happy_path(self) -> None:
         """A valid entry event returns 201 and creates attendance."""
-        response = self.client.post(
-            "/api/v1/access/events/", self._payload(), format="json"
-        )
+        response = self.client.post("/api/v1/access/events/", self._payload(), format="json")
         assert response.status_code == 201
         assert response.data["duplicate"] is False
         assert response.data["attendance_created"] is True
@@ -355,9 +344,7 @@ class AccessEventsAPITest(RuleEngineTestBase, APITestCase):
         """Re-posting the identical event returns 200 + duplicate flag."""
         payload = self._payload()  # captured once — identical timestamps
         self.client.post("/api/v1/access/events/", payload, format="json")
-        response = self.client.post(
-            "/api/v1/access/events/", payload, format="json"
-        )
+        response = self.client.post("/api/v1/access/events/", payload, format="json")
         assert response.status_code == 200
         assert response.data["duplicate"] is True
 

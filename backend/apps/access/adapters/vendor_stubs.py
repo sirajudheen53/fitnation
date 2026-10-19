@@ -32,9 +32,7 @@ class VendorStubAdapter(BiometricAdapter):
         credentials: Any,
     ) -> dict:
         """Not implemented for this vendor yet."""
-        raise NotImplementedError(
-            f"{self.vendor_label} allow-list sync is not implemented yet (issue #22 follow-up)."
-        )
+        raise NotImplementedError(f"{self.vendor_label} allow-list sync is not implemented yet (issue #22 follow-up).")
 
     def fetch_events(
         self,
@@ -42,9 +40,7 @@ class VendorStubAdapter(BiometricAdapter):
         since: datetime | None = None,
     ) -> list[dict]:
         """Not implemented for this vendor yet."""
-        raise NotImplementedError(
-            f"{self.vendor_label} event fetch is not implemented yet (issue #22 follow-up)."
-        )
+        raise NotImplementedError(f"{self.vendor_label} event fetch is not implemented yet (issue #22 follow-up).")
 
     def test_connection(self, device: BiometricDevice) -> dict:
         """Report the device as offline until a native adapter ships."""

@@ -22,9 +22,19 @@ class BiometricDeviceSerializer(serializers.ModelSerializer):
 
         model = BiometricDevice
         fields = [
-            "id", "branch", "vendor", "model", "serial_number", "name",
-            "connection_type", "api_endpoint", "is_active",
-            "last_sync_at", "last_seen_at", "created_at", "updated_at",
+            "id",
+            "branch",
+            "vendor",
+            "model",
+            "serial_number",
+            "name",
+            "connection_type",
+            "api_endpoint",
+            "is_active",
+            "last_sync_at",
+            "last_seen_at",
+            "created_at",
+            "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at", "last_sync_at", "last_seen_at"]
 
@@ -45,15 +55,9 @@ class BiometricCredentialEnrollSerializer(serializers.Serializer):
             raise serializers.ValidationError("Tenant context is required.")
         for key in ("customer", "device"):
             if attrs[key].tenant_id != tenant.id:
-                raise serializers.ValidationError(
-                    f"{key.capitalize()} must belong to the current tenant."
-                )
-        if BiometricCredential.objects.filter(
-            device=attrs["device"], device_user_id=attrs["device_user_id"]
-        ).exists():
-            raise serializers.ValidationError(
-                {"device_user_id": "Already enrolled on this device."}
-            )
+                raise serializers.ValidationError(f"{key.capitalize()} must belong to the current tenant.")
+        if BiometricCredential.objects.filter(device=attrs["device"], device_user_id=attrs["device_user_id"]).exists():
+            raise serializers.ValidationError({"device_user_id": "Already enrolled on this device."})
         return attrs
 
 
@@ -88,8 +92,13 @@ class BiometricCredentialSerializer(serializers.ModelSerializer):
 
         model = BiometricCredential
         fields = [
-            "id", "customer", "device", "credential_type",
-            "device_user_id", "enrolled_at", "is_active",
+            "id",
+            "customer",
+            "device",
+            "credential_type",
+            "device_user_id",
+            "enrolled_at",
+            "is_active",
         ]
         read_only_fields = ["id", "enrolled_at"]
 
@@ -109,8 +118,14 @@ class AccessOverrideSerializer(serializers.ModelSerializer):
 
         model = AccessOverride
         fields = [
-            "id", "customer", "device", "allow_access", "reason",
-            "reason_notes", "expires_at", "created_by",
+            "id",
+            "customer",
+            "device",
+            "allow_access",
+            "reason",
+            "reason_notes",
+            "expires_at",
+            "created_by",
         ]
         read_only_fields = ["id", "created_by"]
 
@@ -123,7 +138,13 @@ class AccessLogSerializer(serializers.ModelSerializer):
 
         model = AccessLog
         fields = [
-            "id", "device", "customer", "device_user_id",
-            "credential_type", "event_type", "event_timestamp", "raw_payload",
+            "id",
+            "device",
+            "customer",
+            "device_user_id",
+            "credential_type",
+            "event_type",
+            "event_timestamp",
+            "raw_payload",
         ]
         read_only_fields = ["id"]

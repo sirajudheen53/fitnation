@@ -26,9 +26,7 @@ def get_adapter_class(vendor: str) -> type[BiometricAdapter]:
     try:
         return _REGISTRY[vendor]
     except KeyError as exc:
-        raise AdapterNotRegisteredError(
-            f"No biometric adapter registered for vendor '{vendor}'."
-        ) from exc
+        raise AdapterNotRegisteredError(f"No biometric adapter registered for vendor '{vendor}'.") from exc
 
 
 def get_adapter(device: BiometricDevice) -> BiometricAdapter:

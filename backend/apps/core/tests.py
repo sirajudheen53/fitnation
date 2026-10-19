@@ -24,9 +24,11 @@ class HealthCheckTests(APITestCase):
 
     def setUp(self) -> None:
         """Pin the cache to LocMemCache (the local env has no Redis)."""
-        cache_override = override_settings(CACHES={
-            "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
-        })
+        cache_override = override_settings(
+            CACHES={
+                "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+            }
+        )
         cache_override.enable()
         self.addCleanup(cache_override.disable)
 
@@ -208,9 +210,7 @@ class HealthCheckResilienceTests(APITestCase):
 
         from apps.core import healthcheck as hc
 
-        with patch.object(
-            hc.HealthCheckView, "_check_db", side_effect=RuntimeError("db boom")
-        ):
+        with patch.object(hc.HealthCheckView, "_check_db", side_effect=RuntimeError("db boom")):
             response = self._get()
         self.assertEqual(response.status_code, 503)
         self.assertIn("db boom", str(response.data["db"]))
@@ -222,9 +222,7 @@ class HealthCheckResilienceTests(APITestCase):
 
         from apps.core import healthcheck as hc
 
-        with patch.object(
-            hc.HealthCheckView, "_check_cache", side_effect=RuntimeError("cache boom")
-        ):
+        with patch.object(hc.HealthCheckView, "_check_cache", side_effect=RuntimeError("cache boom")):
             response = self._get()
         self.assertEqual(response.status_code, 503)
         self.assertIn("cache boom", str(response.data["cache"]))
@@ -235,9 +233,7 @@ class HealthCheckResilienceTests(APITestCase):
 
         from apps.core import healthcheck as hc
 
-        with patch.object(
-            hc.HealthCheckView, "_check_storage", side_effect=RuntimeError("storage boom")
-        ):
+        with patch.object(hc.HealthCheckView, "_check_storage", side_effect=RuntimeError("storage boom")):
             response = self._get()
         self.assertEqual(response.status_code, 503)
         self.assertIn("storage boom", str(response.data["storage"]))

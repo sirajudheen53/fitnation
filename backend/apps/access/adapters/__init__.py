@@ -8,8 +8,8 @@ from apps.access.adapters.base import (
 from apps.access.adapters.registry import (
     get_adapter,
     get_adapter_class,
-    registered_vendors,
     register_adapter,
+    registered_vendors,
 )
 
 __all__ = [

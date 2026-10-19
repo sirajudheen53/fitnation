@@ -1849,6 +1849,7 @@ class CustomerCreationContractTests(APITestCase):
         self.assertIn("email", response.data)
         self.assertEqual(Customer.objects.filter(email="taken@local.test").count(), 0)
 
+    @override_settings(OTP_SENDER="stub")  # stub sender echoes the code (test-only)
     def test_otp_login_for_auto_created_user(self) -> None:
         """The auto-provisioned CUSTOMER-role user authenticates via OTP."""
         response = self.client.post(
@@ -1866,7 +1867,7 @@ class CustomerCreationContractTests(APITestCase):
         )
         self.assertEqual(request_response.status_code, 200)
 
-        otp_code = request_response.data["otp"]  # exposed in test mode
+        otp_code = request_response.data["otp"]  # stub sender echoes the code
         verify_response = self.client.post(
             "/api/v1/users/auth/otp/verify/",
             {"phone": "+919999000001", "otp": otp_code},
@@ -2115,6 +2116,7 @@ class ADR002CustomerIdentityTests(APITestCase):
         other.refresh_from_db()
         self.assertEqual(other.email, before_email)  # never silently mutated
 
+    @override_settings(OTP_SENDER="stub")  # stub sender echoes the code (test-only)
     def test_otp_login_reuses_owner_created_user(self) -> None:
         """OTP verify reuses the owner-created customer user (rule 2)."""
         create_response = self.client.post(
@@ -2132,7 +2134,7 @@ class ADR002CustomerIdentityTests(APITestCase):
             format="json",
         )
         self.assertEqual(request_response.status_code, 200)
-        otp_code = request_response.data["otp"]  # exposed in test mode
+        otp_code = request_response.data["otp"]  # stub sender echoes the code
         verify_response = self.client.post(
             "/api/v1/users/auth/otp/verify/",
             {"phone": "+919999000002", "otp": otp_code},
@@ -2164,6 +2166,7 @@ class ADR002CustomerIdentityTests(APITestCase):
         self.assertEqual(otp_response.status_code, 400)
         self.assertIn("phone", otp_response.data)  # clean field error, no crash
 
+    @override_settings(OTP_SENDER="stub")  # stub sender echoes the code (test-only)
     def test_update_phone_provisions_otp_capability(self) -> None:
         """PATCH phone provisions OTP capability on the SAME user (rule 3)."""
         response = self.client.post(
@@ -2194,7 +2197,7 @@ class ADR002CustomerIdentityTests(APITestCase):
             format="json",
         )
         self.assertEqual(request_response.status_code, 200)
-        otp_code = request_response.data["otp"]  # exposed in test mode
+        otp_code = request_response.data["otp"]  # stub sender echoes the code
         verify_response = self.client.post(
             "/api/v1/users/auth/otp/verify/",
             {"phone": "+919999000099", "otp": otp_code},

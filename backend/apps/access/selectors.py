@@ -91,10 +91,7 @@ def get_customer_access_state(*, customer: Customer, device: BiometricDevice) ->
     # sticky (never auto-recomputed), so exclude them explicitly; time-based
     # expiry is evaluated against end_date so stale status values don't matter.
     membership = (
-        customer.memberships.filter(plan__is_active=True)
-        .exclude(status="cancelled")
-        .select_related("plan")
-        .first()
+        customer.memberships.filter(plan__is_active=True).exclude(status="cancelled").select_related("plan").first()
     )
     if membership is None:
         return {

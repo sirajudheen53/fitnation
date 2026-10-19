@@ -127,9 +127,7 @@ class BiometricDeviceViewSet(ModelViewSet):
     @action(detail=False, methods=["post"], url_path="enroll")
     def enroll(self, request: Request) -> Response:
         """Enroll a credential on a device and immediately sync that device."""
-        serializer = BiometricCredentialEnrollSerializer(
-            data=request.data, context={"request": request}
-        )
+        serializer = BiometricCredentialEnrollSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         device = serializer.validated_data["device"]
         credential = enroll_credential(
@@ -141,9 +139,7 @@ class BiometricDeviceViewSet(ModelViewSet):
         )
         sync_result = sync_device(device)
         return Response(
-            BiometricCredentialEnrollResultSerializer(
-                {"credential": credential, "sync": sync_result}
-            ).data,
+            BiometricCredentialEnrollResultSerializer({"credential": credential, "sync": sync_result}).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -274,12 +270,12 @@ class AccessLogViewSet(ReadOnlyModelViewSet):
                 {"detail": "customer_id and device_id are required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        customer = __import__("apps.customers.models", fromlist=["Customer"]).objects.filter(
-            pk=customer_id, tenant=request.tenant
-        ).first()
-        device = BiometricDevice.objects.filter(
-            pk=device_id, tenant=request.tenant
-        ).first()
+        customer = (
+            __import__("apps.customers.models", fromlist=["Customer"])
+            .objects.filter(pk=customer_id, tenant=request.tenant)
+            .first()
+        )
+        device = BiometricDevice.objects.filter(pk=device_id, tenant=request.tenant).first()
         if not customer or not device:
             return Response(
                 {"detail": "Customer or device not found."},

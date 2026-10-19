@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
-from django.utils.timezone import localdate
 from decimal import Decimal
 from io import StringIO
 from unittest import mock
 
 from django.core.management import call_command
 from django.test import TestCase
+from django.utils.timezone import localdate
 from rest_framework.test import APITestCase
 
 import requests
@@ -398,9 +398,7 @@ class DeviceTestConnectionAPITests(APITestCase):
             contact_name="Bridge Owner",
         )
         self.token = issue_token(self.owner, self.tenant)
-        self.branch = Branch.objects.create(
-            tenant=self.tenant, name="Main Branch", branch_type="gym"
-        )
+        self.branch = Branch.objects.create(tenant=self.tenant, name="Main Branch", branch_type="gym")
         self.device = BiometricDevice.objects.create(
             tenant=self.tenant,
             branch=self.branch,
@@ -443,9 +441,7 @@ class DeviceTestConnectionAPITests(APITestCase):
 
     def test_test_connection_tenant_isolation(self) -> None:
         """Devices belonging to another tenant are not visible (404)."""
-        other_tenant = provision_tenant(
-            name="Other Gym", contact_email="owner@other.test"
-        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="owner@other.test")
         other_owner = create_owner_user(
             tenant=other_tenant,
             email="owner@other.test",
@@ -561,10 +557,7 @@ class AllowListRuleTest(AllowListTestBase):
 
     def _allow_list_ids(self) -> list:
         """Return device_user_ids currently on the resolved allow-list."""
-        return [
-            credential.device_user_id
-            for credential in get_device_allow_list(device=self.http_device)
-        ]
+        return [credential.device_user_id for credential in get_device_allow_list(device=self.http_device)]
 
     def test_active_plan_credential_included(self) -> None:
         """A customer with an active membership stays on the allow-list."""
@@ -767,9 +760,7 @@ class MembershipSyncTriggerTest(APITestCase):
             contact_name="Trigger Owner",
         )
         self.token = issue_token(self.owner, self.tenant)
-        self.branch = Branch.objects.create(
-            tenant=self.tenant, name="Main Branch", branch_type="gym"
-        )
+        self.branch = Branch.objects.create(tenant=self.tenant, name="Main Branch", branch_type="gym")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
 
         self.plan = MembershipPlan.objects.create(
@@ -834,9 +825,7 @@ class MembershipSyncTriggerTest(APITestCase):
     @mock.patch("apps.memberships.views.sync_customer_devices")
     def test_create_membership_triggers_sync(self, sync_mock: mock.MagicMock) -> None:
         """Creating a membership syncs the customer's devices."""
-        response = self.client.post(
-            "/api/v1/memberships/memberships/", self.membership_payload, format="json"
-        )
+        response = self.client.post("/api/v1/memberships/memberships/", self.membership_payload, format="json")
         self.assertEqual(response.status_code, 201)
         sync_mock.assert_called_once_with(self.customer)
 
@@ -856,9 +845,7 @@ class MembershipSyncTriggerTest(APITestCase):
     def test_cancel_membership_triggers_sync(self, sync_mock: mock.MagicMock) -> None:
         """Cancelling a membership syncs the customer's devices."""
         membership = self._create_membership()
-        response = self.client.post(
-            f"/api/v1/memberships/memberships/{membership.pk}/cancel/", format="json"
-        )
+        response = self.client.post(f"/api/v1/memberships/memberships/{membership.pk}/cancel/", format="json")
         self.assertEqual(response.status_code, 200)
         sync_mock.assert_called_once_with(self.customer)
 
@@ -880,9 +867,7 @@ class MembershipSyncTriggerTest(APITestCase):
         allow_list = get_device_allow_list(device=self.device)
         assert [credential.device_user_id for credential in allow_list] == ["T001"]
 
-        response = self.client.post(
-            f"/api/v1/memberships/memberships/{membership.pk}/cancel/", format="json"
-        )
+        response = self.client.post(f"/api/v1/memberships/memberships/{membership.pk}/cancel/", format="json")
         self.assertEqual(response.status_code, 200)
         assert get_device_allow_list(device=self.device) == []
 
@@ -900,9 +885,7 @@ class DeviceSyncEnrollFetchAPITests(APITestCase):
             contact_name="Sync Owner",
         )
         self.token = issue_token(self.owner, self.tenant)
-        self.branch = Branch.objects.create(
-            tenant=self.tenant, name="Main Branch", branch_type="gym"
-        )
+        self.branch = Branch.objects.create(tenant=self.tenant, name="Main Branch", branch_type="gym")
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
 
         original = get_adapter_class("generic")
@@ -1012,9 +995,7 @@ class DeviceSyncEnrollFetchAPITests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["credential"]["device_user_id"], "S002")
         self.assertTrue(response.data["sync"]["synced"])
-        assert BiometricCredential.objects.filter(
-            device=self.device, device_user_id="S002"
-        ).exists()
+        assert BiometricCredential.objects.filter(device=self.device, device_user_id="S002").exists()
         sync_calls = [c for c in RecordingAdapter.calls if c["op"] == "sync"]
         assert len(sync_calls) == 1
         assert set(sync_calls[0]["credentials"]) == {self.credential.pk, response.data["credential"]["id"]}

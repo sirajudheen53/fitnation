@@ -49,9 +49,7 @@ class AnvizAdapter(BiometricAdapter):
             "protocol": self.protocol,
         }
 
-    def fetch_events(
-        self, device: BiometricDevice, since: datetime | None = None
-    ) -> list[dict]:
+    def fetch_events(self, device: BiometricDevice, since: datetime | None = None) -> list[dict]:
         """Fetch records from CrossChex."""
         params: dict[str, str] = {"limit": "100"}
         if since:

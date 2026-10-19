@@ -76,9 +76,7 @@ class TimeWatchAdapter(BiometricAdapter):
             "protocol": self.protocol,
         }
 
-    def fetch_events(
-        self, device: BiometricDevice, since: datetime | None = None
-    ) -> list[dict]:
+    def fetch_events(self, device: BiometricDevice, since: datetime | None = None) -> list[dict]:
         """Fetch attendance punches from TimeWatch Cloud."""
         if not device.api_endpoint:
             return []

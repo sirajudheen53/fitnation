@@ -55,9 +55,8 @@ class SupremaAdapter(BiometricAdapter):
                     pushed += 1
             except requests.exceptions.RequestException as exc:
                 import logging
-                logging.getLogger(__name__).warning(
-                    "Suprema user sync failed: %s", exc
-                )
+
+                logging.getLogger(__name__).warning("Suprema user sync failed: %s", exc)
         return {
             "ok": pushed > 0,
             "pushed": pushed,
