@@ -417,3 +417,111 @@ class MembershipAPITests(APITestCase):
         )
         response = self.client.get(f"/api/v1/memberships/memberships/{other_membership.id}/")
         self.assertEqual(response.status_code, 404)
+
+
+class MembershipPlanPlanTypeAPITests(APITestCase):
+    """Integration tests for plan_type values on the plan endpoints."""
+
+    plan_types = ["quarterly", "half_yearly", "pt", "trial"]
+
+    def setUp(self) -> None:
+        """Create tenant, owner, auth token, and an editable plan."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+        self.plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Monthly",
+            price="1500.00",
+            duration_days=30,
+        )
+
+    def test_create_plan_with_each_plan_type(self) -> None:
+        """Owners can create plans with quarterly, half_yearly, pt, and trial."""
+        for plan_type in self.plan_types:
+            with self.subTest(plan_type=plan_type):
+                response = self.client.post(
+                    "/api/v1/memberships/membership-plans/",
+                    {
+                        "name": f"Plan {plan_type}",
+                        "plan_type": plan_type,
+                        "price": "1000.00",
+                        "duration_days": 90,
+                    },
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(response.data["plan_type"], plan_type)
+                self.assertTrue(
+                    MembershipPlan.objects.filter(
+                        tenant=self.tenant,
+                        name=f"Plan {plan_type}",
+                        plan_type=plan_type,
+                    ).exists(),
+                )
+
+    def test_update_plan_with_each_plan_type(self) -> None:
+        """PUT accepts every supported plan_type on an existing plan."""
+        for plan_type in self.plan_types:
+            with self.subTest(plan_type=plan_type):
+                response = self.client.put(
+                    f"/api/v1/memberships/membership-plans/{self.plan.id}/",
+                    {
+                        "name": "Monthly",
+                        "plan_type": plan_type,
+                        "price": "1500.00",
+                        "duration_days": 30,
+                    },
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["plan_type"], plan_type)
+                self.plan.refresh_from_db()
+                self.assertEqual(self.plan.plan_type, plan_type)
+
+    def test_partial_update_plan_with_each_plan_type(self) -> None:
+        """PATCH accepts every supported plan_type on an existing plan."""
+        for plan_type in self.plan_types:
+            with self.subTest(plan_type=plan_type):
+                response = self.client.patch(
+                    f"/api/v1/memberships/membership-plans/{self.plan.id}/",
+                    {"plan_type": plan_type},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["plan_type"], plan_type)
+                self.plan.refresh_from_db()
+                self.assertEqual(self.plan.plan_type, plan_type)
+
+    def test_create_plan_invalid_plan_type(self) -> None:
+        """Creating a plan with an unsupported plan_type is rejected."""
+        response = self.client.post(
+            "/api/v1/memberships/membership-plans/",
+            {
+                "name": "Weekly",
+                "plan_type": "weekly",
+                "price": "500.00",
+                "duration_days": 7,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("plan_type", response.data)
+
+    def test_update_plan_invalid_plan_type(self) -> None:
+        """Updating a plan with an unsupported plan_type is rejected."""
+        response = self.client.patch(
+            f"/api/v1/memberships/membership-plans/{self.plan.id}/",
+            {"plan_type": "weekly"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("plan_type", response.data)
+        self.plan.refresh_from_db()
+        self.assertEqual(self.plan.plan_type, "monthly")

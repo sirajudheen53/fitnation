@@ -13,6 +13,8 @@ class MembershipPlan(TenantModelMixin):
         """Supported membership plan types."""
 
         MONTHLY = "monthly", "Monthly"
+        QUARTERLY = "quarterly", "Quarterly"
+        HALF_YEARLY = "half_yearly", "Half-yearly"
         YEARLY = "yearly", "Yearly"
         PT = "pt", "Personal Training"
         TRIAL = "trial", "Trial"
