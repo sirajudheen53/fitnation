@@ -47,13 +47,16 @@ export interface Membership {
   updated_at: string;
 }
 
+/**
+ * Form-shaped data for assigning a membership. `assignMembership` maps this
+ * to the backend contract (`customer`/`plan` primary keys) before POSTing;
+ * the amount paid travels as a separate payment (kind=membership) instead.
+ */
 export interface AssignMembershipData {
   customer_id: number;
   plan_id: number;
   start_date: string;
   end_date: string;
-  coupon_code?: string;
-  amount_paid?: number;
 }
 
 export interface Coupon {

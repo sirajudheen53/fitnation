@@ -415,13 +415,30 @@ export function fetchMemberships(token: string): Promise<MembershipListResponse>
   return request<MembershipListResponse>("/memberships/memberships/", { token });
 }
 
+/**
+ * Map the form-shaped assign payload onto the backend contract. The DRF
+ * MembershipSerializer only accepts `customer` + `plan` primary keys —
+ * `customer_id` is a read-only output field, so posting the form shape
+ * as-is gets silently dropped and 400s with "This field is required."
+ */
+export function buildMembershipBody(
+  data: AssignMembershipData,
+): Record<string, unknown> {
+  return {
+    customer: data.customer_id,
+    plan: data.plan_id,
+    start_date: data.start_date,
+    end_date: data.end_date,
+  };
+}
+
 export function assignMembership(
   data: AssignMembershipData,
   token: string,
 ): Promise<Membership> {
   return request<Membership>("/memberships/memberships/", {
     method: "POST",
-    body: data,
+    body: buildMembershipBody(data),
     token,
   });
 }

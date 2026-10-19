@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,7 +9,13 @@ import { toast } from "sonner";
 import { Users, CreditCard, Calendar, DollarSign } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button, Input, Alert, Spinner } from "@/components/ui";
-import { fetchMembershipPlans, fetchCustomers, assignMembership, errorMessage } from "@/lib/api";
+import {
+  fetchMembershipPlans,
+  fetchCustomers,
+  assignMembership,
+  createPayment,
+  errorMessage,
+} from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import type { AssignMembershipData } from "@/types/membership";
 import type { Customer } from "@/types/customer";
@@ -21,8 +27,17 @@ const assignSchema = z
     plan_id: z.coerce.number().int().positive("Select a plan"),
     start_date: z.string().min(1, "Start date is required"),
     end_date: z.string().min(1, "End date is required"),
-    coupon_code: z.string().max(50).optional().or(z.literal("")),
-    amount_paid: z.coerce.number().min(0).optional().or(z.nan().transform(() => undefined)),
+    // An untouched/cleared amount input submits "" — transform it to
+    // undefined BEFORE coercion (z.coerce.number() would turn "" into 0
+    // and silently record a ₹0 payment).
+    amount_paid: z
+      .union([
+        z.literal("").transform(() => undefined),
+        z.nan().transform(() => undefined),
+        z.coerce.number().min(0, "Enter a valid amount"),
+      ])
+      .optional(),
+    payment_method: z.enum(["cash", "upi", "card", "other"]).default("cash"),
   })
   .refine((data) => new Date(data.end_date) >= new Date(data.start_date), {
     message: "End date must be on or after the start date",
@@ -30,6 +45,17 @@ const assignSchema = z
   });
 
 type AssignSchemaData = z.infer<typeof assignSchema>;
+
+/** ISO (yyyy-mm-dd) date shifted by N days, built from local components so
+ * timezone conversion can't move the result across a day boundary. */
+function addDaysISO(dateStr: string, days: number): string | null {
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + days);
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
+}
 
 export default function AssignMembershipPage() {
   const router = useRouter();
@@ -43,6 +69,7 @@ export default function AssignMembershipPage() {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<AssignSchemaData>({
     resolver: zodResolver(assignSchema),
@@ -51,16 +78,31 @@ export default function AssignMembershipPage() {
       plan_id: undefined,
       start_date: "",
       end_date: "",
-      coupon_code: "",
       amount_paid: undefined,
+      payment_method: "cash",
     },
   });
 
   const watchPlanId = watch("plan_id");
+  const watchStartDate = watch("start_date");
+  const watchEndDate = watch("end_date");
+  const watchAmount = watch("amount_paid");
   const selectedPlan = useMemo(
     () => plans.find((p) => p.id === Number(watchPlanId)),
     [plans, watchPlanId],
   );
+
+  // Suggesting an end date is a one-way affordance: once the user edits the
+  // field themselves, plan/start changes must never override their value.
+  const endDateTouched = useRef(false);
+  const endDateField = register("end_date");
+
+  useEffect(() => {
+    if (endDateTouched.current || watchEndDate) return;
+    if (!selectedPlan?.duration_days || !watchStartDate) return;
+    const suggested = addDaysISO(watchStartDate, selectedPlan.duration_days);
+    if (suggested) setValue("end_date", suggested);
+  }, [selectedPlan, watchStartDate, watchEndDate, setValue]);
 
   useEffect(() => {
     const token = getToken();
@@ -98,14 +140,34 @@ export default function AssignMembershipPage() {
         plan_id: data.plan_id,
         start_date: data.start_date,
         end_date: data.end_date,
-        coupon_code: data.coupon_code || undefined,
-        amount_paid:
-          data.amount_paid !== undefined && !Number.isNaN(data.amount_paid)
-            ? data.amount_paid
-            : undefined,
       };
-      await assignMembership(payload, authToken);
-      toast.success("Membership assigned");
+      const membership = await assignMembership(payload, authToken);
+      // The amount paid is recorded as its own completed Payment row
+      // (kind=membership) linked to the created membership. The assignment
+      // must not roll back when the payment fails — warn and move on (same
+      // pattern as the admission-fee capture on customer create).
+      if (data.amount_paid !== undefined && data.amount_paid > 0) {
+        try {
+          await createPayment(
+            {
+              customer_id: data.customer_id,
+              amount: data.amount_paid,
+              method: data.payment_method,
+              status: "completed",
+              kind: "membership",
+              membership_id: membership.id,
+            },
+            authToken,
+          );
+          toast.success("Membership assigned and payment recorded");
+        } catch (paymentErr) {
+          toast.warning(
+            `Membership assigned, but the payment wasn't recorded: ${errorMessage(paymentErr)}`,
+          );
+        }
+      } else {
+        toast.success("Membership assigned");
+      }
       router.push("/memberships");
     } catch (err) {
       setError(err);
@@ -114,6 +176,9 @@ export default function AssignMembershipPage() {
       setSaving(false);
     }
   };
+
+  // The method select only matters once an amount is actually being paid.
+  const showPaymentMethod = Number(watchAmount) > 0;
 
   return (
     <DashboardLayout title="Assign membership">
@@ -187,17 +252,15 @@ export default function AssignMembershipPage() {
               type="date"
               icon={<Calendar className="h-4 w-4" />}
               error={errors.end_date?.message}
-              {...register("end_date")}
+              {...endDateField}
+              onChange={(e) => {
+                endDateTouched.current = true;
+                endDateField.onChange(e);
+              }}
             />
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Input
-              label="Coupon code"
-              placeholder="FIT10"
-              error={errors.coupon_code?.message}
-              {...register("coupon_code")}
-            />
             <Input
               label="Amount paid"
               type="number"
@@ -210,6 +273,27 @@ export default function AssignMembershipPage() {
               error={errors.amount_paid?.message}
               {...register("amount_paid")}
             />
+            {/* Coupons: not wired to assignment yet — needs backend discount validation/discount application. */}
+            {showPaymentMethod && (
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="payment_method"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Method
+                </label>
+                <select
+                  id="payment_method"
+                  {...register("payment_method")}
+                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="upi">UPI</option>
+                  <option value="card">Card</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
