@@ -2,7 +2,13 @@
  * Membership type definitions — FBOS-004.
  */
 
-export type MembershipPlanType = "monthly" | "quarterly" | "half_yearly" | "yearly";
+export type MembershipPlanType =
+  | "monthly"
+  | "quarterly"
+  | "half_yearly"
+  | "yearly"
+  | "pt"
+  | "trial";
 
 export type MembershipStatus = "active" | "expired" | "cancelled" | "pending";
 

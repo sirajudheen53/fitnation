@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, type ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -13,7 +13,7 @@ const planSchema = z.object({
   name: z.string().min(1, "Plan name is required").max(100),
   price: z.coerce.number().min(0, "Price must be 0 or more"),
   duration_days: z.coerce.number().int().positive("Duration must be positive"),
-  plan_type: z.enum(["monthly", "quarterly", "half_yearly", "yearly"]),
+  plan_type: z.enum(["monthly", "quarterly", "half_yearly", "yearly", "pt", "trial"]),
   description: z.string().max(500).optional().or(z.literal("")),
   is_active: z.boolean().default(true),
 });
@@ -25,6 +25,17 @@ const PLAN_TYPE_LABELS: Record<MembershipPlanType, string> = {
   quarterly: "Quarterly",
   half_yearly: "Half-yearly",
   yearly: "Yearly",
+  pt: "Personal Training",
+  trial: "Trial",
+};
+
+// Prefilled on user-triggered plan type change; pt/trial are absent so the
+// duration field is left untouched for them.
+const PLAN_TYPE_DEFAULT_DURATION_DAYS: Partial<Record<MembershipPlanType, number>> = {
+  monthly: 30,
+  quarterly: 90,
+  half_yearly: 180,
+  yearly: 365,
 };
 
 interface MembershipPlanFormProps {
@@ -49,6 +60,7 @@ export function MembershipPlanForm({
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<PlanSchemaData>({
     resolver: zodResolver(planSchema),
@@ -75,6 +87,15 @@ export function MembershipPlanForm({
       });
     }
   }, [plan, reset]);
+
+  // Fires only on user-triggered select changes — reset() in the effect above
+  // never routes through here, so loading a plan never overwrites its duration.
+  const handlePlanTypeChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const duration = PLAN_TYPE_DEFAULT_DURATION_DAYS[event.target.value as MembershipPlanType];
+    if (duration !== undefined) {
+      setValue("duration_days", duration, { shouldValidate: true });
+    }
+  };
 
   const handleFormSubmit = async (data: PlanSchemaData) => {
     const payload: MembershipPlanFormData = {
@@ -131,7 +152,7 @@ export function MembershipPlanForm({
           </label>
           <select
             id="plan_type"
-            {...register("plan_type")}
+            {...register("plan_type", { onChange: handlePlanTypeChange })}
             className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
           >
             {(Object.keys(PLAN_TYPE_LABELS) as MembershipPlanType[]).map((type) => (
