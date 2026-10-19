@@ -25,9 +25,11 @@ jest.mock("recharts", () => {
 import { CustomerTabs } from "@/features/customers/components/CustomerTabs";
 import {
   OverviewTab,
+  latestAdmissionPayment,
   formatMemberSince,
   toNumber,
 } from "@/features/customers/components/OverviewTab";
+import { PaymentHistoryTab } from "@/features/customers/components/PaymentHistoryTab";
 import {
   FitnessGoalsTab,
   clampProgress,
@@ -47,6 +49,7 @@ import {
 } from "@/features/customers/components/HealthProfileTab";
 import { ProgressPhotosTab } from "@/features/customers/components/ProgressPhotosTab";
 import type { Customer } from "@/types/customer";
+import type { Payment } from "@/types/payment";
 import type {
   BodyMeasurement,
   CustomerFitnessGoal,
@@ -140,6 +143,172 @@ const photo: ProgressPhoto = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
+
+const admissionPayment: Payment = {
+  id: 1,
+  customer_id: 1,
+  customer_name: "Arjun Kumar",
+  amount: "5000.00",
+  method: "upi",
+  status: "completed",
+  kind: "admission",
+  membership_id: null,
+  invoice_id: null,
+  notes: null,
+  payment_date: "2026-02-10T10:00:00Z",
+  created_at: "2026-02-10T10:00:00Z",
+  updated_at: "2026-02-10T10:00:00Z",
+};
+
+const membershipPayment: Payment = {
+  ...admissionPayment,
+  id: 2,
+  kind: "membership",
+  amount: "12000.00",
+  method: "cash",
+  created_at: "2026-03-01T10:00:00Z",
+};
+
+const pendingAdmission: Payment = {
+  ...admissionPayment,
+  id: 3,
+  status: "pending",
+  amount: "2500.00",
+  method: "cash",
+  created_at: "2026-04-01T10:00:00Z",
+};
+
+/* ── OverviewTab: address + admission fee card (msg 2438) ─────── */
+
+describe("OverviewTab address block", () => {
+  it("shows the address lines when present", () => {
+    render(
+      <OverviewTab
+        customer={{
+          ...customer,
+          address_street: "12 MG Road",
+          address_city: "Bengaluru",
+          address_state: "Karnataka",
+          address_postal_code: "560001",
+        }}
+        summary={null}
+      />,
+    );
+    expect(screen.getByText("Address")).toBeInTheDocument();
+    expect(screen.getByText("12 MG Road")).toBeInTheDocument();
+    expect(screen.getByText("Bengaluru, Karnataka, 560001")).toBeInTheDocument();
+  });
+
+  it("shows an empty state when no address is on file", () => {
+    render(<OverviewTab customer={{ ...customer, address_street: "" }} summary={null} />);
+    expect(screen.getByText("No address on file")).toBeInTheDocument();
+  });
+
+  it("falls back when the customer has no email", () => {
+    render(<OverviewTab customer={{ ...customer, email: null }} summary={null} />);
+    expect(screen.getAllByText("No email on file").length).toBeGreaterThan(0);
+  });
+});
+
+describe("OverviewTab admission fee card", () => {
+  it("picks the newest admission payment", () => {
+    expect(latestAdmissionPayment([pendingAdmission, admissionPayment])).toEqual(
+      pendingAdmission,
+    );
+    expect(latestAdmissionPayment(undefined)).toBeNull();
+    expect(latestAdmissionPayment([])).toBeNull();
+  });
+
+  it("shows the empty state when no admission payment exists", () => {
+    render(<OverviewTab customer={customer} summary={null} admissionPayments={[]} />);
+    expect(screen.getByText("No admission fee recorded yet.")).toBeInTheDocument();
+  });
+
+  it("shows a paid admission fee with amount, method and Paid badge", () => {
+    render(
+      <OverviewTab customer={customer} summary={null} admissionPayments={[admissionPayment]} />,
+    );
+    expect(screen.getByText("Paid")).toBeInTheDocument();
+    expect(screen.getByText("₹5,000")).toBeInTheDocument();
+    expect(screen.getByText(/UPI ·/)).toBeInTheDocument();
+  });
+
+  it("offers the record action for a pending fee and calls back with the dialog input", async () => {
+    const onRecordAdmissionFee = jest.fn().mockResolvedValue(true);
+    render(
+      <OverviewTab
+        customer={customer}
+        summary={null}
+        admissionPayments={[pendingAdmission]}
+        onRecordAdmissionFee={onRecordAdmissionFee}
+      />,
+    );
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Record payment" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    // Amount prefilled from the pending row.
+    expect(screen.getByLabelText("Amount (₹)")).toHaveValue(2500);
+
+    fireEvent.change(screen.getByLabelText("Method"), { target: { value: "upi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save payment" }));
+
+    await waitFor(() =>
+      expect(onRecordAdmissionFee).toHaveBeenCalledWith({ amount: 2500, method: "upi" }),
+    );
+    // Resolving true closes the dialog.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("keeps the dialog open and shows an error for an invalid amount", async () => {
+    const onRecordAdmissionFee = jest.fn();
+    render(
+      <OverviewTab customer={customer} summary={null} onRecordAdmissionFee={onRecordAdmissionFee} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Record admission fee" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByLabelText("Amount (₹)")).toHaveValue(null);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save payment" }));
+    expect(await screen.findByText("Enter a valid amount")).toBeInTheDocument();
+    expect(onRecordAdmissionFee).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("hides the record action when no handler is provided", () => {
+    render(
+      <OverviewTab customer={customer} summary={null} admissionPayments={[pendingAdmission]} />,
+    );
+    expect(screen.queryByRole("button", { name: "Record payment" })).not.toBeInTheDocument();
+  });
+});
+
+/* ── PaymentHistoryTab: per-customer rows with kind labels ────── */
+
+describe("PaymentHistoryTab", () => {
+  it("shows the loading state", () => {
+    render(<PaymentHistoryTab customer={customer} loading />);
+    expect(screen.getByText("Loading payments…")).toBeInTheDocument();
+  });
+
+  it("shows the empty state", () => {
+    render(<PaymentHistoryTab customer={customer} payments={[]} />);
+    expect(screen.getByText("No payments recorded for this customer yet.")).toBeInTheDocument();
+  });
+
+  it("labels each row's kind (Membership / Admission)", () => {
+    render(
+      <PaymentHistoryTab
+        customer={customer}
+        payments={[membershipPayment, admissionPayment]}
+      />,
+    );
+    expect(screen.getByText("Membership")).toBeInTheDocument();
+    expect(screen.getByText("Admission")).toBeInTheDocument();
+    expect(screen.getByText("₹5,000")).toBeInTheDocument();
+    expect(screen.getByText("₹12,000")).toBeInTheDocument();
+  });
+});
 
 /* ── CustomerTabs ─────────────────────────────────────────────── */
 

@@ -287,7 +287,9 @@ export function buildCustomerBody(
 ): FormData | Record<string, unknown> {
   // The backend contract names the branch field `branch` (ADR-001: no
   // aliases) while the form state uses `branch_id` - translate here.
-  const { profile_photo, branch_id, ...fields } = data;
+  // `admission_fee` is form-only state for the create flow (it becomes a
+  // separate Payment row) and must never reach the customer endpoint.
+  const { profile_photo, branch_id, admission_fee, ...fields } = data;
 
   if (typeof File !== "undefined" && profile_photo instanceof File) {
     const form = new FormData();
@@ -471,12 +473,27 @@ import {
   InvoiceListResponse,
   Payment,
   PaymentFormData,
+  PaymentKind,
   PaymentListResponse,
+  PaymentStatus,
   RevenueSummary,
 } from "@/types/payment";
 
-export function fetchPayments(token: string): Promise<PaymentListResponse> {
-  return request<PaymentListResponse>("/payments/", { token });
+/**
+ * List payments with the backend's optional queryset filters
+ * (e.g. { customer: id, kind: "admission" } → ?customer=1&kind=admission).
+ */
+export function fetchPayments(
+  token: string,
+  params?: { customer?: number | string; kind?: PaymentKind; status?: PaymentStatus },
+): Promise<PaymentListResponse> {
+  const query = new URLSearchParams();
+  if (params?.customer !== undefined && params?.customer !== "")
+    query.set("customer", String(params.customer));
+  if (params?.kind) query.set("kind", params.kind);
+  if (params?.status) query.set("status", params.status);
+  const qs = query.toString();
+  return request<PaymentListResponse>(`/payments/${qs ? `?${qs}` : ""}`, { token });
 }
 
 export function fetchPayment(id: number | string, token: string): Promise<Payment> {
@@ -486,6 +503,18 @@ export function fetchPayment(id: number | string, token: string): Promise<Paymen
 export function createPayment(data: PaymentFormData, token: string): Promise<Payment> {
   return request<Payment>("/payments/", {
     method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updatePayment(
+  id: number | string,
+  data: Partial<PaymentFormData>,
+  token: string,
+): Promise<Payment> {
+  return request<Payment>(`/payments/${id}/`, {
+    method: "PATCH",
     body: data,
     token,
   });

@@ -1,23 +1,38 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import {
   CalendarDays,
   User,
   Activity,
   CheckCircle2,
   Hash,
-  Flame,
-  Clock,
   CreditCard,
+  Receipt,
+  MapPin,
   Target,
   Ruler,
   HeartPulse,
 } from "lucide-react";
-import { Card, CardHeader, CardBody, Badge } from "@/components/ui";
+import { Card, CardHeader, CardBody, Badge, Button, Input } from "@/components/ui";
 import { CustomerAvatar, getCustomerDisplayName } from "./CustomerAvatar";
+import {
+  formatPaymentDate,
+  getPaymentMethodLabel,
+  getPaymentStatusLabel,
+} from "@/features/payments/components/PaymentTable";
 import type { Customer } from "@/types/customer";
+import type { Payment, PaymentMethod } from "@/types/payment";
 import type { ProgressSummary } from "@/types/customer-detail";
+
+/** Same desk-collection methods as the create-form admission capture. */
+const ADMISSION_METHODS: { value: PaymentMethod; label: string }[] = [
+  { value: "cash", label: "Cash" },
+  { value: "upi", label: "UPI" },
+  { value: "card", label: "Card" },
+  { value: "other", label: "Other" },
+];
 
 /** Format a member-since date (YYYY-MM-DD or ISO) to a readable date. */
 export function formatMemberSince(iso: string | null | undefined): string {
@@ -37,14 +52,52 @@ export function toNumber(value: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Latest admission payment for the customer (newest created_at wins). */
+export function latestAdmissionPayment(
+  payments: Payment[] | undefined,
+): Payment | null {
+  if (!payments || payments.length === 0) return null;
+  return [...payments].sort((a, b) =>
+    b.created_at.localeCompare(a.created_at),
+  )[0];
+}
+
+export interface AdmissionFeeInput {
+  amount: number;
+  method: PaymentMethod;
+}
+
 interface OverviewTabProps {
   customer: Customer;
   summary?: ProgressSummary | null;
+  /** Admission-kind payments for this customer (?kind=admission&customer=). */
+  admissionPayments?: Payment[];
+  /** True while the record-fee request is in flight. */
+  recordingFee?: boolean;
+  /**
+   * Collect the admission fee — the caller decides whether to PATCH the
+   * pending payment or POST a new one. Resolve true when recorded.
+   */
+  onRecordAdmissionFee?: (
+    input: AdmissionFeeInput,
+  ) => Promise<boolean>;
 }
 
-export function OverviewTab({ customer, summary }: OverviewTabProps) {
+export function OverviewTab({
+  customer,
+  summary,
+  admissionPayments,
+  recordingFee = false,
+  onRecordAdmissionFee,
+}: OverviewTabProps) {
   const profile = summary?.health_profile ?? null;
   const activeGoals = summary?.fitness_goals?.filter((g) => g.status === "active").length ?? 0;
+
+  const latest = useMemo(() => latestAdmissionPayment(admissionPayments), [admissionPayments]);
+  const [feeDialogOpen, setFeeDialogOpen] = useState(false);
+  const [feeAmount, setFeeAmount] = useState("");
+  const [feeMethod, setFeeMethod] = useState<PaymentMethod>("cash");
+  const [feeError, setFeeError] = useState<string | null>(null);
 
   const stats: { label: string; value: string; icon: React.ReactNode }[] = [
     {
@@ -70,6 +123,27 @@ export function OverviewTab({ customer, summary }: OverviewTabProps) {
   ];
 
   const displayName = getCustomerDisplayName(customer);
+  const hasAddress =
+    customer.address_street || customer.address_city || customer.address_state || customer.address_postal_code;
+  const addressLine2 = [customer.address_city, customer.address_state, customer.address_postal_code]
+    .filter(Boolean)
+    .join(", ");
+
+  const openFeeDialog = () => {
+    setFeeError(null);
+    setFeeAmount(latest && latest.status === "pending" ? String(Number(latest.amount)) : "");
+    setFeeDialogOpen(true);
+  };
+
+  const handleFeeConfirm = async () => {
+    const amount = Number(feeAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setFeeError("Enter a valid amount");
+      return;
+    }
+    const ok = await onRecordAdmissionFee?.({ amount, method: feeMethod });
+    if (ok) setFeeDialogOpen(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -78,7 +152,7 @@ export function OverviewTab({ customer, summary }: OverviewTabProps) {
         <CustomerAvatar customer={customer} size="lg" />
         <div>
           <h3 className="text-lg font-semibold text-gray-900">{displayName}</h3>
-          <p className="text-sm text-gray-500">{customer.email}</p>
+          <p className="text-sm text-gray-500">{customer.email || "No email on file"}</p>
         </div>
       </div>
 
@@ -115,8 +189,19 @@ export function OverviewTab({ customer, summary }: OverviewTabProps) {
           </div>
           <div>
             <p className="mb-2 text-sm font-medium text-gray-700">Contact</p>
-            <p className="text-sm text-gray-700">{customer.email}</p>
+            <p className="text-sm text-gray-700">{customer.email || "No email on file"}</p>
             <p className="text-sm text-gray-500">{customer.phone || "No phone on file"}</p>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-700">Address</p>
+            {hasAddress ? (
+              <div className="text-sm text-gray-700">
+                {customer.address_street && <p>{customer.address_street}</p>}
+                {addressLine2 && <p className="text-gray-500">{addressLine2}</p>}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No address on file</p>
+            )}
           </div>
           <div>
             <p className="mb-2 text-sm font-medium text-gray-700">Emergency contact</p>
@@ -131,6 +216,102 @@ export function OverviewTab({ customer, summary }: OverviewTabProps) {
           </div>
         </CardBody>
       </Card>
+
+      {/* Admission fee (msg 2438) */}
+      <Card>
+        <CardHeader>
+          <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+            <CreditCard className="h-5 w-5 text-brand-600" /> Admission fee
+          </h3>
+        </CardHeader>
+        <CardBody>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            {latest ? (
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                  <Receipt className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={latest.status === "completed" ? "success" : "warning"}>
+                      {latest.status === "completed" ? "Paid" : getPaymentStatusLabel(latest.status)}
+                    </Badge>
+                    <span className="text-sm font-semibold text-gray-900">
+                      ₹{Number(latest.amount).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {getPaymentMethodLabel(latest.method)} · {formatPaymentDate(latest.payment_date)}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                  <Receipt className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <p className="text-sm text-gray-500">No admission fee recorded yet.</p>
+              </div>
+            )}
+            {onRecordAdmissionFee && (!latest || latest.status === "pending") && (
+              <Button size="sm" onClick={openFeeDialog} disabled={recordingFee}>
+                {latest && latest.status === "pending" ? "Record payment" : "Record admission fee"}
+              </Button>
+            )}
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* Record/collect admission fee dialog */}
+      {feeDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <Card className="w-full max-w-md" role="dialog" aria-modal="true">
+            <CardBody className="space-y-4">
+              <h3 className="text-base font-semibold text-gray-900">
+                {latest && latest.status === "pending" ? "Record admission payment" : "Record admission fee"}
+              </h3>
+              <Input
+                label="Amount (₹)"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="1000"
+                value={feeAmount}
+                onChange={(e) => {
+                  setFeeAmount(e.target.value);
+                  setFeeError(null);
+                }}
+                error={feeError ?? undefined}
+              />
+              <div className="space-y-1.5">
+                <label htmlFor="admission-fee-method" className="block text-sm font-medium text-gray-700">
+                  Method
+                </label>
+                <select
+                  id="admission-fee-method"
+                  value={feeMethod}
+                  onChange={(e) => setFeeMethod(e.target.value as PaymentMethod)}
+                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  {ADMISSION_METHODS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setFeeDialogOpen(false)} disabled={recordingFee}>
+                  Cancel
+                </Button>
+                <Button onClick={handleFeeConfirm} disabled={recordingFee}>
+                  {recordingFee ? "Saving…" : "Save payment"}
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      )}
 
       {/* Tab links */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -200,7 +381,7 @@ export function OverviewTab({ customer, summary }: OverviewTabProps) {
                 </p>
               </div>
             </div>
-            <Link href={`/attendance?customer=${encodeURIComponent(customer.email)}`}>
+            <Link href={`/attendance?customer=${encodeURIComponent(customer.email ?? "")}`}>
               <Badge variant="info" className="cursor-pointer hover:bg-blue-100">
                 View attendance →
               </Badge>

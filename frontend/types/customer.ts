@@ -2,6 +2,8 @@
  * Customer type definitions.
  */
 
+import type { PaymentMethod } from "./payment";
+
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
 
 export type FitnessGoal =
@@ -16,7 +18,12 @@ export type FitnessGoal =
 
 export interface Customer {
   id: number;
-  email: string;
+  /**
+   * Optional (msg 2438): phone-only customers carry a NULL email and log in
+   * via phone OTP under a synthetic identity; adding a real email later
+   * adopts it onto the same account.
+   */
+  email: string | null;
   /** Fields returned by GET /customers/customers/ (backend contract). */
   user: number;
   name: string;
@@ -52,6 +59,15 @@ export interface Customer {
   medical_info?: string | null;
 }
 
+/** Admission-fee capture on the customer create form (form-only, never sent
+ * to the customer endpoint — the caller turns it into a Payment row). */
+export interface AdmissionFeeInput {
+  amount: number;
+  /** "completed" = paid now with the chosen method, "pending" = collect later. */
+  status: "completed" | "pending";
+  method: PaymentMethod;
+}
+
 export interface CustomerFormData {
   /**
    * Upload/replace photo (File), explicitly remove an existing photo (null),
@@ -59,15 +75,22 @@ export interface CustomerFormData {
    * present, otherwise as JSON (null included so the backend can clear it).
    */
   profile_photo?: File | null;
-  email: string;
+  /** Optional (msg 2438); empty string normalizes to NULL backend-side. */
+  email?: string;
   first_name: string;
-  last_name: string;
+  last_name?: string;
   phone?: string;
   gender?: Gender;
   date_of_birth?: string;
   branch_id?: number;
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
+  address_street?: string;
+  address_city?: string;
+  address_state?: string;
+  address_postal_code?: string;
+  /** Form-only admission-fee capture (create flow); stripped by buildCustomerBody. */
+  admission_fee?: AdmissionFeeInput;
   is_active: boolean;
 }
 

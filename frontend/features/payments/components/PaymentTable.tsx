@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Eye } from "lucide-react";
 import { Badge } from "@/components/ui";
-import type { Payment, PaymentStatus } from "@/types/payment";
+import type { Payment, PaymentKind, PaymentStatus } from "@/types/payment";
 
 const STATUS_VARIANTS: Record<PaymentStatus, "success" | "warning" | "danger" | "info"> = {
   completed: "success",
@@ -20,6 +20,17 @@ export function getPaymentStatusLabel(status: PaymentStatus): string {
     refunded: "Refunded",
   };
   return labels[status];
+}
+
+/** Membership vs Admission label; rows without a kind are legacy membership payments. */
+export function getPaymentKindLabel(kind: PaymentKind | undefined): string {
+  return kind === "admission" ? "Admission" : "Membership";
+}
+
+export function getPaymentKindBadgeVariant(
+  kind: PaymentKind | undefined,
+): "default" | "info" {
+  return kind === "admission" ? "info" : "default";
 }
 
 export function getPaymentMethodLabel(method: Payment["method"]): string {
@@ -114,6 +125,7 @@ export function PaymentTable({
             <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase text-gray-500">
               <tr>
                 <th className="px-6 py-3 font-medium">Customer</th>
+                <th className="px-6 py-3 font-medium">Kind</th>
                 <th className="px-6 py-3 font-medium">Amount</th>
                 <th className="px-6 py-3 font-medium">Method</th>
                 <th className="px-6 py-3 font-medium">Date</th>
@@ -126,6 +138,11 @@ export function PaymentTable({
                 <tr key={payment.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-medium text-gray-900">
                     {payment.customer_name}
+                  </td>
+                  <td className="px-6 py-4">
+                    <Badge variant={getPaymentKindBadgeVariant(payment.kind)}>
+                      {getPaymentKindLabel(payment.kind)}
+                    </Badge>
                   </td>
                   <td className="px-6 py-4 text-gray-700">
                     ₹{Number(payment.amount).toLocaleString()}

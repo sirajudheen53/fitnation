@@ -4,17 +4,18 @@ import { useState } from "react";
 import { resolveMediaUrl } from "@/lib/api";
 import type { Customer } from "@/types/customer";
 
-/** Best display name for a customer: backend `name`, legacy parts, then email. */
+/** Best display name for a customer: backend `name`, legacy parts, then email/phone. */
 export function getCustomerDisplayName(customer: {
   name?: string;
-  email: string;
+  email?: string | null;
+  phone?: string | null;
   first_name?: string;
   last_name?: string;
 }): string {
   const fromName = (customer.name ?? "").trim();
   if (fromName) return fromName;
   const fromParts = `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim();
-  return fromParts || customer.email;
+  return fromParts || customer.email || customer.phone || "Unnamed customer";
 }
 
 /** Up to two leading initials from a display name (falls back to "?"). */

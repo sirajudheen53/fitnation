@@ -12,36 +12,92 @@ import {
   Users,
   Building2,
   Activity,
+  MapPin,
+  Home,
+  Receipt,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { Button, Input, Alert } from "@/components/ui";
 import type { Customer, CustomerFormData, Gender } from "@/types/customer";
+import type { PaymentMethod } from "@/types/payment";
 import { errorMessage, resolveMediaUrl } from "@/lib/api";
 import { ProfilePhotoPicker, validateProfilePhoto } from "./ProfilePhotoPicker";
 
-const customerSchema = z.object({
-  email: z.string().email("Please enter a valid email"),
-  first_name: z.string().min(1, "First name is required").max(100),
-  last_name: z.string().min(1, "Last name is required").max(100),
-  phone: z.string().max(20).optional().or(z.literal("")),
-  // Untouched <select>/<input> elements submit as "" (or NaN for numbers),
-  // so tolerate empty values instead of failing validation with cryptic
-  // "Invalid enum value" messages.
-  gender: z
-    .enum(["male", "female", "other", "prefer_not_to_say"])
-    .optional()
-    .or(z.literal("")),
-  date_of_birth: z.string().optional().or(z.literal("")),
-  branch_id: z
-    .union([
-      z.literal("").transform(() => undefined),
-      z.nan().transform(() => undefined),
-      z.coerce.number().int().positive(),
-    ])
-    .optional(),
-  emergency_contact_name: z.string().max(100).optional().or(z.literal("")),
-  emergency_contact_phone: z.string().max(20).optional().or(z.literal("")),
-  is_active: z.boolean().default(true),
-});
+// Admission fees are collected as cash/UPI/card/other at the desk (msg 2438);
+// online (Razorpay) and bank transfers go through the payments page.
+const ADMISSION_METHODS: { value: PaymentMethod; label: string }[] = [
+  { value: "cash", label: "Cash" },
+  { value: "upi", label: "UPI" },
+  { value: "card", label: "Card" },
+  { value: "other", label: "Other" },
+];
+
+const customerSchema = z
+  .object({
+    // Email is optional (msg 2438) — validate the format only when non-empty;
+    // the "email or phone" rule is enforced in superRefine below.
+    email: z
+      .string()
+      .trim()
+      .email("Please enter a valid email")
+      .optional()
+      .or(z.literal("")),
+    first_name: z.string().min(1, "First name is required").max(100),
+    last_name: z.string().max(100).optional().or(z.literal("")),
+    phone: z.string().max(20).optional().or(z.literal("")),
+    // Untouched <select>/<input> elements submit as "" (or NaN for numbers),
+    // so tolerate empty values instead of failing validation with cryptic
+    // "Invalid enum value" messages.
+    gender: z
+      .enum(["male", "female", "other", "prefer_not_to_say"])
+      .optional()
+      .or(z.literal("")),
+    date_of_birth: z.string().optional().or(z.literal("")),
+    branch_id: z
+      .union([
+        z.literal("").transform(() => undefined),
+        z.nan().transform(() => undefined),
+        z.coerce.number().int().positive(),
+      ])
+      .optional(),
+    emergency_contact_name: z.string().max(100).optional().or(z.literal("")),
+    emergency_contact_phone: z.string().max(20).optional().or(z.literal("")),
+    address_street: z.string().max(300).optional().or(z.literal("")),
+    address_city: z.string().max(100).optional().or(z.literal("")),
+    address_state: z.string().max(100).optional().or(z.literal("")),
+    address_postal_code: z.string().max(20).optional().or(z.literal("")),
+    // Admission-fee capture (create flow): the section keeps its amount as a
+    // string and is only turned into a fee when a positive amount is entered.
+    admission_amount: z.string().optional().or(z.literal("")),
+    admission_timing: z.enum(["paid_now", "pending"]).default("paid_now"),
+    admission_method: z
+      .enum(["cash", "upi", "card", "other"])
+      .default("cash"),
+    is_active: z.boolean().default(true),
+  })
+  .superRefine((data, ctx) => {
+    // A customer needs at least one contact channel (backend rejects with
+    // "Provide an email or a phone number." — surface it on the form first).
+    if (!data.email?.trim() && !data.phone?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["email"],
+        message: "Email or phone is required",
+      });
+    }
+    const amount = data.admission_amount?.trim();
+    if (amount) {
+      const parsed = Number(amount);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["admission_amount"],
+          message: "Enter a valid amount",
+        });
+      }
+    }
+  });
 
 type CustomerSchemaData = z.infer<typeof customerSchema>;
 
@@ -67,6 +123,7 @@ export function CustomerForm({
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<CustomerSchemaData>({
     resolver: zodResolver(customerSchema),
@@ -80,6 +137,13 @@ export function CustomerForm({
       branch_id: undefined,
       emergency_contact_name: "",
       emergency_contact_phone: "",
+      address_street: "",
+      address_city: "",
+      address_state: "",
+      address_postal_code: "",
+      admission_amount: "",
+      admission_timing: "paid_now",
+      admission_method: "cash",
       is_active: true,
       ...defaultValues,
     },
@@ -89,6 +153,8 @@ export function CustomerForm({
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoRemoved, setPhotoRemoved] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  // Admission-fee capture is a create-flow affordance; collapsed by default.
+  const [feeOpen, setFeeOpen] = useState(false);
   const existingPhotoUrl = resolveMediaUrl(customer?.profile_photo ?? null);
 
   useEffect(() => {
@@ -98,7 +164,7 @@ export function CustomerForm({
       const legacyLast =
         customer.last_name || customer.name?.split(/\s+/).slice(1).join(" ") || "";
       reset({
-        email: customer.email,
+        email: customer.email ?? "",
         first_name: legacyFirst,
         last_name: legacyLast,
         phone: customer.phone || "",
@@ -107,6 +173,13 @@ export function CustomerForm({
         branch_id: customer.branch ?? undefined,
         emergency_contact_name: customer.emergency_contact_name || "",
         emergency_contact_phone: customer.emergency_contact_phone || "",
+        address_street: customer.address_street || "",
+        address_city: customer.address_city || "",
+        address_state: customer.address_state || "",
+        address_postal_code: customer.address_postal_code || "",
+        admission_amount: "",
+        admission_timing: "paid_now",
+        admission_method: "cash",
         is_active: customer.is_active,
       });
       // Reloaded customer - drop any stale picker state.
@@ -117,10 +190,11 @@ export function CustomerForm({
   }, [customer, reset]);
 
   const handleFormSubmit = async (data: CustomerSchemaData) => {
+    const feeAmount = Number(data.admission_amount?.trim() || 0);
     const payload: CustomerFormData = {
-      email: data.email,
+      email: data.email?.trim() || "",
       first_name: data.first_name,
-      last_name: data.last_name,
+      last_name: data.last_name || "",
       phone: data.phone || undefined,
       gender: data.gender || undefined,
       date_of_birth: data.date_of_birth || undefined,
@@ -130,6 +204,18 @@ export function CustomerForm({
           : undefined,
       emergency_contact_name: data.emergency_contact_name || undefined,
       emergency_contact_phone: data.emergency_contact_phone || undefined,
+      address_street: data.address_street || "",
+      address_city: data.address_city || "",
+      address_state: data.address_state || "",
+      address_postal_code: data.address_postal_code || "",
+      admission_fee:
+        !customer && feeAmount > 0
+          ? {
+              amount: feeAmount,
+              status: data.admission_timing === "pending" ? "pending" : "completed",
+              method: data.admission_method,
+            }
+          : undefined,
       is_active: data.is_active,
       profile_photo: photoFile ?? (photoRemoved ? null : undefined),
     };
@@ -161,6 +247,7 @@ export function CustomerForm({
   };
 
   const isActive = watch("is_active");
+  const feeTiming = watch("admission_timing");
 
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="max-w-3xl space-y-6">
@@ -267,6 +354,118 @@ export function CustomerForm({
           {...register("emergency_contact_phone")}
         />
       </div>
+
+      {/* Address (msg 2438): maps to the backend address_* fields. */}
+      <div className="space-y-3">
+        <p className="flex items-center gap-2 text-sm font-medium text-gray-700">
+          <MapPin className="h-4 w-4 text-brand-600" /> Address
+        </p>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Input
+            label="Street"
+            placeholder="12 MG Road"
+            icon={<Home className="h-4 w-4" />}
+            error={errors.address_street?.message}
+            {...register("address_street")}
+          />
+          <Input
+            label="City"
+            placeholder="Bengaluru"
+            error={errors.address_city?.message}
+            {...register("address_city")}
+          />
+          <Input
+            label="State"
+            placeholder="Karnataka"
+            error={errors.address_state?.message}
+            {...register("address_state")}
+          />
+          <Input
+            label="Postal code"
+            placeholder="560001"
+            error={errors.address_postal_code?.message}
+            {...register("address_postal_code")}
+          />
+        </div>
+      </div>
+
+      {/* Admission fee capture (create flow only) — recorded as a payment
+          row (kind=admission) by the caller after the customer is created. */}
+      {!customer && (
+        <div className="rounded-lg border border-gray-200 bg-white">
+          <button
+            type="button"
+            onClick={() => {
+              if (feeOpen) {
+                // Collapsing withdraws the fee — drop any entered amount.
+                setValue("admission_amount", "");
+              }
+              setFeeOpen((open) => !open);
+            }}
+            aria-expanded={feeOpen}
+            className="flex w-full items-center gap-3 p-4 text-left"
+          >
+            {feeOpen ? (
+              <ChevronDown className="h-4 w-4 text-gray-500" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-gray-500" />
+            )}
+            <Receipt className="h-5 w-5 text-brand-600" />
+            <span className="text-sm font-medium text-gray-700">
+              Admission fee <span className="font-normal text-gray-400">(optional)</span>
+            </span>
+          </button>
+          {feeOpen && (
+            <div className="grid grid-cols-1 gap-4 border-t border-gray-200 p-4 md:grid-cols-3">
+              <Input
+                label="Amount (₹)"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="1000"
+                error={errors.admission_amount?.message}
+                {...register("admission_amount")}
+              />
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="admission_timing"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Collection
+                </label>
+                <select
+                  id="admission_timing"
+                  {...register("admission_timing")}
+                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="paid_now">Paid now</option>
+                  <option value="pending">Pending</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="admission_method"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Method
+                </label>
+                <select
+                  id="admission_method"
+                  disabled={feeTiming === "pending"}
+                  {...register("admission_method")}
+                  className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500"
+                >
+                  {ADMISSION_METHODS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-4">
         <Activity className="h-5 w-5 text-brand-600" />

@@ -21,15 +21,19 @@ import {
   fetchBodyMeasurements,
   fetchHealthProfile,
   fetchProgressPhotos,
+  fetchPayments,
   createFitnessGoal,
   updateFitnessGoal,
   createBodyMeasurement,
   updateCustomerHealthProfile,
   createProgressPhoto,
+  createPayment,
+  updatePayment,
   errorMessage,
 } from "@/lib/api";
 import { getCustomerDisplayName, getCustomerMembershipStatus } from "@/features/customers/components/CustomerTable";
 import type { Customer } from "@/types/customer";
+import type { Payment, PaymentMethod } from "@/types/payment";
 import type {
   BodyMeasurement,
   BodyMeasurementFormData,
@@ -57,6 +61,9 @@ export default function CustomerDetailPage() {
   const [healthProfile, setHealthProfile] = useState<HealthProfile | null>(null);
   const [healthLoaded, setHealthLoaded] = useState(false);
   const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
+  const [admissionPayments, setAdmissionPayments] = useState<Payment[]>([]);
+  const [recordingFee, setRecordingFee] = useState(false);
+  const [historyPayments, setHistoryPayments] = useState<Payment[] | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +94,16 @@ export default function CustomerDetailPage() {
               ? prev
               : [sum.latest_measurement as BodyMeasurement, ...prev],
           );
+        }
+        // Admission-fee card data (msg 2438) — non-fatal if it fails.
+        try {
+          const admission = await fetchPayments(authToken, {
+            customer: id,
+            kind: "admission",
+          });
+          setAdmissionPayments(admission.results);
+        } catch {
+          /* card falls back to its empty state */
         }
       } catch (err) {
         setError(errorMessage(err));
@@ -139,11 +156,20 @@ export default function CustomerDetailPage() {
         /* noop */
       }
     }
+    async function loadHistoryPayments() {
+      try {
+        const res = await fetchPayments(authToken, { customer: id });
+        setHistoryPayments(res.results);
+      } catch {
+        setHistoryPayments([]);
+      }
+    }
 
     if (activeTab === "goals" && !goalsLoaded) loadGoals();
     if (activeTab === "measurements" && !measurementsLoaded) loadMeasurements();
     if (activeTab === "health" && !healthLoaded) loadHealth();
     if (activeTab === "photos") loadPhotos();
+    if (activeTab === "payments" && historyPayments === null) loadHistoryPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, customer, summary]);
 
@@ -231,6 +257,57 @@ export default function CustomerDetailPage() {
     }
   };
 
+  /** Refresh the admission-fee card after a record/collect. */
+  const reloadAdmissionPayments = async (authToken: string) => {
+    const admission = await fetchPayments(authToken, { customer: id, kind: "admission" });
+    setAdmissionPayments(admission.results);
+  };
+
+  /**
+   * Collect the admission fee (msg 2438): PATCH the pending admission payment
+   * to completed when one exists, otherwise POST a new kind=admission payment.
+   * Resolves true when the fee was recorded so the dialog can close.
+   */
+  const recordAdmissionFee = async (input: {
+    amount: number;
+    method: PaymentMethod;
+  }): Promise<boolean> => {
+    const token = getToken();
+    if (!token) return false;
+    setRecordingFee(true);
+    try {
+      const pending = [...admissionPayments]
+        .filter((p) => p.status === "pending")
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+      if (pending) {
+        await updatePayment(
+          pending.id,
+          { amount: input.amount, method: input.method, status: "completed" },
+          token,
+        );
+      } else {
+        await createPayment(
+          {
+            customer_id: id,
+            amount: input.amount,
+            method: input.method,
+            status: "completed",
+            kind: "admission",
+          },
+          token,
+        );
+      }
+      await reloadAdmissionPayments(token);
+      toast.success("Admission fee recorded");
+      return true;
+    } catch (err) {
+      toast.error(errorMessage(err));
+      return false;
+    } finally {
+      setRecordingFee(false);
+    }
+  };
+
   const statusBadge = customer
     ? getCustomerMembershipStatus(customer)
     : { label: "—", variant: "default" as const };
@@ -282,7 +359,7 @@ export default function CustomerDetailPage() {
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <div className="flex-1">
-              <p className="text-sm text-gray-500">{customer.email}</p>
+              <p className="text-sm text-gray-500">{customer.email || "No email on file"}</p>
               <p className="text-sm text-gray-500">Phone: {customer.phone || "—"}</p>
             </div>
             <div className="text-right">
@@ -296,7 +373,15 @@ export default function CustomerDetailPage() {
           </div>
 
           <div>
-            {activeTab === "overview" && <OverviewTab customer={customer} summary={summary} />}
+            {activeTab === "overview" && (
+              <OverviewTab
+                customer={customer}
+                summary={summary}
+                admissionPayments={admissionPayments}
+                recordingFee={recordingFee}
+                onRecordAdmissionFee={recordAdmissionFee}
+              />
+            )}
             {activeTab === "goals" && (
               <FitnessGoalsTab
                 goals={goals}
@@ -331,7 +416,13 @@ export default function CustomerDetailPage() {
                 onAdd={addPhoto}
               />
             )}
-            {activeTab === "payments" && <PaymentHistoryTab customer={customer} />}
+            {activeTab === "payments" && (
+              <PaymentHistoryTab
+                customer={customer}
+                payments={historyPayments ?? undefined}
+                loading={historyPayments === null}
+              />
+            )}
             {activeTab === "access" && <AccessControlTab customer={customer} />}
           </div>
         </div>
