@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="10">
+  <title>Biometrics debug — ADMS traffic</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; color: #1a1a1a; background: #fafafa; }
+    h1 { font-size: 1.25rem; margin: 0 0 4px; }
+    h2 { font-size: 1rem; margin: 28px 0 4px; }
+    .muted { color: #777; font-weight: normal; font-size: 0.8rem; }
+    form.filter { margin: 12px 0; }
+    form.filter input { padding: 3px 6px; }
+    table { border-collapse: collapse; width: 100%; background: #fff; margin-top: 6px; }
+    th, td { border: 1px solid #ddd; padding: 4px 8px; font-size: 0.78rem; text-align: left; vertical-align: top; }
+    th { background: #eee; }
+    code { white-space: pre-wrap; word-break: break-all; }
+    .ok { color: #0a7d24; font-weight: 600; }
+    .bad { color: #c02626; font-weight: 600; }
+    .count { display: inline-block; background: #eee; border-radius: 8px; padding: 0 6px; }
+  </style>
+</head>
+<body>
+  <h1>Biometrics debug — ADMS device traffic</h1>
+  <span class="muted">Read-only live view &middot; auto-refreshes every 10s</span>
+
+  <form class="filter" method="get">
+    <label>Serial number: <input type="text" name="sn" value="{{ sn }}"></label>
+    <button type="submit">Filter</button>
+    {% if sn %}<a href="?">clear</a>{% endif %}
+  </form>
+
+  <h2>Devices <span class="muted">({{ devices|length }})</span></h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Serial number</th><th>Tenant</th><th>Active</th><th>Last seen</th><th>Requests today</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for device in devices %}
+      <tr>
+        <td><a href="?sn={{ device.serial_number|urlencode }}">{{ device.serial_number }}</a></td>
+        <td>{{ device.tenant.name }}</td>
+        <td>{% if device.is_active %}<span class="ok">yes</span>{% else %}<span class="bad">no</span>{% endif %}</td>
+        <td>{% if device.last_seen_at %}{{ device.last_seen_at }}{% else %}<span class="muted">never</span>{% endif %}</td>
+        <td><span class="count">{{ device.today_request_count }}</span></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="muted">No devices{% if sn %} matching sn={{ sn }}{% endif %}.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Raw punch lines <span class="muted">(latest {{ row_limit }}, newest first)</span></h2>
+  <table>
+    <thead>
+      <tr><th>Received at</th><th>Device SN</th><th>Tenant</th><th>Table</th><th>Raw line (first {{ preview_chars }} chars)</th></tr>
+    </thead>
+    <tbody>
+      {% for punch in punches %}
+      <tr>
+        <td>{{ punch.received_at }}</td>
+        <td><a href="?sn={{ punch.device.serial_number|urlencode }}">{{ punch.device.serial_number }}</a></td>
+        <td>{{ punch.device.tenant.name }}</td>
+        <td>{{ punch.table_name }}</td>
+        <td><code>{{ punch.raw_line|truncatechars:preview_chars }}</code></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="muted">No raw punch rows yet{% if sn %} for sn={{ sn }}{% endif %}.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>ADMS requests <span class="muted">(latest {{ row_limit }}, newest first)</span></h2>
+  <table>
+    <thead>
+      <tr><th>Created at</th><th>Method</th><th>Path</th><th>SN</th><th>Device</th><th>Body (first {{ preview_chars }} chars)</th></tr>
+    </thead>
+    <tbody>
+      {% for log in requests %}
+      <tr>
+        <td>{{ log.created_at }}</td>
+        <td><span class="muted" title="AdmsRequestLog does not persist the HTTP verb">&mdash;</span></td>
+        <td><code>{{ log.path }}</code>{% if log.query_string %} <code class="muted">?{{ log.query_string }}</code>{% endif %}</td>
+        <td>{% if log.sn %}{{ log.sn }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>
+          {% if log.device %}
+            <span class="ok">registered</span> {{ log.device.serial_number }} &middot; {{ log.tenant.name }}
+          {% else %}
+            <span class="bad">unknown &rarr; 403</span>
+          {% endif %}
+        </td>
+        <td><code>{{ log.raw_body|truncatechars:preview_chars }}</code></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6" class="muted">No ADMS requests logged yet{% if sn %} for sn={{ sn }}{% endif %}.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

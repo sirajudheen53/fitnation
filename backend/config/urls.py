@@ -6,6 +6,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from apps.access.adms_views import cdata, devicecmd, getrequest
+from apps.access.debug_views import biometrics_debug
 from apps.core.healthcheck import HealthCheckView
 from apps.vendors.views import SubscriptionPlanListView
 
@@ -16,6 +17,8 @@ urlpatterns = [
     path("iclock/cdata", cdata, name="adms-cdata"),
     path("iclock/getrequest", getrequest, name="adms-getrequest"),
     path("iclock/devicecmd", devicecmd, name="adms-devicecmd"),
+    # Live ADMS traffic debug dashboard (staff-only, server-rendered).
+    path("debug/biometrics/", biometrics_debug, name="biometrics-debug"),
     # Health check
     path("api/health/", HealthCheckView.as_view(), name="health-check"),
     # API v1 routes
