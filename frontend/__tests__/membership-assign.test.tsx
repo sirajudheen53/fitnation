@@ -269,3 +269,42 @@ describe("AssignMembershipPage end-date suggestion", () => {
     expect(screen.getByLabelText("End date")).toHaveValue("2026-12-15");
   });
 });
+
+describe("AssignMembershipPage customer option label", () => {
+  async function renderWithCustomers(...customers: Customer[]) {
+    mockedFetchCustomers.mockResolvedValue({
+      count: customers.length,
+      next: null,
+      previous: null,
+      results: customers,
+    });
+    render(<AssignMembershipPage />);
+    await waitFor(() => expect(screen.getByLabelText("Customer")).toBeInTheDocument());
+  }
+
+  function customerOption(): string {
+    const select = screen.getByLabelText("Customer") as HTMLSelectElement;
+    const option = Array.from(select.options).find((o) => o.value === "5");
+    expect(option).toBeDefined();
+    return option!.textContent ?? "";
+  }
+
+  it("labels a named customer with first + last name only (no email)", async () => {
+    await renderWithCustomers(customer());
+    expect(customerOption()).toBe("Arjun Kumar");
+  });
+
+  it("falls back to email when first and last name are both empty", async () => {
+    await renderWithCustomers(
+      customer({ name: "", first_name: "", last_name: "", email: "only@example.com" }),
+    );
+    expect(customerOption()).toBe("only@example.com");
+  });
+
+  it("falls back to phone for a phone-only customer (no name, no email)", async () => {
+    await renderWithCustomers(
+      customer({ name: "", first_name: "", last_name: "", email: null }),
+    );
+    expect(customerOption()).toBe("+91 98765 43210");
+  });
+});

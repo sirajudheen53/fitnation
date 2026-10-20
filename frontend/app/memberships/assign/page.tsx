@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Users, CreditCard, Calendar, DollarSign } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button, Input, Alert, Spinner } from "@/components/ui";
+import { getCustomerDisplayName } from "@/features/customers/components/CustomerAvatar";
 import {
   fetchMembershipPlans,
   fetchCustomers,
@@ -205,7 +206,7 @@ export default function AssignMembershipPage() {
                 <option value="">Select customer</option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.first_name} {c.last_name} ({c.email})
+                    {getCustomerDisplayName(c)}
                   </option>
                 ))}
               </select>
