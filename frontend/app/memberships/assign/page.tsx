@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Users, CreditCard, Calendar, DollarSign } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button, Input, Alert, Spinner } from "@/components/ui";
+import { RenewalHint } from "@/features/memberships/components/RenewalHint";
 import { getCustomerDisplayName } from "@/features/customers/components/CustomerAvatar";
 import {
   fetchMembershipPlans,
@@ -191,6 +192,8 @@ export default function AssignMembershipPage() {
       {!loading && (
         <form onSubmit={handleSubmit(handleFormSubmit)} className="max-w-3xl space-y-6">
           {error != null && <Alert variant="error">{errorMessage(error)}</Alert>}
+
+          <RenewalHint />
 
           <div className="space-y-1.5">
             <label htmlFor="customer_id" className="block text-sm font-medium text-gray-700">

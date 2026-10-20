@@ -3,14 +3,21 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Plus, Pencil } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { MembershipTable } from "@/features/memberships/components/MembershipTable";
+import {
+  MembershipTable,
+  formatMembershipDate,
+} from "@/features/memberships/components/MembershipTable";
+import { RenewMembershipDialog } from "@/features/memberships/components/RenewMembershipDialog";
+import { RenewalHint } from "@/features/memberships/components/RenewalHint";
 import { Button, Alert, Spinner, Card, CardHeader, CardBody, Badge } from "@/components/ui";
 import {
   fetchMembershipPlans,
   fetchMemberships,
   cancelMembership,
+  renewMembership,
   errorMessage,
 } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -24,6 +31,8 @@ export default function MembershipsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<number | null>(null);
+  const [renewTarget, setRenewTarget] = useState<Membership | null>(null);
+  const [renewing, setRenewing] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const storedUser = localStorage.getItem("fbos_user");
@@ -79,6 +88,25 @@ export default function MembershipsPage() {
       setError(errorMessage(err));
     } finally {
       setCancelling(null);
+    }
+  };
+
+  /** Renew extends the SAME membership (end_date += plan days, status → active). */
+  const handleRenew = async (days: number | undefined) => {
+    if (!renewTarget) return;
+    const token = getToken();
+    if (!token) return;
+    const authToken: string = token;
+    setRenewing(true);
+    try {
+      const updated = await renewMembership(renewTarget.id, authToken, days);
+      setMemberships((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+      toast.success(`Renewed until ${formatMembershipDate(updated.end_date)}`);
+      setRenewTarget(null);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setRenewing(false);
     }
   };
 
@@ -166,9 +194,11 @@ export default function MembershipsPage() {
               <h2 className="text-lg font-semibold text-gray-900">Active memberships</h2>
             </CardHeader>
             <CardBody>
+              <RenewalHint className="mb-4" />
               <MembershipTable
                 memberships={memberships}
                 onCancel={handleCancel}
+                onRenew={setRenewTarget}
                 loading={cancelling !== null}
               />
               {cancelling !== null && (
@@ -179,6 +209,15 @@ export default function MembershipsPage() {
             </CardBody>
           </Card>
         </div>
+      )}
+      {renewTarget && (
+        <RenewMembershipDialog
+          membership={renewTarget}
+          plans={plans}
+          busy={renewing}
+          onConfirm={handleRenew}
+          onClose={() => setRenewTarget(null)}
+        />
       )}
     </DashboardLayout>
   );

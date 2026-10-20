@@ -22,7 +22,14 @@ import {
   getPaymentMethodLabel,
   getPaymentStatusLabel,
 } from "@/features/payments/components/PaymentTable";
+import {
+  STATUS_VARIANTS,
+  formatMembershipDate,
+  getMembershipStatusLabel,
+} from "@/features/memberships/components/MembershipTable";
+import { RenewMembershipDialog } from "@/features/memberships/components/RenewMembershipDialog";
 import type { Customer } from "@/types/customer";
+import type { Membership, MembershipPlan } from "@/types/membership";
 import type { Payment, PaymentMethod } from "@/types/payment";
 import type { ProgressSummary } from "@/types/customer-detail";
 
@@ -110,6 +117,18 @@ interface OverviewTabProps {
   onRecordAdmissionFee?: (
     input: AdmissionFeeInput,
   ) => Promise<boolean>;
+  /** This customer's memberships (null/undefined = not loaded → card hidden). */
+  memberships?: Membership[] | null;
+  /** Tenant plans, for the renewal duration preview in the confirm dialog. */
+  membershipPlans?: MembershipPlan[];
+  /**
+   * Renew a membership — the caller POSTs the renewal and updates its own
+   * state. Resolves the updated membership (dialog closes) or null (stays open).
+   */
+  onRenewMembership?: (
+    membership: Membership,
+    days?: number,
+  ) => Promise<Membership | null>;
 }
 
 export function OverviewTab({
@@ -118,6 +137,9 @@ export function OverviewTab({
   admissionPayments,
   recordingFee = false,
   onRecordAdmissionFee,
+  memberships,
+  membershipPlans = [],
+  onRenewMembership,
 }: OverviewTabProps) {
   const profile = summary?.health_profile ?? null;
   const activeGoals = summary?.fitness_goals?.filter((g) => g.status === "active").length ?? 0;
@@ -127,6 +149,9 @@ export function OverviewTab({
   const [feeAmount, setFeeAmount] = useState("");
   const [feeMethod, setFeeMethod] = useState<PaymentMethod>("cash");
   const [feeError, setFeeError] = useState<string | null>(null);
+
+  const [renewTarget, setRenewTarget] = useState<Membership | null>(null);
+  const [renewing, setRenewing] = useState(false);
 
   const measurement = summary?.latest_measurement ?? null;
 
@@ -352,6 +377,48 @@ export function OverviewTab({
         </div>
       )}
 
+      {/* Memberships + renewal */}
+      {memberships !== null && memberships !== undefined && (
+        <Card>
+          <CardHeader>
+            <h3 className="text-lg font-semibold text-gray-900">Memberships</h3>
+          </CardHeader>
+          <CardBody className="space-y-3">
+            {memberships.length === 0 ? (
+              <p className="text-sm text-gray-500">No memberships on file.</p>
+            ) : (
+              memberships.map((membership) => (
+                <div
+                  key={membership.id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 p-4"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900">
+                        {membership.plan_name}
+                      </span>
+                      <Badge variant={STATUS_VARIANTS[membership.status]}>
+                        {getMembershipStatusLabel(membership.status)}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {formatMembershipDate(membership.start_date)} –{" "}
+                      {formatMembershipDate(membership.end_date)}
+                    </p>
+                  </div>
+                  {(membership.status === "active" || membership.status === "expired") &&
+                    onRenewMembership && (
+                      <Button size="sm" variant="outline" onClick={() => setRenewTarget(membership)}>
+                        Renew
+                      </Button>
+                    )}
+                </div>
+              ))
+            )}
+          </CardBody>
+        </Card>
+      )}
+
       {/* Tab links */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Link
@@ -401,6 +468,22 @@ export function OverviewTab({
           </div>
         </Link>
       </div>
+
+      {/* Renewal confirmation */}
+      {renewTarget && onRenewMembership && (
+        <RenewMembershipDialog
+          membership={renewTarget}
+          plans={membershipPlans}
+          busy={renewing}
+          onConfirm={async (days) => {
+            setRenewing(true);
+            const updated = await onRenewMembership(renewTarget, days);
+            setRenewing(false);
+            if (updated) setRenewTarget(null);
+          }}
+          onClose={() => setRenewTarget(null)}
+        />
+      )}
 
       {/* Attendance */}
       <Card>

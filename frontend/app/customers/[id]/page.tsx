@@ -29,10 +29,15 @@ import {
   createProgressPhoto,
   createPayment,
   updatePayment,
+  fetchMemberships,
+  fetchMembershipPlans,
+  renewMembership,
   errorMessage,
 } from "@/lib/api";
 import { getCustomerDisplayName, getCustomerMembershipStatus } from "@/features/customers/components/CustomerTable";
+import { formatMembershipDate } from "@/features/memberships/components/MembershipTable";
 import type { Customer } from "@/types/customer";
+import type { Membership, MembershipPlan } from "@/types/membership";
 import type { Payment, PaymentMethod } from "@/types/payment";
 import type {
   BodyMeasurement,
@@ -64,6 +69,9 @@ export default function CustomerDetailPage() {
   const [admissionPayments, setAdmissionPayments] = useState<Payment[]>([]);
   const [recordingFee, setRecordingFee] = useState(false);
   const [historyPayments, setHistoryPayments] = useState<Payment[] | null>(null);
+  // This customer's memberships (null = not loaded / load failed → card hidden).
+  const [memberships, setMemberships] = useState<Membership[] | null>(null);
+  const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +112,17 @@ export default function CustomerDetailPage() {
           setAdmissionPayments(admission.results);
         } catch {
           /* card falls back to its empty state */
+        }
+        // Membership card + renewal preview — non-fatal if it fails.
+        try {
+          const [membershipRes, planRes] = await Promise.all([
+            fetchMemberships(authToken),
+            fetchMembershipPlans(authToken),
+          ]);
+          setMemberships(membershipRes.results.filter((m) => m.customer_id === id));
+          setMembershipPlans(planRes.results);
+        } catch {
+          /* card stays hidden */
         }
       } catch (err) {
         setError(errorMessage(err));
@@ -308,6 +327,30 @@ export default function CustomerDetailPage() {
     }
   };
 
+  /**
+   * Renew one of the customer's memberships: extends the SAME membership
+   * (end_date += days, status → active). Resolves the updated membership so
+   * the overview card can close its dialog, or null on failure.
+   */
+  const handleRenewMembership = async (
+    membership: Membership,
+    days?: number,
+  ): Promise<Membership | null> => {
+    const token = getToken();
+    if (!token) return null;
+    try {
+      const updated = await renewMembership(membership.id, token, days);
+      setMemberships(
+        (prev) => prev?.map((m) => (m.id === updated.id ? updated : m)) ?? prev,
+      );
+      toast.success(`Renewed until ${formatMembershipDate(updated.end_date)}`);
+      return updated;
+    } catch (err) {
+      toast.error(errorMessage(err));
+      return null;
+    }
+  };
+
   const statusBadge = customer
     ? getCustomerMembershipStatus(customer)
     : { label: "—", variant: "default" as const };
@@ -380,6 +423,9 @@ export default function CustomerDetailPage() {
                 admissionPayments={admissionPayments}
                 recordingFee={recordingFee}
                 onRecordAdmissionFee={recordAdmissionFee}
+                memberships={memberships}
+                membershipPlans={membershipPlans}
+                onRenewMembership={handleRenewMembership}
               />
             )}
             {activeTab === "goals" && (

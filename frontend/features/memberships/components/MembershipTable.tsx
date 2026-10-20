@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Eye, Ban } from "lucide-react";
+import { Eye, Ban, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui";
 import type { Membership, MembershipStatus } from "@/types/membership";
 
-const STATUS_VARIANTS: Record<MembershipStatus, "success" | "warning" | "danger" | "info"> = {
+export const STATUS_VARIANTS: Record<
+  MembershipStatus,
+  "success" | "warning" | "danger" | "info"
+> = {
   active: "success",
   pending: "warning",
   expired: "danger",
@@ -30,12 +33,15 @@ export function formatMembershipDate(date: string | null): string {
 interface MembershipTableProps {
   memberships: Membership[];
   onCancel?: (membership: Membership) => void;
+  /** Opens the renew confirmation for the row (active + expired only). */
+  onRenew?: (membership: Membership) => void;
   loading?: boolean;
 }
 
 export function MembershipTable({
   memberships,
   onCancel,
+  onRenew,
   loading = false,
 }: MembershipTableProps) {
   if (loading) {
@@ -99,6 +105,16 @@ export function MembershipTable({
                   >
                     <Eye className="h-4 w-4" />
                   </Link>
+                  {(membership.status === "active" || membership.status === "expired") &&
+                    onRenew && (
+                      <button
+                        onClick={() => onRenew(membership)}
+                        className="rounded-lg p-2 text-brand-600 hover:bg-brand-50 hover:text-brand-700"
+                        aria-label="Renew membership"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </button>
+                    )}
                   {membership.status === "active" && onCancel && (
                     <button
                       onClick={() => onCancel(membership)}

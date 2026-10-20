@@ -450,6 +450,23 @@ export function cancelMembership(id: number | string, token: string): Promise<Me
   });
 }
 
+/**
+ * Renew a membership: extends end_date by `days` (omitted → the backend
+ * defaults to plan.duration_days, else 30), sets status back to ACTIVE and
+ * re-syncs door access. Returns the updated membership.
+ */
+export function renewMembership(
+  id: number | string,
+  token: string,
+  days?: number,
+): Promise<Membership> {
+  return request<Membership>(`/memberships/memberships/${id}/renewal/`, {
+    method: "POST",
+    body: days !== undefined ? { days } : undefined,
+    token,
+  });
+}
+
 /* Coupons */
 
 export function fetchCoupons(token: string): Promise<CouponListResponse> {
