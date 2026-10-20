@@ -64,6 +64,23 @@ export function formatStatValue(
   return "—";
 }
 
+/**
+ * "as of <date>" freshness caption for a stat value sourced from the latest
+ * body measurement. Undefined when the candidate is empty (the value came
+ * from health_profile or nothing at all) or the measurement has no usable
+ * date — those cards stay caption-free.
+ */
+export function measurementAsOf(
+  candidate: string | number | null | undefined,
+  measurement: { date_logged: string } | null | undefined,
+): string | undefined {
+  if (candidate === null || candidate === undefined || candidate === "") {
+    return undefined;
+  }
+  const formatted = formatMemberSince(measurement?.date_logged);
+  return formatted === "—" ? undefined : `as of ${formatted}`;
+}
+
 /** Latest admission payment for the customer (newest created_at wins). */
 export function latestAdmissionPayment(
   payments: Payment[] | undefined,
@@ -111,7 +128,14 @@ export function OverviewTab({
   const [feeMethod, setFeeMethod] = useState<PaymentMethod>("cash");
   const [feeError, setFeeError] = useState<string | null>(null);
 
-  const stats: { label: string; value: string; icon: React.ReactNode }[] = [
+  const measurement = summary?.latest_measurement ?? null;
+
+  const stats: {
+    label: string;
+    value: string;
+    icon: React.ReactNode;
+    caption?: string;
+  }[] = [
     {
       label: "Member since",
       value: formatMemberSince(customer.created_at),
@@ -119,12 +143,14 @@ export function OverviewTab({
     },
     {
       label: "BMI",
-      value: formatStatValue(summary?.latest_measurement?.bmi, profile?.bmi),
+      value: formatStatValue(measurement?.bmi, profile?.bmi),
+      caption: measurementAsOf(measurement?.bmi, measurement),
       icon: <Activity className="h-5 w-5" />,
     },
     {
       label: "Weight (kg)",
-      value: formatStatValue(summary?.latest_measurement?.weight_kg, profile?.weight_kg),
+      value: formatStatValue(measurement?.weight_kg, profile?.weight_kg),
+      caption: measurementAsOf(measurement?.weight_kg, measurement),
       icon: <Hash className="h-5 w-5" />,
     },
     {
@@ -179,6 +205,7 @@ export function OverviewTab({
               <div>
                 <p className="text-lg font-semibold text-gray-900">{s.value}</p>
                 <p className="text-xs text-gray-500">{s.label}</p>
+                {s.caption && <p className="text-xs text-gray-400">{s.caption}</p>}
               </div>
             </div>
           </div>

@@ -28,6 +28,7 @@ import {
   latestAdmissionPayment,
   formatMemberSince,
   formatStatValue,
+  measurementAsOf,
   toNumber,
 } from "@/features/customers/components/OverviewTab";
 import { PaymentHistoryTab } from "@/features/customers/components/PaymentHistoryTab";
@@ -313,6 +314,10 @@ describe("OverviewTab stat cards (BMI / Weight)", () => {
   const statValue = (label: string) =>
     screen.getByText(label).previousElementSibling?.textContent ?? null;
 
+  /** Freshness caption <p> right after the label <p>, or null when absent. */
+  const statCaption = (label: string) =>
+    screen.getByText(label).nextElementSibling?.textContent ?? null;
+
   it("prefers the latest measurement's weight and bmi over the health profile", () => {
     renderWithSummary({
       customer_id: 1,
@@ -325,6 +330,9 @@ describe("OverviewTab stat cards (BMI / Weight)", () => {
     });
     expect(statValue("BMI")).toBe("24.8");
     expect(statValue("Weight (kg)")).toBe("72.4");
+    // Measurement-sourced values carry an as-of freshness caption.
+    expect(statCaption("BMI")).toBe("as of 15 Jan 2026");
+    expect(statCaption("Weight (kg)")).toBe("as of 15 Jan 2026");
   });
 
   it("falls back to the health profile when the latest measurement misses a field", () => {
@@ -339,6 +347,26 @@ describe("OverviewTab stat cards (BMI / Weight)", () => {
     });
     expect(statValue("BMI")).toBe("25.4");
     expect(statValue("Weight (kg)")).toBe("72.4");
+    // Caption only on the measured value — profile-sourced BMI stays clean.
+    expect(statCaption("BMI")).toBeNull();
+    expect(statCaption("Weight (kg)")).toBe("as of 15 Jan 2026");
+  });
+
+  it("shows no date caption when the value comes from the health profile", () => {
+    renderWithSummary({
+      customer_id: 1,
+      customer_name: "Arjun Kumar",
+      health_profile: healthProfile,
+      latest_measurement: null,
+      weight_trend: [],
+      fitness_goals: [],
+      progress_photo_count: 0,
+    });
+    expect(statValue("BMI")).toBe("25.4");
+    expect(statValue("Weight (kg)")).toBe("75.0");
+    expect(statCaption("BMI")).toBeNull();
+    expect(statCaption("Weight (kg)")).toBeNull();
+    expect(screen.queryByText(/as of /)).not.toBeInTheDocument();
   });
 
   it("shows the em dash placeholder when neither source has a value", () => {
@@ -353,6 +381,8 @@ describe("OverviewTab stat cards (BMI / Weight)", () => {
     });
     expect(statValue("BMI")).toBe("—");
     expect(statValue("Weight (kg)")).toBe("—");
+    expect(statCaption("BMI")).toBeNull();
+    expect(statCaption("Weight (kg)")).toBeNull();
   });
 
   it("skips null and empty-string candidates before formatting", () => {
@@ -426,6 +456,17 @@ describe("OverviewTab helpers", () => {
 
   it("returns em dash for missing dates", () => {
     expect(formatMemberSince(null)).toBe("—");
+  });
+
+  it("builds an as-of caption only for measurable values with a valid date", () => {
+    expect(measurementAsOf(72.4, { date_logged: "2026-01-15" })).toBe("as of 15 Jan 2026");
+    // Empty candidate → value is not measurement-sourced.
+    expect(measurementAsOf(null, { date_logged: "2026-01-15" })).toBeUndefined();
+    expect(measurementAsOf("", { date_logged: "2026-01-15" })).toBeUndefined();
+    // No measurement or unusable date → no caption (never "as of —").
+    expect(measurementAsOf(75, null)).toBeUndefined();
+    expect(measurementAsOf(75, undefined)).toBeUndefined();
+    expect(measurementAsOf(75, { date_logged: "not-a-date" })).toBeUndefined();
   });
 
   it("converts numeric strings to numbers, defaulting to 0", () => {
