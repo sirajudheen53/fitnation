@@ -10,6 +10,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DJANGO_SETTINGS_MODULE=config.settings.cloudrun \
     PIP_NO_CACHE_DIR=1
 
+# Build-time-only settings so collectstatic can import cloudrun settings and
+# build the whitenoise manifest. ARGs are visible to RUN steps but are NOT
+# persisted into the runtime image — Cloud Run injects the real values as
+# service env vars/secrets at deploy time (runtime env unchanged).
+# DATABASE_URL only needs to parse (env.db()); storages are lazy and
+# collectstatic never opens a DB connection.
+ARG DATABASE_URL=postgres://u:p@localhost:5432/d
+ARG SECRET_KEY=build-time-only-placeholder-not-used-at-runtime
+
 WORKDIR /app
 
 # Install build + runtime deps (psycopg needs libpq + headers at build time)
@@ -24,8 +33,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project files
 COPY . .
 
-# Collect static (production) — best-effort so a missing setting doesn't fail the build
-RUN python manage.py collectstatic --noinput 2>/dev/null || true
+# Collect static (production). Must fail the build on error: with
+# CompressedManifestStaticFilesStorage, an image without the manifest makes
+# every template using {% static %} (admin, DRF browsable API) raise
+# ValueError "Missing staticfiles manifest entry" → HTTP 500 at runtime.
+RUN python manage.py collectstatic --noinput
+
+# Hard guard: never ship an image without the staticfiles manifest.
+# Path is derived from settings so it cannot drift from STATIC_ROOT.
+RUN test -f "$(python -c 'import os; from django.conf import settings; print(os.path.join(settings.STATIC_ROOT, "staticfiles.json"))')"
 
 EXPOSE 8000
 

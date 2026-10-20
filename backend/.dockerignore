@@ -13,6 +13,11 @@ db.sqlite3
 db_local.sqlite3
 *.sqlite3
 
+# Local env files — build env comes from Dockerfile ARGs + Cloud Run service
+# env; a developer's .env must not leak into image builds via django-environ's
+# read_env()
+.env
+
 # Test / coverage artifacts
 .coverage
 .pytest_cache/
