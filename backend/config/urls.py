@@ -5,11 +5,17 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from apps.access.adms_views import cdata, devicecmd, getrequest
 from apps.core.healthcheck import HealthCheckView
 from apps.vendors.views import SubscriptionPlanListView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # ADMS push protocol (ZKTeco/eSSL devices) — root-level, plain-text.
+    # Firmware calls these exact paths from gym LANs; never mount under /api/v1.
+    path("iclock/cdata", cdata, name="adms-cdata"),
+    path("iclock/getrequest", getrequest, name="adms-getrequest"),
+    path("iclock/devicecmd", devicecmd, name="adms-devicecmd"),
     # Health check
     path("api/health/", HealthCheckView.as_view(), name="health-check"),
     # API v1 routes

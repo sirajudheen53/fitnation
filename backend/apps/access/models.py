@@ -226,6 +226,77 @@ class AccessLog(TenantModelMixin):
         return f"{self.customer} {self.event_type} at {self.event_timestamp}"
 
 
+class PunchLogRaw(TenantModelMixin):
+    """A raw, unparsed table row pushed by an ADMS device.
+
+    Every line a device POSTs to ``/iclock/cdata`` is persisted verbatim
+    (one row per line) so firmware quirks can be replayed and re-parsed
+    later without device cooperation.
+    """
+
+    device = models.ForeignKey(
+        BiometricDevice,
+        on_delete=models.CASCADE,
+        related_name="punch_logs_raw",
+    )
+    table_name = models.CharField(
+        max_length=32,
+        help_text="ADMS table the row belongs to: ATTLOG / OPERLOG / ATTPHOTO / UNKNOWN",
+    )
+    raw_line = models.TextField(help_text="The line exactly as received (tabs preserved).")
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        """Model metadata."""
+
+        ordering = ["received_at"]
+        indexes = [models.Index(fields=["device", "received_at"])]
+
+    def __str__(self) -> str:
+        """Return a human-readable raw-punch label."""
+        return f"{self.device.name} {self.table_name} row @ {self.received_at:%Y-%m-%d %H:%M:%S}"
+
+
+class AdmsRequestLog(models.Model):
+    """One row per inbound ADMS device request (audit / diagnostics).
+
+    Written for every hit on the ``/iclock/*`` endpoints, including
+    unregistered serials — hence ``device``/``tenant`` are nullable:
+    the SN whitelist is the only authentication and may match nothing.
+    """
+
+    device = models.ForeignKey(
+        BiometricDevice,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="adms_request_logs",
+    )
+    tenant = models.ForeignKey(
+        "tenants.Tenant",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    path = models.CharField(max_length=256)
+    query_string = models.TextField(blank=True, default="")
+    raw_body = models.TextField(blank=True, default="")
+    sn = models.CharField(max_length=64, blank=True, default="")
+    remote_addr = models.CharField(max_length=64, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        """Model metadata."""
+
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["sn", "created_at"])]
+
+    def __str__(self) -> str:
+        """Return a human-readable request-log label."""
+        return f"{self.path} sn={self.sn or '?'} @ {self.created_at:%Y-%m-%d %H:%M:%S}"
+
+
 class DeviceCommandQueue(TenantModelMixin):
     """A queued outbound command for an ADMS device.
 
