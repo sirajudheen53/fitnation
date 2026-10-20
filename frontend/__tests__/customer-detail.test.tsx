@@ -27,6 +27,7 @@ import {
   OverviewTab,
   latestAdmissionPayment,
   formatMemberSince,
+  formatStatValue,
   toNumber,
 } from "@/features/customers/components/OverviewTab";
 import { PaymentHistoryTab } from "@/features/customers/components/PaymentHistoryTab";
@@ -55,6 +56,7 @@ import type {
   CustomerFitnessGoal,
   HealthProfile,
   ProgressPhoto,
+  ProgressSummary,
 } from "@/types/customer-detail";
 
 /* ── Fixtures ─────────────────────────────────────────────────── */
@@ -280,6 +282,83 @@ describe("OverviewTab admission fee card", () => {
       <OverviewTab customer={customer} summary={null} admissionPayments={[pendingAdmission]} />,
     );
     expect(screen.queryByRole("button", { name: "Record payment" })).not.toBeInTheDocument();
+  });
+});
+
+/* ── OverviewTab stat cards: BMI / Weight sourcing ────────────── */
+
+describe("OverviewTab stat cards (BMI / Weight)", () => {
+  const healthProfile = {
+    height_cm: 172,
+    weight_kg: 75,
+    bmi: 25.4,
+    blood_group: "unknown",
+    injuries: "",
+    current_injuries: [],
+    past_injuries: [],
+    medical_info: {},
+    medical_conditions: [],
+    allergies: [],
+    food_allergies: [],
+    medications: [],
+    dietary_restrictions: [],
+    created_at: "",
+    updated_at: "",
+  } as HealthProfile;
+
+  const renderWithSummary = (summary: ProgressSummary | null) =>
+    render(<OverviewTab customer={customer} summary={summary} />);
+
+  /** Each stat card renders the value <p> right before the label <p>. */
+  const statValue = (label: string) =>
+    screen.getByText(label).previousElementSibling?.textContent ?? null;
+
+  it("prefers the latest measurement's weight and bmi over the health profile", () => {
+    renderWithSummary({
+      customer_id: 1,
+      customer_name: "Arjun Kumar",
+      health_profile: healthProfile,
+      latest_measurement: { ...measurement, weight_kg: 72.4, bmi: 24.8 },
+      weight_trend: [],
+      fitness_goals: [],
+      progress_photo_count: 0,
+    });
+    expect(statValue("BMI")).toBe("24.8");
+    expect(statValue("Weight (kg)")).toBe("72.4");
+  });
+
+  it("falls back to the health profile when the latest measurement misses a field", () => {
+    renderWithSummary({
+      customer_id: 1,
+      customer_name: "Arjun Kumar",
+      health_profile: healthProfile,
+      latest_measurement: { ...measurement, weight_kg: 72.4, bmi: null },
+      weight_trend: [],
+      fitness_goals: [],
+      progress_photo_count: 0,
+    });
+    expect(statValue("BMI")).toBe("25.4");
+    expect(statValue("Weight (kg)")).toBe("72.4");
+  });
+
+  it("shows the em dash placeholder when neither source has a value", () => {
+    renderWithSummary({
+      customer_id: 1,
+      customer_name: "Arjun Kumar",
+      health_profile: null,
+      latest_measurement: null,
+      weight_trend: [],
+      fitness_goals: [],
+      progress_photo_count: 0,
+    });
+    expect(statValue("BMI")).toBe("—");
+    expect(statValue("Weight (kg)")).toBe("—");
+  });
+
+  it("skips null and empty-string candidates before formatting", () => {
+    expect(formatStatValue("24.81")).toBe("24.8");
+    expect(formatStatValue("", null, 75)).toBe("75.0");
+    expect(formatStatValue(null, undefined, "")).toBe("—");
   });
 });
 

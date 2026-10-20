@@ -52,6 +52,18 @@ export function toNumber(value: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** First non-empty candidate formatted to 1 decimal, or the em dash placeholder. */
+export function formatStatValue(
+  ...candidates: (string | number | null | undefined)[]
+): string {
+  for (const value of candidates) {
+    if (value !== null && value !== undefined && value !== "") {
+      return Number(value).toFixed(1);
+    }
+  }
+  return "—";
+}
+
 /** Latest admission payment for the customer (newest created_at wins). */
 export function latestAdmissionPayment(
   payments: Payment[] | undefined,
@@ -107,12 +119,12 @@ export function OverviewTab({
     },
     {
       label: "BMI",
-      value: profile?.bmi != null ? String(Number(profile.bmi).toFixed(1)) : "—",
+      value: formatStatValue(summary?.latest_measurement?.bmi, profile?.bmi),
       icon: <Activity className="h-5 w-5" />,
     },
     {
       label: "Weight (kg)",
-      value: profile?.weight_kg != null ? String(Number(profile.weight_kg).toFixed(1)) : "—",
+      value: formatStatValue(summary?.latest_measurement?.weight_kg, profile?.weight_kg),
       icon: <Hash className="h-5 w-5" />,
     },
     {
