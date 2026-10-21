@@ -7,7 +7,23 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Fitnation App</string>
+	<string>FitNation</string>
+	<!-- Custom scheme for gym join links: fitnation://g/{tenant-uuid}
+	     (FBOS-011 D7). The App Link (https://app.yougetfitwithus.com/g/…)
+	     is handled by the associated-domains entitlement. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.getfitwithus.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>fitnation</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

@@ -45,13 +45,20 @@ class FirebaseMessagingClient implements MessagingClient {
     // FCM v17: the FID arrives on the `onRegistered` stream, not from a
     // synchronous getter. `register()` asks Firebase to (re)register this
     // installation; the resulting FID is delivered on `onRegistered`.
-    await FirebaseMessaging.instance.register();
-    return FirebaseMessaging.instance.onRegistered
-        .first
-        .timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => '',
-        );
+    //
+    // The stream must be subscribed to *before* `register()` is called:
+    // `onRegistered` is a broadcast stream, so an FID delivered in between
+    // would be dropped.
+    final registered = FirebaseMessaging.instance.onRegistered.first;
+    try {
+      await FirebaseMessaging.instance.register();
+    } catch (e) {
+      return null;
+    }
+    return registered.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => '',
+    );
   }
 
   @override
@@ -75,9 +82,19 @@ class FirebaseMessagingClient implements MessagingClient {
 Future<MessagingClient?> bootstrapFirebase() async {
   try {
     await Firebase.initializeApp();
-    return FirebaseMessagingClient();
   } catch (e) {
     // FirebaseException: no default options (google-services.json missing).
+    return null;
+  }
+
+  // `initializeApp` can succeed with a default (empty) configuration on
+  // Android even without google-services.json, and the failure only shows up
+  // when messaging is first used. Probe it here so a dev build without the
+  // config file still boots — push is simply disabled.
+  try {
+    await FirebaseMessaging.instance.getInitialMessage();
+    return FirebaseMessagingClient();
+  } catch (e) {
     return null;
   }
 }
