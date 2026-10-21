@@ -3,8 +3,9 @@ import { Dumbbell, ArrowRight, CheckCircle2 } from "lucide-react";
 
 export default function HomePage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-brand-50 via-white to-brand-50 px-4">
-      <div className="w-full max-w-2xl text-center">
+    <div className="flex min-h-screen flex-col bg-gradient-to-br from-brand-50 via-white to-brand-50 px-4">
+      <div className="flex flex-1 flex-col items-center justify-center">
+        <div className="w-full max-w-2xl text-center">
         <div className="mb-6 flex justify-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-600 text-white">
             <Dumbbell className="h-8 w-8" />
@@ -39,7 +40,19 @@ export default function HomePage() {
           Get started
           <ArrowRight className="h-4 w-4" />
         </Link>
+        </div>
       </div>
+
+      <footer className="py-6 text-center text-xs text-gray-500">
+        © {new Date().getFullYear()} FitNation ·{" "}
+        <Link href="/privacy" className="hover:text-gray-700">
+          Privacy Policy
+        </Link>{" "}
+        ·{" "}
+        <Link href="/data-deletion" className="hover:text-gray-700">
+          Delete account data
+        </Link>
+      </footer>
     </div>
   );
 }

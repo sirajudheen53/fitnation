@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -164,7 +165,20 @@ export default function SignUpPage() {
         </Button>
 
         <p className="text-center text-xs text-gray-500">
-          By creating an account, you agree to our Terms of Service and Privacy Policy.
+          By creating an account, you agree to our Terms of Service and{" "}
+          <Link
+            href="/privacy"
+            className="font-medium text-brand-600 hover:text-brand-700"
+          >
+            Privacy Policy
+          </Link>{" "}
+          · {" "}
+          <Link
+            href="/data-deletion"
+            className="font-medium text-brand-600 hover:text-brand-700"
+          >
+            Delete account data
+          </Link>
         </p>
       </form>
     </AuthLayout>
