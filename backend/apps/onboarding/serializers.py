@@ -18,6 +18,46 @@ METHOD_TO_PAYMENT_METHOD = {
 }
 
 
+def customer_payload_from_validated(customer_data: dict) -> dict:
+    """Render validated wizard customer data as a ``CustomerSerializer`` payload.
+
+    The wizard validates the customer block with
+    :class:`OnboardingCustomerSerializer` but the member row is created
+    through :class:`CustomerSerializer` (ADR-002 convergence). This helper is
+    the single translation between the two, so it works on the *validated
+    dict* — the service only ever holds ``validated_data``, never the
+    serializer instance, so calling a serializer method from the service
+    was the bug this replaces.
+
+    Args:
+        customer_data: The validated customer block.
+
+    Returns:
+        The payload for ``CustomerSerializer``.
+    """
+    data = {
+        "phone": customer_data["phone"],
+        "branch": customer_data["branch"],
+        "gender": customer_data.get("gender") or "prefer_not_to_say",
+    }
+    for src, dst in (
+        ("name", "name"),
+        ("first_name", "first_name"),
+        ("last_name", "last_name"),
+        ("date_of_birth", "date_of_birth"),
+        ("emergency_contact_name", "emergency_contact_name"),
+        ("emergency_contact_phone", "emergency_contact_phone"),
+        ("notes", "notes"),
+    ):
+        value = customer_data.get(src)
+        if value:
+            data[dst] = value
+    email = (customer_data.get("email") or "").strip()
+    if email:
+        data["email"] = email
+    return data
+
+
 class OnboardingCustomerSerializer(serializers.Serializer):
     """Who is being onboarded — mirrors ``POST /customers/`` semantics."""
 
@@ -41,30 +81,6 @@ class OnboardingCustomerSerializer(serializers.Serializer):
         """Require a name in some form (full name or first/last parts)."""
         if not (data.get("name") or "").strip() and not ((data.get("first_name") or "").strip()):
             raise serializers.ValidationError({"name": "Provide a name (or first/last name)."})
-        return data
-
-    def to_customer_payload(self) -> dict:
-        """Render as the ``CustomerSerializer`` create payload."""
-        data = {
-            "phone": self.validated_data["phone"],
-            "branch": self.validated_data["branch"],
-            "gender": self.validated_data.get("gender") or "prefer_not_to_say",
-        }
-        for src, dst in (
-            ("name", "name"),
-            ("first_name", "first_name"),
-            ("last_name", "last_name"),
-            ("date_of_birth", "date_of_birth"),
-            ("emergency_contact_name", "emergency_contact_name"),
-            ("emergency_contact_phone", "emergency_contact_phone"),
-            ("notes", "notes"),
-        ):
-            value = self.validated_data.get(src)
-            if value:
-                data[dst] = value
-        email = (self.validated_data.get("email") or "").strip()
-        if email:
-            data["email"] = email
         return data
 
 

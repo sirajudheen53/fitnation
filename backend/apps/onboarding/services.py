@@ -18,17 +18,22 @@ from rest_framework import serializers
 from apps.access.models import BiometricDevice
 from apps.access.selectors import get_customer_access_state
 from apps.access.services import enroll_credential, sync_device
+from apps.customers.models import Customer
 from apps.customers.serializers import CustomerSerializer
 from apps.memberships.models import Membership, MembershipPlan
 from apps.notifications.services.invite_service import invite_result_payload, send_app_invite
 from apps.notifications.services.wati_service import send_notification
 from apps.onboarding.models import OnboardingSession
-from apps.onboarding.serializers import METHOD_TO_PAYMENT_METHOD, OnboardingMemberSerializer
+from apps.onboarding.serializers import (
+    METHOD_TO_PAYMENT_METHOD,
+    OnboardingMemberSerializer,
+    customer_payload_from_validated,
+    session_result_payload,
+)
 from apps.payments.models import Invoice, Payment
 from apps.payments.razorpay_service import RazorpayError, create_order
 
 if TYPE_CHECKING:
-    from apps.customers.models import Customer
     from apps.tenants.models import Tenant
     from apps.users.models import User
 
@@ -206,7 +211,14 @@ def _enroll_biometrics(tenant: "Tenant", customer: "Customer", entries: list[dic
             credential_type=entry.get("credential_type", "fingerprint"),
             device_user_id=entry["device_user_id"],
         )
-        results.append({"credential_id": credential.pk, "device_id": device.pk, "device_name": device.name, "sync": None})
+        results.append(
+            {
+                "credential_id": credential.pk,
+                "device_id": device.pk,
+                "device_name": device.name,
+                "sync": None,
+            }
+        )
     return results
 
 
@@ -264,9 +276,7 @@ def _finalize_response(
         device = BiometricDevice.objects.filter(pk=row["device_id"]).first()
         if device is not None:
             row["sync"] = sync_device(device)
-            door_access.append(
-                {"device_id": device.pk, **get_customer_access_state(customer=customer, device=device)}
-            )
+            door_access.append({"device_id": device.pk, **get_customer_access_state(customer=customer, device=device)})
 
     entitlement = get_app_entitlement(customer, tenant=customer.tenant)
     preview = entitlement.as_payload()
@@ -336,7 +346,13 @@ def _send_app_invite(tenant: "Tenant", customer: "Customer", invited_by: "User |
         The ``app_invite`` response block.
     """
     if not enabled:
-        return {"status": "skipped", "reason": "disabled", "channel": None, "sent_at": None, "resend_allowed_after": None}
+        return {
+            "status": "skipped",
+            "reason": "disabled",
+            "channel": None,
+            "sent_at": None,
+            "resend_allowed_after": None,
+        }
     try:
         result = send_app_invite(tenant, customer, invited_by=invited_by, poster=poster)
     except Exception as exc:  # noqa: BLE001 - invite failure never breaks onboarding
@@ -420,9 +436,7 @@ def create_member_onboarding(
     data = serializer.validated_data
 
     if idempotency_key:
-        existing = (
-            OnboardingSession.objects.for_tenant(tenant).filter(idempotency_key=idempotency_key).first()
-        )
+        existing = OnboardingSession.objects.for_tenant(tenant).filter(idempotency_key=idempotency_key).first()
         if existing is not None:
             return session_result_payload(existing)
 
@@ -442,7 +456,7 @@ def create_member_onboarding(
         )
 
     with transaction.atomic():
-        customer, returning = _create_customer(tenant, data["customer"].to_customer_payload(), request)
+        customer, returning = _create_customer(tenant, customer_payload_from_validated(data["customer"]), request)
 
         replay = _replay_recent_session(tenant, customer.pk, plan.pk)
         if replay is not None:
@@ -459,8 +473,9 @@ def create_member_onboarding(
         )
         invoice = None
         if payment is not None:
-            invoice = Invoice.objects.create(tenant=tenant, customer=customer, payment=payment,
-                                             subtotal=payment.amount, total=payment.amount)
+            invoice = Invoice.objects.create(
+                tenant=tenant, customer=customer, payment=payment, subtotal=payment.amount, total=payment.amount
+            )
         biometrics = _enroll_biometrics(tenant, customer, data.get("biometrics") or [])
         session = OnboardingSession.objects.create(
             tenant=tenant,
@@ -489,6 +504,7 @@ def create_member_onboarding(
         status_value=OnboardingSession.Status.COMPLETED,
         returning_member=returning,
     )
+    return result
 
 
 def _snapshot(payload: dict) -> dict:
@@ -535,7 +551,7 @@ def _start_razorpay_onboarding(
         OnboardingError: When the order cannot be created.
     """
     with transaction.atomic():
-        customer, returning = _create_customer(tenant, data["customer"].to_customer_payload(), request)
+        customer, returning = _create_customer(tenant, customer_payload_from_validated(data["customer"]), request)
         payment = _create_payment(
             tenant,
             customer,
@@ -575,8 +591,13 @@ def _start_razorpay_onboarding(
         invoice=None,
         biometrics=[],
         notifications=[],
-        app_invite={"status": "skipped", "reason": "pending_payment", "channel": None, "sent_at": None,
-                    "resend_allowed_after": None},
+        app_invite={
+            "status": "skipped",
+            "reason": "pending_payment",
+            "channel": None,
+            "sent_at": None,
+            "resend_allowed_after": None,
+        },
         status_value=OnboardingSession.Status.PENDING_PAYMENT,
         razorpay_checkout={
             "key": key_id,
@@ -625,9 +646,12 @@ def complete_razorpay_onboarding(
     if session.status != OnboardingSession.Status.PENDING_PAYMENT:
         raise OnboardingError({"detail": "This onboarding session is not awaiting payment."}, 409)
 
-    payment = Payment.objects.for_tenant(tenant).filter(
-        membership__isnull=True, customer=session.customer, status=Payment.Status.PENDING
-    ).order_by("-created_at").first()
+    payment = (
+        Payment.objects.for_tenant(tenant)
+        .filter(membership__isnull=True, customer=session.customer, status=Payment.Status.PENDING)
+        .order_by("-created_at")
+        .first()
+    )
     if payment is None:
         raise OnboardingError({"detail": "No pending payment found for this onboarding session."}, 409)
 
