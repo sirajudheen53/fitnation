@@ -106,6 +106,13 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   "/branches/new": ["branches.create_branch"],
   "/customers": ["customers.view_customer"],
   "/customers/new": ["customers.create_customer"],
+  // Front-desk wizard — any-of the permissions the onboarding POST touches
+  // (mirrors the backend's set-valued required_permission).
+  "/onboarding/member": [
+    "customers.create_customer",
+    "memberships.create_membership",
+    "payments.record_payment",
+  ],
   "/memberships": ["memberships.view_membership"],
   "/payments": ["payments.view_payment"],
   "/attendance": ["attendance.view_attendance"],
@@ -130,6 +137,8 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   "/users": ["users.view_user"],
   "/reports": ["reports.view_report"],
   "/settings": ["tenants.edit_tenant"],
+  // FBOS-011 §6: WhatsApp/WATI config is owner-only (tenants.edit_tenant).
+  "/settings/whatsapp": ["tenants.edit_tenant"],
   "/feedback": ["feedback.view_feedback"],
   "/feedback/new": ["feedback.create_feedback"],
   "/feedback/analytics": ["feedback.view_feedback"],

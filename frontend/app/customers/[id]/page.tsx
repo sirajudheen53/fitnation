@@ -12,6 +12,7 @@ import { HealthProfileTab } from "@/features/customers/components/HealthProfileT
 import { ProgressPhotosTab } from "@/features/customers/components/ProgressPhotosTab";
 import { PaymentHistoryTab } from "@/features/customers/components/PaymentHistoryTab";
 import { AccessControlTab } from "@/features/access/components/AccessControlTab";
+import { AppAccessCard } from "@/features/customers/components/AppAccessCard";
 import { Spinner, Alert, Button, Badge } from "@/components/ui";
 import { getToken } from "@/lib/auth";
 import {
@@ -417,16 +418,24 @@ export default function CustomerDetailPage() {
 
           <div>
             {activeTab === "overview" && (
-              <OverviewTab
-                customer={customer}
-                summary={summary}
-                admissionPayments={admissionPayments}
-                recordingFee={recordingFee}
-                onRecordAdmissionFee={recordAdmissionFee}
-                memberships={memberships}
-                membershipPlans={membershipPlans}
-                onRenewMembership={handleRenewMembership}
-              />
+              <div className="space-y-6">
+                <OverviewTab
+                  customer={customer}
+                  summary={summary}
+                  admissionPayments={admissionPayments}
+                  recordingFee={recordingFee}
+                  onRecordAdmissionFee={recordAdmissionFee}
+                  memberships={memberships}
+                  membershipPlans={membershipPlans}
+                  onRenewMembership={handleRenewMembership}
+                />
+                {/* FBOS-011 F3: app-access entitlement + invite status. */}
+                <AppAccessCard
+                  customer={customer}
+                  memberships={memberships}
+                  plans={membershipPlans}
+                />
+              </div>
             )}
             {activeTab === "goals" && (
               <FitnessGoalsTab

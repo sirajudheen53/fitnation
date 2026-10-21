@@ -2156,3 +2156,133 @@ export function deleteAdminTenant(
     token,
   });
 }
+
+/* ── App access & invites (FBOS-011) ──────────────────────────── */
+
+import {
+  AppInviteBlock,
+  OnboardingMemberPayload,
+  OnboardingResult,
+  OnboardingVerifyPaymentPayload,
+} from "@/types/onboarding";
+
+/**
+ * Front-desk phone lookup for the onboarding wizard (searches name, phone,
+ * email — backend `search_fields`). Returns a plain array on either backend
+ * list shape via unwrapList.
+ */
+export function searchCustomers(token: string, search: string): Promise<Customer[]> {
+  const query = new URLSearchParams({ search });
+  return request<Customer[] | { results?: Customer[] }>(
+    `/customers/customers/?${query.toString()}`,
+    { token },
+  ).then(unwrapList);
+}
+
+/**
+ * One-shot member onboarding (POST /onboarding/member/). The optional
+ * idempotency key is the double-submit guard the backend replays on
+ * (OnboardingSession lookup).
+ */
+export function onboardMember(
+  payload: OnboardingMemberPayload,
+  token: string,
+  idempotencyKey?: string,
+): Promise<OnboardingResult> {
+  return request<OnboardingResult>("/onboarding/member/", {
+    method: "POST",
+    body: payload,
+    token,
+    headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
+  });
+}
+
+/** Razorpay phase 2 for the onboarding wizard. */
+export function verifyOnboardingPayment(
+  onboardingId: string,
+  payload: OnboardingVerifyPaymentPayload,
+  token: string,
+): Promise<OnboardingResult> {
+  return request<OnboardingResult>(
+    `/onboarding/member/${onboardingId}/verify-payment/`,
+    { method: "POST", body: payload, token },
+  );
+}
+
+/**
+ * Send / resend the mobile-app invite (POST /memberships/app-invite/).
+ * Fresh send → status "sent"; inside the 24 h dedupe window → "already_sent"
+ * (pass `resend: true` to force). `not_applicable` means the plan/tenant
+ * flag excludes the app; `failed`/`skipped` are retryable.
+ */
+export function sendAppInvite(
+  customerId: number,
+  token: string,
+  resend = false,
+): Promise<AppInviteBlock> {
+  return request<AppInviteBlock>("/memberships/app-invite/", {
+    method: "POST",
+    body: { customer_id: customerId, resend },
+    token,
+  });
+}
+
+/* ── Tenant WhatsApp (WATI) configuration — FBOS-011 §6 ────────── */
+
+/** WATI fields on the tenant payload (write-only key, masked read). */
+export interface TenantWhatsappConfig {
+  is_wati_enabled: boolean;
+  wati_endpoint: string;
+  /** Read state only: whether a key is configured — never the secret. */
+  wati_api_key_configured: boolean;
+}
+
+/** Usage counters for the settings page (today's sends + budget). */
+export interface WhatsappStatus {
+  otp_sent_today: number;
+  invites_sent_today: number;
+  daily_cap: number;
+}
+
+export interface WhatsappTestResult {
+  status: string;
+  detail?: string;
+}
+
+/** Current tenant (GET /tenants/me/). WATI fields may be absent pre-B9. */
+export function fetchTenant(token: string): Promise<Partial<TenantWhatsappConfig>> {
+  return request<Partial<TenantWhatsappConfig>>("/tenants/me/", { token });
+}
+
+/**
+ * Save the WhatsApp config (PATCH /tenants/me/ — FBOS-011 §6 / task B9).
+ * The API key is write-only: only include it when the owner typed a new one;
+ * the backend keeps the stored secret otherwise.
+ */
+export function updateTenantWhatsappConfig(
+  payload: { is_wati_enabled: boolean; wati_endpoint: string; wati_api_key?: string },
+  token: string,
+): Promise<Partial<TenantWhatsappConfig>> {
+  return request<Partial<TenantWhatsappConfig>>("/tenants/me/", {
+    method: "PATCH",
+    body: payload,
+    token,
+  });
+}
+
+/** Send the welcome-template test message to a phone (POST /tenants/whatsapp/test/). */
+export function sendWhatsappTest(
+  phone: string,
+  token: string,
+): Promise<WhatsappTestResult> {
+  return request<WhatsappTestResult>("/tenants/whatsapp/test/", {
+    method: "POST",
+    body: { phone },
+    token,
+  });
+}
+
+/** Today's OTP + invite counts vs the per-tenant cap (GET /tenants/whatsapp/status/). */
+export function fetchWhatsappStatus(token: string): Promise<WhatsappStatus> {
+  return request<WhatsappStatus>("/tenants/whatsapp/status/", { token });
+}

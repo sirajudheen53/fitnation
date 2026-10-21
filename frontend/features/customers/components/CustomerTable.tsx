@@ -14,6 +14,7 @@ import {
 import { ArrowUpDown, Edit, Eye, MoreHorizontal, Trash2 } from "lucide-react";
 import { Button, Badge } from "@/components/ui";
 import { CustomerAvatar, getCustomerDisplayName } from "./CustomerAvatar";
+import type { AppAccessDisplay } from "../lib/appAccess";
 import type { Customer } from "@/types/customer";
 
 const columnHelper = createColumnHelper<Customer>();
@@ -30,16 +31,81 @@ export function getCustomerMembershipStatus(customer: Customer): {
   return { label: "Active", variant: "success" };
 }
 
+/** App-access badge metadata for the members list (FBOS-011 F5). */
+export function getAppAccessBadge(
+  display: AppAccessDisplay | undefined,
+): { label: string; variant: "success" | "warning" | "danger" | "default" } {
+  if (!display) return { label: "—", variant: "default" };
+  return { label: display.label, variant: display.variant };
+}
+
 interface CustomerTableProps {
   customers: Customer[];
   onDelete?: (customer: Customer) => void;
   loading?: boolean;
+  /** Per-customer app-access display state (derived on the list page). */
+  appAccessByCustomer?: Record<number, AppAccessDisplay>;
+  /** Row selection for bulk actions; enables the checkbox column. */
+  onSelectionChange?: (selectedIds: number[]) => void;
 }
 
-export function CustomerTable({ customers, onDelete, loading }: CustomerTableProps) {
+export function CustomerTable({
+  customers,
+  onDelete,
+  loading,
+  appAccessByCustomer,
+  onSelectionChange,
+}: CustomerTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  const toggleRow = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      onSelectionChange?.([...next]);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected((prev) => {
+      const next = prev.size === customers.length ? new Set<number>() : new Set(customers.map((c) => c.id));
+      onSelectionChange?.([...next]);
+      return next;
+    });
+  };
 
   const columns = [
+    ...(onSelectionChange
+      ? [
+          columnHelper.display({
+            id: "select",
+            header: () => (
+              <input
+                type="checkbox"
+                aria-label="Select all customers"
+                checked={customers.length > 0 && selected.size === customers.length}
+                onChange={toggleAll}
+                className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+              />
+            ),
+            cell: ({ row }) => (
+              <input
+                type="checkbox"
+                aria-label={`Select ${getCustomerDisplayName(row.original)}`}
+                checked={selected.has(row.original.id)}
+                onChange={() => toggleRow(row.original.id)}
+                className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+              />
+            ),
+          }),
+        ]
+      : []),
     columnHelper.accessor((row) => getCustomerDisplayName(row), {
       id: "name",
       header: "Name",
@@ -76,6 +142,14 @@ export function CustomerTable({ customers, onDelete, loading }: CustomerTablePro
       header: "Membership status",
       cell: ({ row }) => {
         const { label, variant } = getCustomerMembershipStatus(row.original);
+        return <Badge variant={variant}>{label}</Badge>;
+      },
+    }),
+    columnHelper.display({
+      id: "app_access",
+      header: "App access",
+      cell: ({ row }) => {
+        const { label, variant } = getAppAccessBadge(appAccessByCustomer?.[row.original.id]);
         return <Badge variant={variant}>{label}</Badge>;
       },
     }),

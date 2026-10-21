@@ -17,6 +17,7 @@ const plan = (overrides: Partial<MembershipPlan> = {}): MembershipPlan => ({
   plan_type: "monthly",
   description: null,
   is_active: true,
+  includes_app_access: true,
   created_at: "2026-08-01T00:00:00Z",
   updated_at: "2026-08-01T00:00:00Z",
   ...overrides,
@@ -106,5 +107,61 @@ describe("MembershipPlanForm", () => {
     expect(await screen.findByText("Duration must be positive")).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
     expect(mockedErrorMessage).not.toHaveBeenCalled();
+  });
+
+  // ── FBOS-011 F1: "Includes app access" toggle ────────────────────
+
+  it("defaults the app-access toggle to ON with the customer-facing helper line", () => {
+    render(<MembershipPlanForm onSubmit={jest.fn()} />);
+    const toggle = screen.getByLabelText(/Includes app access/i);
+    expect(toggle).toBeChecked();
+    expect(
+      screen.getByText(/Members on this plan can use the FitNation mobile app/i),
+    ).toBeInTheDocument();
+  });
+
+  it("submits includes_app_access: true by default (launch default per ADR-003)", async () => {
+    const onSubmit = jest.fn();
+    render(
+      <MembershipPlanForm
+        defaultValues={{ name: "Gold", price: 1999, duration_days: 30 }}
+        onSubmit={onSubmit}
+      />,
+    );
+    await submitForm();
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ includes_app_access: true })),
+    );
+  });
+
+  it("round-trips includes_app_access when editing a plan and submits the un-toggled value", async () => {
+    const onSubmit = jest.fn();
+    render(<MembershipPlanForm plan={plan({ includes_app_access: false })} onSubmit={onSubmit} />);
+    const toggle = screen.getByLabelText(/Includes app access/i);
+    expect(toggle).not.toBeChecked();
+    await submitForm();
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ includes_app_access: false })),
+    );
+  });
+
+  it("sends includes_app_access: false when the user turns a defaulted-on toggle off", async () => {
+    const onSubmit = jest.fn();
+    render(
+      <MembershipPlanForm
+        defaultValues={{ name: "Gold", price: 1999, duration_days: 30 }}
+        onSubmit={onSubmit}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText(/Includes app access/i));
+    await submitForm();
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ includes_app_access: false })),
+    );
+  });
+
+  it("treats a missing includes_app_access on a loaded plan as ON (pre-feature payloads)", () => {
+    render(<MembershipPlanForm plan={plan({ includes_app_access: undefined })} onSubmit={jest.fn()} />);
+    expect(screen.getByLabelText(/Includes app access/i)).toBeChecked();
   });
 });

@@ -20,6 +20,11 @@ export interface MembershipPlan {
   plan_type: MembershipPlanType;
   description: string | null;
   is_active: boolean;
+  /**
+   * FBOS-011 / ADR-003: memberships sold on this plan include the customer
+   * mobile app. Optional on reads so pre-feature cached payloads stay typed.
+   */
+  includes_app_access?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -31,6 +36,7 @@ export interface MembershipPlanFormData {
   plan_type: MembershipPlanType;
   description?: string;
   is_active: boolean;
+  includes_app_access: boolean;
 }
 
 export interface Membership {

@@ -44,6 +44,18 @@ export interface Customer {
   created_at: string;
   updated_at: string;
   /**
+   * FBOS-011 §5.1b: the most recent app-invite notification for the member,
+   * or null when never invited. Optional so pre-feature payloads stay typed.
+   */
+  app_invite_status?: AppInviteStatusSummary | null;
+  /**
+   * App-access entitlement derived from the member's plan (ADR-003):
+   * active / read-only grace / not entitled. OPTIONAL — the backend list
+   * serializer does not expose this yet; UI falls back to "unknown" until
+   * it lands.
+   */
+  app_access?: AppAccessState | null;
+  /**
    * Legacy fields kept optional for existing call sites. The backend does
    * NOT return them (health data lives on the separate health-profile
    * endpoint); display code must prefer `name`.
@@ -57,6 +69,27 @@ export interface Customer {
   fitness_goal?: FitnessGoal | null;
   injuries?: string | null;
   medical_info?: string | null;
+}
+
+/** Last app_invite NotificationLog summary (CustomerSerializer.app_invite_status). */
+export interface AppInviteStatusSummary {
+  status: string;
+  channel: string | null;
+  sent_at: string | null;
+  error_message: string | null;
+}
+
+/**
+ * App-access entitlement for a member (backend `AppEntitlement.as_payload`
+ * shape). `status` mirrors `get_app_entitlement`: "active" (full access),
+ * "grace" (read-only until grace_end_date), "expired"/"none" (gated out).
+ */
+export interface AppAccessState {
+  status: "active" | "grace" | "expired" | "none";
+  read_only: boolean;
+  plan_name: string | null;
+  end_date: string | null;
+  grace_end_date: string | null;
 }
 
 /** Admission-fee capture on the customer create form (form-only, never sent

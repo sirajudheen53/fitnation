@@ -4,7 +4,7 @@ import { useEffect, type ChangeEvent } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CreditCard, CalendarRange, Tag, DollarSign } from "lucide-react";
+import { CreditCard, CalendarRange, Tag, DollarSign, Smartphone } from "lucide-react";
 import { Button, Input, Alert } from "@/components/ui";
 import type { MembershipPlan, MembershipPlanFormData, MembershipPlanType } from "@/types/membership";
 import { errorMessage } from "@/lib/api";
@@ -16,6 +16,7 @@ const planSchema = z.object({
   plan_type: z.enum(["monthly", "quarterly", "half_yearly", "yearly", "pt", "trial"]),
   description: z.string().max(500).optional().or(z.literal("")),
   is_active: z.boolean().default(true),
+  includes_app_access: z.boolean().default(true),
 });
 
 type PlanSchemaData = z.infer<typeof planSchema>;
@@ -71,6 +72,7 @@ export function MembershipPlanForm({
       plan_type: "monthly",
       description: "",
       is_active: true,
+      includes_app_access: true,
       ...defaultValues,
     },
   });
@@ -84,6 +86,7 @@ export function MembershipPlanForm({
         plan_type: plan.plan_type,
         description: plan.description || "",
         is_active: plan.is_active,
+        includes_app_access: plan.includes_app_access ?? true,
       });
     }
   }, [plan, reset]);
@@ -105,11 +108,13 @@ export function MembershipPlanForm({
       plan_type: data.plan_type,
       description: data.description || undefined,
       is_active: data.is_active,
+      includes_app_access: data.includes_app_access,
     };
     await onSubmit(payload);
   };
 
   const isActive = watch("is_active");
+  const includesAppAccess = watch("includes_app_access");
 
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="max-w-3xl space-y-6">
@@ -188,11 +193,31 @@ export function MembershipPlanForm({
         <label className="flex cursor-pointer items-center gap-3">
           <input
             type="checkbox"
-            {...register("is_active")}
-            defaultChecked={isActive}
+            checked={isActive}
+            onChange={(e) => setValue("is_active", e.target.checked)}
             className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
           />
           <span className="text-sm font-medium text-gray-700">Plan is active</span>
+        </label>
+      </div>
+
+      <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-4">
+        <Smartphone className="mt-0.5 h-5 w-5 text-brand-600" />
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={includesAppAccess}
+            onChange={(e) => setValue("includes_app_access", e.target.checked)}
+            data-testid="includes-app-access-toggle"
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+          />
+          <span>
+            <span className="block text-sm font-medium text-gray-700">Includes app access</span>
+            <span className="block text-xs text-gray-500">
+              Members on this plan can use the FitNation mobile app. Turning this off revokes
+              app access for existing members on the plan.
+            </span>
+          </span>
         </label>
       </div>
 

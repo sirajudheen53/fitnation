@@ -9,7 +9,9 @@ import {
   CalendarCheck,
   Dumbbell,
   AlertCircle,
+  UserPlus,
 } from "lucide-react";
+import Link from "next/link";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { MetricCard } from "@/features/dashboard/components/MetricCard";
 import { RevenueChart } from "@/features/dashboard/components/RevenueChart";
@@ -17,7 +19,7 @@ import { AttendanceChart } from "@/features/dashboard/components/AttendanceChart
 import { MembershipStats } from "@/features/dashboard/components/MembershipStats";
 import { TrainerOverview } from "@/features/dashboard/components/TrainerOverview";
 import { PendingPayments } from "@/features/dashboard/components/PendingPayments";
-import { Alert } from "@/components/ui";
+import { Alert, Button } from "@/components/ui";
 import {
   fetchDashboardOverview,
   fetchDashboardRevenue,
@@ -132,9 +134,27 @@ export default function DashboardPage() {
     },
   ];
 
+  const canOnboard = userRole ? canAccessRoute(userRole, "/onboarding/member") : false;
+
   return (
     <DashboardLayout title="Dashboard">
       {error && <Alert variant="error">{error}</Alert>}
+
+      {canOnboard && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 p-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Walk-in member?</h2>
+            <p className="text-sm text-gray-600">
+              Membership, payment, door access and the app invite — in one flow.
+            </p>
+          </div>
+          <Link href="/onboarding/member">
+            <Button size="sm" data-testid="dashboard-onboard-cta">
+              <UserPlus className="h-4 w-4" /> Onboard member
+            </Button>
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {metrics.map((m) => (

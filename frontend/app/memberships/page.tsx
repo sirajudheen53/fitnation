@@ -172,6 +172,11 @@ export default function MembershipsPage() {
                         {plan.description && (
                           <p className="mt-2 text-sm text-gray-600">{plan.description}</p>
                         )}
+                        {plan.includes_app_access && (
+                          <p className="mt-2">
+                            <Badge variant="info">📱 App included</Badge>
+                          </p>
+                        )}
                       </div>
                       <div className="mt-4 flex items-center gap-2">
                         <Link
