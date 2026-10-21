@@ -45,7 +45,7 @@ class AppEnvironment {
   static const String apiBaseUrlOverride = String.fromEnvironment('API_BASE_URL');
 
   /// Device-bound gym anchor (tenant UUID) for phone-OTP login.
-  /// Passed via --dart-define=GYM_ANCHOR=<tenant-uuid>.
+  /// Passed via `--dart-define=GYM_ANCHOR=<tenant-uuid>`.
   /// Per-gym builds set this to the gym's tenant UUID.
   static const String gymAnchor = String.fromEnvironment('GYM_ANCHOR');
 

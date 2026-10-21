@@ -14,7 +14,7 @@ class AuthRemoteDataSource {
   /// Requests an OTP to be sent to [phone].
   ///
   /// POST /api/v1/users/auth/otp/request/
-  /// Body: { "phone": "+919876543210", "gym": "<tenant-uuid>"? }
+  /// Body: `{ "phone": "+919876543210", "gym": "<tenant-uuid>"? }`
   ///
   /// [gymAnchor] is the effective gym anchor (runtime link anchor wins over
   /// the build-time dart-define — see `AnchorStore` docs).
@@ -54,8 +54,8 @@ class AuthRemoteDataSource {
           'phone': phone,
           'otp': otp,
           'device_type': deviceType,
-          if (deviceId != null) 'device_id': deviceId,
-          if (userAgent != null) 'user_agent': userAgent,
+          'device_id': ?deviceId,
+          'user_agent': ?userAgent,
           if (gymAnchor != null && gymAnchor.isNotEmpty) 'gym': gymAnchor,
         },
       );

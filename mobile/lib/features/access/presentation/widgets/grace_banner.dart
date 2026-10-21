@@ -4,8 +4,8 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../auth/data/models/entitlement.dart';
 
 /// Persistent amber banner shown while the member is in the read-only grace
-/// window (FBOS-011 §3.4): "Your membership expired on <date>. Access is
-/// read-only until <grace_end_date>." Hosted at the top of the dashboard —
+/// window (FBOS-011 §3.4): "Your membership expired on `<date>`. Access is
+/// read-only until `<grace_end_date>`." Hosted at the top of the dashboard —
 /// no full-screen gate for grace.
 class GraceBanner extends StatelessWidget {
   const GraceBanner({super.key, required this.entitlement});

@@ -68,13 +68,44 @@ void main() {
     });
 
     test('customer permissions match FBOS-009 spec', () {
-      expect(PermissionChecker.customerPermissions, {
+      expect(PermissionChecker.fallbackCustomerPermissions, {
         'memberships.view_membership',
         'payments.view_payment',
         'attendance.view_attendance',
         'attendance.log_attendance',
         'workouts.view_workout',
         'diets.view_diet',
+      });
+    });
+
+    // FBOS-011 §7.2: the permission set is server-driven. The static list is
+    // only a fallback for the cold-restore path (no server list yet).
+    group('effectivePermissions', () {
+      test('uses the server list when it is non-empty', () {
+        expect(
+          PermissionChecker.effectivePermissions(['app.access', 'diets.view_diet']),
+          ['app.access', 'diets.view_diet'],
+        );
+      });
+
+      test('falls back to the local list when the server list is empty', () {
+        expect(
+          PermissionChecker.effectivePermissions(const []),
+          PermissionChecker.fallbackCustomerPermissions.toList(),
+        );
+      });
+    });
+
+    group('app access code', () {
+      test('hasAppAccess is true when the server sent app.access', () {
+        expect(
+          PermissionChecker.hasAppAccess(['app.access', 'diets.view_diet']),
+          true,
+        );
+      });
+
+      test('hasAppAccess is false without the app.access code', () {
+        expect(PermissionChecker.hasAppAccess(customerPerms), false);
       });
     });
   });

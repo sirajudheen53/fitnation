@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../auth/data/models/entitlement.dart';
 import '../../../auth/presentation/providers/auth_notifier.dart';
 
 /// The app-access gate (FBOS-011 §3.4, §7.2).
@@ -96,8 +96,10 @@ class _GatePageState extends ConsumerState<GatePage> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                strokeWidth: 2,
-                                child: CircularProgressIndicator(color: Colors.white),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
                               )
                             : const Icon(Icons.refresh_rounded),
                         label: Text(_refreshing ? 'Checking…' : 'I\u2019ve renewed — refresh'),

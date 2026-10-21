@@ -7,6 +7,7 @@ import 'package:fitnation_app/core/theme/app_theme.dart';
 import 'package:fitnation_app/features/attendance/presentation/providers/attendance_provider.dart';
 import 'package:fitnation_app/features/auth/data/data_sources/auth_local_data_source.dart';
 import 'package:fitnation_app/features/auth/data/data_sources/auth_remote_data_source.dart';
+import 'package:fitnation_app/features/auth/data/models/entitlement.dart';
 import 'package:fitnation_app/features/auth/data/models/user_model.dart';
 import 'package:fitnation_app/features/auth/domain/repositories/auth_repository.dart';
 import 'package:fitnation_app/features/auth/presentation/providers/auth_providers.dart';
@@ -65,11 +66,13 @@ class _FakeAuthRepository extends AuthRepository {
         );
 
   @override
-  ({UserModel? user, List<String> permissions, String? token}) restoreSession() {
+  ({UserModel? user, List<String> permissions, String? token, Entitlement? entitlement})
+      restoreSession() {
     return (
       user: const UserModel(id: 3, role: 'customer', firstName: 'Raman'),
       permissions: const [],
       token: 'fake-token',
+      entitlement: const Entitlement(status: AppEntitlementStatus.active),
     );
   }
 }

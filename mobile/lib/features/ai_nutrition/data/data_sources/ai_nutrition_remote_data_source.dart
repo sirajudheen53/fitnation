@@ -48,7 +48,7 @@ class AiNutritionRemoteDataSource {
     try {
       final response = await _dio.get(
         AppConstants.nutritionShoppingListEndpoint,
-        queryParameters: {if (planId != null) 'plan': planId},
+        queryParameters: {'plan': ?planId},
       );
       final results = _extractResults(response.data);
       return results

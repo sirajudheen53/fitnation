@@ -1,4 +1,6 @@
 /// Core constants for the FitNation app.
+library;
+
 import '../config/app_config.dart';
 
 class AppConstants {

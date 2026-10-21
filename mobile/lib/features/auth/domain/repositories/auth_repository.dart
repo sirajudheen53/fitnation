@@ -103,7 +103,7 @@ class AuthRepository {
   }
 
   /// Gets the current user profile from the server (refresh).
-  Future<({UserModel? user, List<String>? permissions, Entitlement? entitlement, Failure? error})}
+  Future<({UserModel? user, List<String>? permissions, Entitlement? entitlement, Failure? error})>
       refreshProfile() async {
     try {
       final response = await _remote.getCurrentUser();

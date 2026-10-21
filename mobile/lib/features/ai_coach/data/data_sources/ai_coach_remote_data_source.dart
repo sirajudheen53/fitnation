@@ -20,7 +20,7 @@ class AiCoachRemoteDataSource {
         AppConstants.aiCoachChatEndpoint,
         data: {
           'message': message,
-          if (conversationId != null) 'conversation_id': conversationId,
+          'conversation_id': ?conversationId,
         },
       );
       return ChatMessage.fromJson(response.data as Map<String, dynamic>);

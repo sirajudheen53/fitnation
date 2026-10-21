@@ -20,31 +20,28 @@ import '../anchor/anchor_store.dart';
 ///   stored yet — a real link always beats the referrer.
 class DeepLinkService {
   DeepLinkService({
-    required AnchorStore anchorStore,
-    AppLinks? appLinks,
-    Future<String?> Function()? readInstallReferrer,
-    Future<bool> Function(JoinLink link)? confirmSwitch,
-  })  : _anchorStore = anchorStore,
-        _appLinks = appLinks,
-        _readInstallReferrer = readInstallReferrer,
-        _confirmSwitch = confirmSwitch;
+    required this.anchorStore,
+    this.appLinks,
+    this.readInstallReferrer,
+    this.confirmSwitch,
+  });
 
-  final AnchorStore _anchorStore;
-  final AppLinks? _appLinks;
-  final Future<String?> Function()? _readInstallReferrer;
-  final Future<bool> Function(JoinLink link)? _confirmSwitch;
+  final AnchorStore anchorStore;
+  final AppLinks? appLinks;
+  final Future<String?> Function()? readInstallReferrer;
+  final Future<bool> Function(JoinLink link)? confirmSwitch;
 
   StreamSubscription<Uri>? _linkSubscription;
 
   /// Whether a runtime anchor already exists (referrer defers to it).
   bool get hasRuntimeAnchor =>
-      _anchorStore.runtimeGymUuid != null &&
-      _anchorStore.runtimeGymUuid!.isNotEmpty;
+      anchorStore.runtimeGymUuid != null &&
+      anchorStore.runtimeGymUuid!.isNotEmpty;
 
   /// The effective anchor to send on OTP calls (runtime wins over the
   /// build-time `--dart-define=GYM_ANCHOR`).
   String? effectiveAnchor(String buildTimeAnchor) =>
-      _anchorStore.effectiveAnchor(buildTimeAnchor: buildTimeAnchor);
+      anchorStore.effectiveAnchor(buildTimeAnchor: buildTimeAnchor);
 
   /// Starts listening: cold-start link (Play re-delivery), warm links, and
   /// (once) the Play install referrer.
@@ -55,7 +52,7 @@ class DeepLinkService {
   }
 
   Future<void> _captureInitialLink() async {
-    final links = _appLinks;
+    final links = appLinks;
     if (links == null) return;
     try {
       final initial = await links.getInitialLink();
@@ -66,7 +63,7 @@ class DeepLinkService {
   }
 
   void _listenForWarmLinks() {
-    final links = _appLinks;
+    final links = appLinks;
     if (links == null) return;
     _linkSubscription = links.uriLinkStream.listen(
       (uri) => handleLink(uri),
@@ -75,7 +72,7 @@ class DeepLinkService {
   }
 
   Future<void> _captureInstallReferrerOnce() async {
-    final read = _readInstallReferrer;
+    final read = readInstallReferrer;
     if (read == null) return;
     try {
       final raw = await read();
@@ -94,11 +91,11 @@ class DeepLinkService {
 
   /// Persists [link] per the policy documented on this class.
   Future<bool> capture(JoinLink link) async {
-    final confirm = _confirmSwitch;
+    final confirm = confirmSwitch;
     if (confirm != null && !(await confirm(link))) {
       return false;
     }
-    await _anchorStore.save(
+    await anchorStore.save(
       gymUuid: link.gymUuid,
       inviteToken: link.inviteToken,
     );
@@ -117,7 +114,7 @@ class DeepLinkService {
       Uri.parse('fitnation://join?gym=$normalized'),
     );
     if (link == null) return false;
-    await _anchorStore.save(gymUuid: link.gymUuid);
+    await anchorStore.save(gymUuid: link.gymUuid);
     return true;
   }
 

@@ -19,52 +19,53 @@ import 'messaging_client.dart';
 /// outage must never block the member from using the app).
 class PushNotificationService {
   PushNotificationService({
-    required DeviceRemoteDataSource devices,
-    MessagingClient? messaging,
-    Future<String> Function()? deviceId,
-    void Function(String route)? onNavigate,
-  })  : _devices = devices,
-        _messaging = messaging,
-        _deviceId = deviceId,
-        onNavigate = onNavigate;
+    required this.devices,
+    this.messaging,
+    this.deviceId,
+    this.onNavigate,
+  });
 
-  final DeviceRemoteDataSource _devices;
-  final MessagingClient? _messaging;
-  final Future<String> Function()? _deviceId;
+  final DeviceRemoteDataSource devices;
+  final MessagingClient? messaging;
+  final Future<String> Function()? deviceId;
 
   /// Called when a notification tap should land on an in-app route.
-  final void Function(String route)? onNavigate;
+  ///
+  /// Mutable on purpose: the service is built by a provider before the
+  /// router exists, so `main.dart` assigns the navigation callback once the
+  /// app shell is up.
+  void Function(String route)? onNavigate;
 
   StreamSubscription<String>? _refreshSub;
   StreamSubscription<PushMessage>? _tapSub;
   String? _lastRegisteredToken;
 
   /// Whether push plumbing is active (messaging client available + ready).
-  bool get isEnabled => _messaging != null;
+  bool get isEnabled => messaging != null;
 
   /// Wires token registration and tap routing. Safe to call when Firebase is
   /// unavailable (no `google-services.json`) — everything no-ops.
   Future<void> initialize() async {
-    final messaging = _messaging;
-    if (messaging == null) {
+    final client = messaging;
+    if (client == null) {
       debugPrint('PushNotificationService: messaging unavailable — push disabled');
       return;
     }
 
     try {
-      final granted = await messaging.requestPermission();
+      final granted = await client.requestPermission();
       if (!granted) {
         debugPrint('PushNotificationService: permission not granted');
       }
       await registerCurrentToken();
 
-      _refreshSub = messaging.onTokenRefresh.listen((token) {
+      _refreshSub = client.onTokenRefresh.listen((token) {
         _register(token);
       });
-      _tapSub = messaging.onMessageTap.listen((message) {
+      _tapSub = client.onMessageTap.listen((message) {
         _route(message);
       });
-      final initial = await messaging.getInitialMessage();
+      final initial = await client.getInitialMessage();
       if (initial != null) _route(initial);
     } catch (e) {
       debugPrint('PushNotificationService: init failed (push disabled): $e');
@@ -73,10 +74,10 @@ class PushNotificationService {
 
   /// Registers the current FCM token against the authenticated user.
   Future<void> registerCurrentToken() async {
-    final messaging = _messaging;
-    if (messaging == null) return;
+    final client = messaging;
+    if (client == null) return;
     try {
-      final token = await messaging.getToken();
+      final token = await client.getToken();
       if (token == null || token.isEmpty) return;
       await _register(token);
     } catch (e) {
@@ -90,7 +91,7 @@ class PushNotificationService {
     if (token == null) return;
     _lastRegisteredToken = null;
     try {
-      await _devices.unregister(token);
+      await devices.unregister(token);
     } catch (e) {
       debugPrint('PushNotificationService: unregister failed: $e');
     }
@@ -98,8 +99,8 @@ class PushNotificationService {
 
   Future<void> _register(String token) async {
     try {
-      final id = _deviceId != null ? await _deviceId() : '';
-      await _devices.register(
+      final id = deviceId != null ? await deviceId!() : '';
+      await devices.register(
         token: token,
         deviceId: id,
         platform: 'android',

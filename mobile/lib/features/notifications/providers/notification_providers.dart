@@ -41,14 +41,25 @@ class FirebaseMessagingClient implements MessagingClient {
   }
 
   @override
-  Future<String?> getToken() => FirebaseMessaging.instance.getToken();
+  Future<String?> getToken() async {
+    // FCM v17: the FID arrives on the `onRegistered` stream, not from a
+    // synchronous getter. `register()` asks Firebase to (re)register this
+    // installation; the resulting FID is delivered on `onRegistered`.
+    await FirebaseMessaging.instance.register();
+    return FirebaseMessaging.instance.onRegistered
+        .first
+        .timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => '',
+        );
+  }
 
   @override
-  Stream<String> get onTokenRefresh => FirebaseMessaging.instance.onTokenRefresh;
+  Stream<String> get onTokenRefresh => FirebaseMessaging.instance.onRegistered;
 
   @override
   Stream<PushMessage> get onMessageTap =>
-      FirebaseMessaging.instance.onMessageOpenedApp
+      FirebaseMessaging.onMessageOpenedApp
           .map((message) => PushMessage(data: message.data));
 
   @override

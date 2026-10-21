@@ -19,20 +19,21 @@ import 'package:hive/hive.dart';
 class AnchorStore {
   /// Creates a store. In production [init] opens the Hive box; tests may
   /// inject a [box].
-  AnchorStore({Box<String>? box}) : _box = box;
+  AnchorStore({this.box});
+
 
   static const String boxName = 'anchor_box';
   static const String _gymUuidKey = 'runtime_gym_uuid';
   static const String _inviteTokenKey = 'runtime_invite_token';
 
-  Box<String>? _box;
+  Box<String>? box;
 
   /// Opens (or reuses) the Hive box. Safe to call multiple times.
   Future<void> init() async {
-    _box ??= await Hive.openBox<String>(boxName);
+    box ??= await Hive.openBox<String>(boxName);
   }
 
-  Box<String> get _store => _box ??= Hive.box<String>(boxName);
+  Box<String> get _store => box ??= Hive.box<String>(boxName);
 
   /// The runtime anchor captured on this device, or null.
   String? get runtimeGymUuid => _store.get(_gymUuidKey);
