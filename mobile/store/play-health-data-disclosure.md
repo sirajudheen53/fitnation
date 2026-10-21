@@ -21,10 +21,10 @@ For every category above:
 
 - **Collected?** Yes. **Purpose:** app functionality / personalization (display the
   customer's own profile, progress history, gym programs). **Not used for advertising.**
-- **Shared with third parties?** No. Data is exchanged only with the FitNation
-  backend (api.yougetfitwithus.com) and, for the customer's own gym, with the
-  gym's authorized staff dashboards (same backend, tenant-scoped). No ad
-  networks, no analytics-identity sharing, no data brokers.
+- **Shared with third parties?** No. Data is exchanged only with FitNation's
+  servers over encrypted HTTPS and, for the customer's own gym, with the
+  gym's authorized staff dashboards (same FitNation backend, tenant-scoped).
+  No ad networks, no analytics-identity sharing, no data brokers.
 - **Transmitted off the device?** Yes — to the customer's own
   FitNation-hosted backend only.
 - **Encrypted in transit?** Yes — TLS 1.2+ HTTPS (Dio with certificate
