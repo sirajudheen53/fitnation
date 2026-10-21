@@ -352,6 +352,37 @@ class MeAndEntitlementEndpointTests(AppAccessTestBase):
         response = self.client.get("/api/v1/users/auth/entitlement/")
         self.assertEqual(response.status_code, 401)
 
+    def test_entitlement_keys_match_mobile_contract(self) -> None:
+        """Pin the exact key set the mobile Dart model parses (entitlement.dart).
+
+        The shipped contract: ``status``, ``read_only``, ``plan_name``,
+        ``end_date``, ``grace_end_date`` and ``gym: {uuid, name}``, with
+        ``status`` drawn from the EntitlementStatus vocabulary. Any backend
+        change to these keys breaks the member app's gate.
+        """
+        from apps.memberships.selectors import EntitlementStatus
+
+        user = self.create_customer_user("+919900040005")
+        self.give_membership(user)
+        self.auth(user)
+
+        expected_keys = {"status", "read_only", "plan_name", "end_date", "grace_end_date", "gym"}
+        expected_statuses = {
+            EntitlementStatus.ACTIVE,
+            EntitlementStatus.GRACE,
+            EntitlementStatus.EXPIRED,
+            EntitlementStatus.NONE,
+        }
+
+        response = self.client.get("/api/v1/users/auth/entitlement/")
+        self.assertEqual(set(response.data.keys()), expected_keys)
+        self.assertEqual(set(response.data["gym"].keys()), {"uuid", "name"})
+        self.assertIn(response.data["status"], expected_statuses)
+
+        me_response = self.client.get("/api/v1/users/auth/me/")
+        self.assertEqual(set(me_response.data["entitlement"].keys()), expected_keys)
+        self.assertIn(me_response.data["entitlement"]["status"], expected_statuses)
+
 
 class EntitlementRequiredTests(TestCase):
     """The customer-content gate (§2.4): grace read-only, expired blocked."""
