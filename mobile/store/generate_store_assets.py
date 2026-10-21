@@ -3,8 +3,14 @@
 
 palette = app_theme.dart: primaryDark #4B0E9F, primary #6C13E2,
 primaryLight #9D54F0, accent mint #00E5A0.
+
+FBOS-057: the glyph was rebuilt BOLD - thick plates, chunky rounded handle,
+a soft darker-purple depth cue - sized to cover >=30% of the adaptive
+66dp safe-zone box at 108dp. Everything is drawn once at 1024 and
+LANCZOS-downscaled per density so every asset shares identical edges.
 """
 from PIL import Image, ImageDraw, ImageFont
+import math
 import os
 
 MOBILE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -12,7 +18,20 @@ RES = f"{MOBILE}/android/app/src/main/res"
 STORE = f"{MOBILE}/store"
 
 DARK, PRIMARY, LIGHT, MINT = (0x4B, 0x0E, 0x9F), (0x6C, 0x13, 0xE2), (0x9D, 0x54, 0xF0), (0x00, 0xE5, 0xA0)
+SHADOW = (0x2E, 0x08, 0x66, 230)  # depth cue: darker purple under the glyph
 WHITE = (255, 255, 255, 255)
+
+MASTER = 1024
+
+# Glyph geometry, fractions of glyph width. The canvas-wide span
+# GLYPH_W = 0.78 * 0.61 fills ~78% of the 66dp safe-zone box of a 108dp layer.
+GLYPH_W = 0.476
+GLYPH_H = 0.82            # glyph height / width
+PLATE_W = 0.28            # plate thickness (was 0.191 -> thin line-art)
+PLATE_R = 0.12            # plate corner radius
+HANDLE_H = 0.26           # handle thickness (single-stroke ~0.12 before)
+HANDLE_GAP = 0.04         # breathing gap between plates and handle
+SHADOW_DXY = 8            # depth-cue offset at MASTER (~3px at 432)
 
 
 def gradient(w=1024, h=1024):
@@ -26,10 +45,8 @@ def gradient(w=1024, h=1024):
 
 
 def dumbbell(canvas, cx, cy, gw=460, gh=368, colour=WHITE, alpha=255):
-    """White dumbbell: two side plates + centre handle, rounded ends.
-
-    Glyph spans gw x gh around (cx, cy); at gw=460/1024 the corners stay
-    inside the adaptive-icon safe zone (33dp/108dp = ~30.5% radius).
+    """Legacy thin glyph - kept ONLY for the feature graphic, which already
+    shipped and must not change (FBOS-057 touches the icon set, not the art).
     """
     d = ImageDraw.Draw(canvas, "RGBA")
     hw = gw // 2
@@ -46,10 +63,44 @@ def dumbbell(canvas, cx, cy, gw=460, gh=368, colour=WHITE, alpha=255):
                         radius=hy // 2, fill=c)
 
 
-def master(size=1024):
-    img = gradient(size, size).convert("RGBA")
-    dumbbell(img, size // 2, size // 2, size // 1024 * 460, size // 1024 * 368)
+def bold_glyph(size=MASTER, shadow=False):
+    """Bold filled dumbbell silhouette on a transparent size x size canvas."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    gw = size * GLYPH_W
+    gh, pw, hh = gw * GLYPH_H, gw * PLATE_W, gw * HANDLE_H
+    gap, rp = gw * HANDLE_GAP, gw * PLATE_R
+    cx = cy = size / 2
+    x0, x1, y0, y1 = cx - gw / 2, cx + gw / 2, cy - gh / 2, cy + gh / 2
+    layers = [(SHADOW, SHADOW_DXY, SHADOW_DXY), (WHITE, 0, 0)] if shadow else [(WHITE, 0, 0)]
+    for colour, dx, dy in layers:
+        d = ImageDraw.Draw(img, "RGBA")
+        d.rounded_rectangle([x0, y0 + dy, x0 + pw, y1 + dy], radius=rp, fill=colour)
+        d.rounded_rectangle([x1 - pw, y0 + dy, x1, y1 + dy], radius=rp, fill=colour)
+        d.rounded_rectangle([x0 + pw + gap, cy - hh / 2 + dy,
+                             x1 - pw - gap, cy + hh / 2 + dy], radius=hh / 2, fill=colour)
     return img
+
+
+def master(size=MASTER):
+    """Full-bleed brand gradient + bold glyph with depth cue."""
+    img = gradient(size, size).convert("RGBA")
+    img.alpha_composite(bold_glyph(size, shadow=True))
+    return img
+
+
+def highlight(img, cx_f=0.30, cy_f=0.24, reach=0.95, strength=0.08):
+    """Soft top-left radial highlight so the gradient doesn't look flat."""
+    s = img.size[0]
+    m = Image.new("L", (64, 64), 0)
+    p = m.load()
+    hcx, hcy, R = cx_f * s, cy_f * s, reach * s
+    for y in range(64):
+        for x in range(64):
+            dist = math.hypot((x + .5) / 64 * s - hcx, (y + .5) / 64 * s - hcy)
+            p[x, y] = int(255 * strength * max(0.0, 1 - dist / R) ** 1.4)
+    ov = Image.new("RGBA", (s, s), WHITE)
+    ov.putalpha(m.resize((s, s), Image.BILINEAR))
+    img.alpha_composite(ov)
 
 
 def save(img, path):
@@ -59,11 +110,16 @@ def save(img, path):
 
 
 os.makedirs(STORE, exist_ok=True)
+glyph = bold_glyph(MASTER, shadow=True)
+glyph_flat = bold_glyph(MASTER, shadow=False)
 
 # 1. Play store icon: exactly 512x512, opaque square. Play rounds/parallax-masks it.
-save(master().resize((512, 512), Image.LANCZOS), f"{STORE}/app-icon-512.png")
+store = master()
+highlight(store)  # subtle top-left light so the gradient has depth
+save(store.resize((512, 512), Image.LANCZOS), f"{STORE}/app-icon-512.png")
 
 # 2. Feature graphic 1024x500 (Play listing required asset).
+#    FBOS-057: UNCHANGED - asset already shipped, keep the legacy thin glyph.
 fg = gradient(1024, 500).convert("RGBA")
 d = ImageDraw.Draw(fg, "RGBA")
 bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 104)
@@ -82,15 +138,12 @@ save(fg, f"{STORE}/feature-graphic-1024x500.png")
 for dpi, px in [("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xxxhdpi", 192)]:
     save(master().resize((px, px), Image.LANCZOS), f"{RES}/mipmap-{dpi}/ic_launcher.png")
 
-# 4. Adaptive icon layers: background = gradient only; foreground = glyph
-#    (glyph already inside the 33dp safe zone) at 108dp densities.
+# 4. Adaptive icon layers: background = gradient only; foreground = bold glyph
+#    filling ~78% of the 66dp safe-zone box; mono = flat full silhouette
+#    (Android 13 themed icons, no depth cue).
 for dpi, px in [("mdpi", 108), ("hdpi", 162), ("xhdpi", 216), ("xxhdpi", 324), ("xxxhdpi", 432)]:
-    f = master  # glyph margin is fine, reuse master
-    save(gradient(px, px).convert("RGBA").convert("RGBA"), f"{RES}/mipmap-{dpi}/ic_launcher_background.png")
-    img = Image.new("RGBA", (px, px), (0, 0, 0, 0))
-    dumbbell(img, px // 2, px // 2, px * 460 // 1024, px * 368 // 1024)
-    save(img, f"{RES}/mipmap-{dpi}/ic_launcher_foreground.png")
-    # monochrome (Android 13 themed icons): transparent bg + glyph mask
-    save(img, f"{RES}/mipmap-{dpi}/ic_launcher_mono.png")
+    save(gradient(px, px).convert("RGBA"), f"{RES}/mipmap-{dpi}/ic_launcher_background.png")
+    save(glyph.resize((px, px), Image.LANCZOS), f"{RES}/mipmap-{dpi}/ic_launcher_foreground.png")
+    save(glyph_flat.resize((px, px), Image.LANCZOS), f"{RES}/mipmap-{dpi}/ic_launcher_mono.png")
 
 print("done")
