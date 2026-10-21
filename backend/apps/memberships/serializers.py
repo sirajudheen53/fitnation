@@ -20,6 +20,7 @@ class MembershipPlanSerializer(serializers.ModelSerializer):
             "duration_days",
             "description",
             "is_active",
+            "includes_app_access",
             "created_at",
             "updated_at",
         ]
@@ -70,6 +71,13 @@ class MembershipSerializer(serializers.ModelSerializer):
                 {"end_date": "end_date must be after start_date."},
             )
         return data
+
+
+class AppInviteSerializer(serializers.Serializer):
+    """Validate an app-invite send/resend request (FBOS-011 §5.1b)."""
+
+    customer_id = serializers.IntegerField()
+    resend = serializers.BooleanField(required=False, default=False)
 
 
 class CouponSerializer(serializers.ModelSerializer):

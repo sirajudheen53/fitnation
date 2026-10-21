@@ -29,6 +29,15 @@ class MembershipPlan(TenantModelMixin):
     duration_days = models.PositiveIntegerField()
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    # FBOS-011 §1.1 / ADR-003: the plan is the commercial contract for app
+    # access (default True backfills every existing plan in the same DDL —
+    # no member loses access at rollout). Entitlement is derived per request
+    # from the member's current membership → this flag, so toggling it
+    # revokes/restores access on the member's next request.
+    includes_app_access = models.BooleanField(
+        default=True,
+        help_text="Memberships sold on this plan include access to the customer mobile app.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

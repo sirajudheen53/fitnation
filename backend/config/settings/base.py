@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     "apps.reviews",
     "apps.access",
     "apps.admin_ops",
+    "apps.onboarding",
 ]
 
 MIDDLEWARE = [
@@ -182,3 +183,40 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# ── App access & invites (FBOS-011) ────────────────────────────────────────────
+# Read-only grace window (calendar days) after a membership end_date. Computed
+# per request — never stored (no Celery to expire a stored flag).
+APP_ACCESS_GRACE_DAYS = 7
+
+# OTP delivery chain selector (FBOS-011 §4):
+#   auto    — DEBUG: console | production: tenant WATI → MSG91 SMS (default)
+#   console — dev logger; ignored (with a warning) when DEBUG=False
+#   stub    — returns the code in API responses; HARD-BLOCKED unless DEBUG
+#   wati    — force the tenant's WATI leg only
+#   sms     — force the MSG91 leg only
+OTP_SENDER = env("OTP_SENDER", default="auto")
+OTP_DEFAULT_COUNTRY_CODE = "91"
+# Per-tenant daily WhatsApp OTP budget; when hit, delivery skips to SMS.
+TENANT_WATI_OTP_DAILY_CAP = 200
+# Per-tenant daily cap on OTP-auto-created customer identities (§3.1).
+APP_AUTOCREATE_DAILY_LIMIT = 50
+
+# SMS fallback provider (MSG91 flow API — platform-level, DLT-registered).
+SMS_PROVIDER = env("SMS_PROVIDER", default="msg91")
+MSG91_AUTH_KEY = env("MSG91_AUTH_KEY", default="")
+MSG91_SENDER_ID = env("MSG91_SENDER_ID", default="")
+MSG91_TEMPLATE_ID = env("MSG91_TEMPLATE_ID", default="")
+MSG91_TIMEOUT = 10
+# DLT-registered invite template (FBOS-011 §5.2) with NAME/GYM/LINK/PHONE vars.
+MSG91_INVITE_TEMPLATE_ID = env("MSG91_INVITE_TEMPLATE_ID", default="")
+
+# App invite deep link (FBOS-011 §5.4). The web base must host the App-Links
+# verification file; the custom scheme is handled by the Android manifest.
+APP_INVITE_WEB_BASE = env("APP_INVITE_WEB_BASE", default="https://app.yougetfitwithus.com")
+APP_INVITE_SCHEME = "fitnation"
+ANDROID_PACKAGE_NAME = "com.fitnation.app"
+# Dedupe window for app invites (front desk can force a resend past it).
+APP_INVITE_RESEND_WINDOW_HOURS = 24
+# Hard per-tenant daily cap on invite sends (§10.1).
+APP_INVITE_DAILY_LIMIT = 20

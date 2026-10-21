@@ -37,6 +37,25 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "at {gym_name}. Check your app for details."
     ),
     "payment_received": ("Hi {customer_name}, we've received your payment of ₹{amount} at {gym_name}. " "Thank you!"),
+    # FBOS-011 §5.2 / onboarding-design §3.5: rendered copy stored on the
+    # NotificationLog so the audit trail is human-readable. The actual WATI
+    # sends for these types use APPROVED TEMPLATE messages (variable params),
+    # not session messages — see invite_service / apps.users.otp.
+    "welcome": (
+        "Welcome to {gym_name}, {customer_name}! 🎉 Your {plan_name} membership is active until {end_date}. "
+        "Install the FitNation app and sign in with {phone} to get your plans. See you at the gym! 💪"
+    ),
+    "app_invite": (
+        "Hi {customer_name}! Welcome to {gym_name} 🎉 Your {plan_name} membership is active. "
+        "Get your workout & diet plans, check-in QR and progress tracking in the FitNation app: {invite_link}"
+    ),
+}
+
+# WATI approved template names (one-time approval per WATI account; fixed
+# platform-wide — a tenant wanting custom copy approves the same template
+# name in their own WATI console).
+WATI_TEMPLATE_NAMES: dict[str, str] = {
+    "app_invite": "fitnation_app_invite",
 }
 
 # Default Wati endpoint used when the tenant has not configured one.

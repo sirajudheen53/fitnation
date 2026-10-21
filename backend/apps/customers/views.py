@@ -23,6 +23,7 @@ from apps.customers.serializers import (
     HealthProfileSerializer,
     ProgressPhotoSerializer,
 )
+from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -32,7 +33,22 @@ class CustomerViewSet(ModelViewSet):
     """Tenant-scoped customer management viewset."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    # FBOS-011 §2.4/§2.5: the PROFILE stays viewable/editable in every
+    # entitlement state (a gated member must still see why they're gated) —
+    # these actions are exempt from the entitlement gate. Everything else on
+    # this viewset (notably the progress-photos action — health data) is
+    # gated: read-only in grace, blocked when expired/none.
+    entitlement_exempt_actions = {
+        "list",
+        "retrieve",
+        "update",
+        "partial_update",
+        "health_profile",
+        "progress_summary",
+        "fitness_goals",
+        "measurements",
+    }
     required_permission = "customers.view_customer"
     serializer_class = CustomerSerializer
     filter_backends = [SearchFilter, OrderingFilter]

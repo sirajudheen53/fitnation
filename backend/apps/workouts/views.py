@@ -19,6 +19,7 @@ from apps.workouts.models import (
     WorkoutLog,
     WorkoutPlan,
 )
+from apps.permissions.entitlements import EntitlementRequired
 from apps.workouts.serializers import (
     WorkoutAssignmentSerializer,
     WorkoutDayWriteSerializer,
@@ -131,7 +132,7 @@ class WorkoutPlanViewSet(ModelViewSet):
     """Tenant-scoped CRUD for workout plans with nested days/exercises."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
     required_permission = "workouts.view_workout"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = WorkoutPlanSerializer
@@ -240,7 +241,7 @@ class WorkoutDayViewSet(ModelViewSet):
     """Tenant-scoped CRUD for workout days (nested under a plan)."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
     required_permission = "workouts.view_workout"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = WorkoutDayWriteSerializer
@@ -284,7 +285,7 @@ class WorkoutExerciseViewSet(ModelViewSet):
     """Tenant-scoped CRUD for workout exercises."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
     required_permission = "workouts.view_workout"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = WorkoutExerciseNestedSerializer
@@ -340,7 +341,7 @@ class WorkoutAssignmentViewSet(ModelViewSet):
     """Tenant-scoped CRUD for workout assignments to customers."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
     required_permission = "workouts.view_workout"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = WorkoutAssignmentSerializer
@@ -423,7 +424,7 @@ class WorkoutLogViewSet(ModelViewSet):
     """Tenant-scoped CRUD for workout logs and progress tracking."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
     required_permission = "workouts.view_workout"
     method_permissions = _LOG_METHOD_PERMISSIONS
     serializer_class = WorkoutLogSerializer

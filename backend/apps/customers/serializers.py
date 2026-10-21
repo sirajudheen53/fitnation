@@ -2,6 +2,7 @@
 
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
+from rest_framework.fields import SerializerMethodField
 
 from PIL import Image
 
@@ -13,6 +14,7 @@ from apps.customers.models import (
     ProgressPhoto,
 )
 from apps.users.models import User
+from apps.users.services import SYNTHETIC_EMAIL_DOMAIN, synthetic_otp_email
 
 # FBOS-026 part 1: profile photo constraints (JPEG/PNG/WebP, max 5 MB).
 ALLOWED_PROFILE_PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}
@@ -30,9 +32,10 @@ class CustomerSerializer(serializers.ModelSerializer):
     writable for mobile/tests.
 
     Email is optional (msg 2438): a phone-only customer gets a portal user
-    under the synthetic OTP email ``{phone}@fitnation.local`` while
-    ``Customer.email`` stays NULL, and adding a real email later adopts it
-    onto the same user (ADR-002 convergence).
+    under the tenant-scoped synthetic OTP email
+    ``{phone}.{tenant_uuid}@fitnation.local`` while ``Customer.email`` stays
+    NULL, and adding a real email later adopts it onto the same user
+    (ADR-002 convergence).
     """
 
     first_name = serializers.CharField(required=False, allow_blank=True, write_only=True, max_length=150)
@@ -40,6 +43,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
     name = serializers.CharField(max_length=200, required=False)
+    app_invite_status = SerializerMethodField()
 
     class Meta:
         """Serializer metadata."""
@@ -66,10 +70,39 @@ class CustomerSerializer(serializers.ModelSerializer):
             "status",
             "notes",
             "is_active",
+            "app_invite_status",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_app_invite_status(self, obj: Customer) -> dict | None:
+        """Summarize the latest ``app_invite`` notification for the member.
+
+        Consumed by the customer-detail card and the onboarding wizard's
+        returning-member path (FBOS-011 §5.1b).
+
+        Args:
+            obj: The customer.
+
+        Returns:
+            ``{"status", "channel", "sent_at", "error_message"}`` for the most
+            recent invite log, or ``None`` when the member was never invited.
+        """
+        log = (
+            obj.notification_logs.filter(notification_type="app_invite")
+            .select_related("customer")
+            .order_by("-created_at")
+            .first()
+        )
+        if log is None:
+            return None
+        return {
+            "status": log.status,
+            "channel": log.channel or None,
+            "sent_at": log.created_at,
+            "error_message": log.error_message or None,
+        }
 
     def validate_profile_photo(self, value):
         """FBOS-026: accept JPEG/PNG/WebP only, max 5 MB."""
@@ -149,7 +182,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         if user is None and phone:
             match = self._phone_identity_match(tenant, phone)
             if match is not None:
-                if not self._is_synthetic_identity(match, phone):
+                if not self._is_synthetic_identity(match):
                     raise serializers.ValidationError(
                         {
                             "phone": [
@@ -176,14 +209,25 @@ class CustomerSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
     @staticmethod
-    def _synthetic_otp_email(phone: str) -> str:
-        """The synthetic email scheme used by the phone-OTP flow."""
-        return f"{phone}@fitnation.local"
+    def _synthetic_otp_email(phone: str, tenant=None) -> str:
+        """The synthetic email scheme used by the phone-OTP flow.
 
-    def _is_synthetic_identity(self, user: User, phone: str) -> bool:
+        Tenant-scoped via the shared helper (FBOS-011 §3.5); legacy callers
+        without a tenant keep the old ``{phone}@fitnation.local`` shape.
+        """
+        if tenant is None:
+            return f"{phone}{SYNTHETIC_EMAIL_DOMAIN}"
+        return synthetic_otp_email(phone, tenant)
+
+    def _is_synthetic_identity(self, user: User) -> bool:
         """True when the user's identity is a phone-keyed synthetic OTP
-        account (synthetic email or no email at all) — safe to converge."""
-        return user.email == self._synthetic_otp_email(phone) or not user.email
+        account (synthetic email or no email at all) — safe to converge.
+
+        Matches on the shared ``@fitnation.local`` domain so BOTH synthetic
+        schemes — legacy ``{phone}@…`` and tenant-scoped ``{phone}.{tenant}@…``
+        — are recognized without a data migration (FBOS-011 §3.5).
+        """
+        return not user.email or user.email.lower().endswith(SYNTHETIC_EMAIL_DOMAIN)
 
     def _phone_identity_match(self, tenant, phone: str):
         """Return the tenant user already holding this phone, if any."""
@@ -219,12 +263,12 @@ class CustomerSerializer(serializers.ModelSerializer):
             value = validated_data.get(field)
             if value:
                 setattr(profile, field, value)
-        # Phone-only payload: an OTP-provisioned row carries the synthetic
+        # Phone-only payload: an OTP-provisioned row carries a synthetic
         # email — normalize it to the NULL-email shape a direct phone-only
-        # create produces (msg 2438: Customer.email stays NULL).
+        # create produces (msg 2438: Customer.email stays NULL). Both
+        # synthetic schemes (legacy + tenant-scoped) share the domain.
         if not validated_data.get("email") and profile.email:
-            phone = (validated_data.get("phone") or profile.phone or "").strip()
-            if profile.email == self._synthetic_otp_email(phone):
+            if profile.email.lower().endswith(SYNTHETIC_EMAIL_DOMAIN):
                 profile.email = None
         if validated_data.get("branch"):
             profile.branch = validated_data["branch"]
@@ -263,7 +307,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         if not new_email or not instance.user_id:
             return
         user = instance.user
-        if not self._is_synthetic_identity(user, user.phone or ""):
+        if not self._is_synthetic_identity(user):
             return
         if instance.email and instance.email != user.email:
             return
@@ -281,15 +325,16 @@ class CustomerSerializer(serializers.ModelSerializer):
 
         Unusable password (customers authenticate via OTP); the owner vouches
         for the email so the account starts verified. A phone-only customer
-        (msg 2438) is provisioned under the synthetic OTP email
-        ``{phone}@fitnation.local`` — the same scheme as the phone-OTP flow,
-        so a later OTP login reuses this identity. Email conflicts surface
-        as a 400 field error — never silently link an existing user.
+        (msg 2438) is provisioned under the tenant-scoped synthetic OTP email
+        (:func:`apps.users.services.synthetic_otp_email`) — the same scheme as
+        the phone-OTP flow, so a later OTP login reuses this identity. Email
+        conflicts surface as a 400 field error — never silently link an
+        existing user.
         """
         email = validated_data.get("email")
         if not email:
             phone = (validated_data.get("phone") or "").strip()
-            email = self._synthetic_otp_email(phone) if phone else None
+            email = self._synthetic_otp_email(phone, tenant) if phone else None
         try:
             # Nested atomic: a uniqueness violation rolls back to the savepoint
             # so the surrounding request transaction stays usable for the 400.

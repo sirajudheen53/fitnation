@@ -16,6 +16,7 @@ from apps.body_analysis.serializers import (
     BodyProgressTrendSerializer,
 )
 from apps.body_analysis.services import build_progress_trend, create_photo_for_analysis
+from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -25,7 +26,7 @@ class BodyAnalysisViewSet(ModelViewSet):
     """Tenant-scoped CRUD for body analysis sessions."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "body_analysis.view_bodyanalysis"
     serializer_class = BodyAnalysisSerializer
     lookup_field = "pk"
@@ -74,7 +75,7 @@ class BodyPhotoUploadViewSet(GenericViewSet):
     """Handle multipart body-photo uploads."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "body_analysis.create_bodyphoto"
     serializer_class = BodyPhotoUploadSerializer
     queryset = BodyPhoto.objects.none()
@@ -108,7 +109,7 @@ class BodyProgressLogViewSet(ModelViewSet):
     """Tenant-scoped CRUD for body progress logs."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "body_analysis.view_bodyprogresslog"
     serializer_class = BodyProgressLogSerializer
 

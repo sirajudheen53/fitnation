@@ -21,6 +21,7 @@ from apps.reviews.serializers import (
     ReviewSerializer,
     ReviewWriteSerializer,
 )
+from apps.permissions.entitlements import EntitlementRequired
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 from apps.users.models import User
@@ -34,7 +35,7 @@ class ReviewViewSet(viewsets.ModelViewSet):
     """
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "reviews.view_review"
     http_method_names = ["get", "post", "head", "options"]
 

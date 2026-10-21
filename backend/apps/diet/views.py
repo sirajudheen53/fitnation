@@ -25,6 +25,7 @@ from apps.diet.serializers import (
     FoodItemSerializer,
     NutritionBreakdownSerializer,
 )
+from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -188,7 +189,7 @@ class DietPlanViewSet(ModelViewSet):
     """Tenant-scoped CRUD for diet plans with nested days/meals."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
     required_permission = "diets.view_diet"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = DietPlanSerializer
@@ -338,7 +339,7 @@ class DietDayViewSet(ModelViewSet):
     """Tenant-scoped CRUD for diet days (nested under a plan)."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
     required_permission = "diets.view_diet"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = DietDayWriteSerializer
@@ -382,7 +383,7 @@ class DietMealViewSet(ModelViewSet):
     """Tenant-scoped CRUD for diet meals."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
     required_permission = "diets.view_diet"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = DietMealNestedSerializer
@@ -438,7 +439,7 @@ class DietAssignmentViewSet(ModelViewSet):
     """Tenant-scoped CRUD for diet assignments to customers."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
     required_permission = "diets.view_diet"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = DietAssignmentSerializer

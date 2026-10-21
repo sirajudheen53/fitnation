@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
+from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -22,7 +23,7 @@ from .services.ai_service import generate_response
 
 class AIConversationViewSet(ModelViewSet):
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember]
+    permission_classes = [IsAuthenticated, IsTenantMember, EntitlementRequired]
     serializer_class = AIConversationSerializer
 
     def get_queryset(self):
@@ -75,7 +76,7 @@ class ChatView(APIView):
 
 class ConversationMessagesView(APIView):
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember]
+    permission_classes = [IsAuthenticated, IsTenantMember, EntitlementRequired]
 
     def get(self, request, conversation_id):
         conversation = AIConversation.objects.filter(id=conversation_id, user=request.user).first()
@@ -87,7 +88,7 @@ class ConversationMessagesView(APIView):
 
 class AIRecommendationViewSet(ModelViewSet):
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember]
+    permission_classes = [IsAuthenticated, IsTenantMember, EntitlementRequired]
     serializer_class = AIRecommendationSerializer
     http_method_names = ["get", "patch"]
 

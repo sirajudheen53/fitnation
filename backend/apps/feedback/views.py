@@ -26,6 +26,7 @@ from apps.feedback.serializers import (
     FeedbackWriteSerializer,
 )
 from apps.permissions.permissions import RolePermission
+from apps.permissions.entitlements import EntitlementRequired
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 from apps.users.models import User
@@ -59,7 +60,7 @@ class FeedbackViewSet(viewsets.ModelViewSet):
     """
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "feedback.view_feedback"
     http_method_names = ["get", "post", "put", "patch", "head", "options"]
 
@@ -202,7 +203,7 @@ class FeedbackSurveyViewSet(viewsets.ModelViewSet):
     """CRUD for feedback surveys plus a submit-response action."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, FeedbackObjectPermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, FeedbackObjectPermission, EntitlementRequired]
     required_permission = "feedback.view_feedback"
     serializer_class = FeedbackSurveySerializer
     http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
@@ -274,7 +275,7 @@ class FeedbackResponseViewSet(viewsets.ReadOnlyModelViewSet):
     """Read-only listing of survey responses within a tenant."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, FeedbackObjectPermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, FeedbackObjectPermission, EntitlementRequired]
     required_permission = "feedback.view_feedback"
     serializer_class = FeedbackSurveyResponseSerializer
     http_method_names = ["get", "head", "options"]

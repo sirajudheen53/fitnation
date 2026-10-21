@@ -4,7 +4,7 @@ from typing import ClassVar
 
 from rest_framework import serializers
 
-from apps.notifications.models import NotificationLog
+from apps.notifications.models import DeviceToken, NotificationLog
 
 
 class NotificationLogSerializer(serializers.ModelSerializer):
@@ -49,3 +49,18 @@ class WatiSettingsSerializer(serializers.Serializer):
     wati_api_key = serializers.CharField(required=False, write_only=True)
     wati_endpoint = serializers.URLField(required=False)
     is_wati_enabled = serializers.BooleanField(required=False)
+
+
+class DeviceTokenSerializer(serializers.ModelSerializer):
+    """Validate an FCM device-token registration (FBOS-011 §7.4)."""
+
+    class Meta:
+        """Serializer metadata."""
+
+        model = DeviceToken
+        fields = ["id", "token", "device_id", "platform", "device_type", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_platform(self, value: str) -> str:
+        """Default a blank platform to android (the v1 customer app)."""
+        return value or DeviceToken.Platform.ANDROID

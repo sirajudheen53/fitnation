@@ -4,6 +4,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from apps.memberships.views import (
+    AppInviteView,
     CouponViewSet,
     MembershipPlanViewSet,
     MembershipViewSet,
@@ -16,4 +17,5 @@ router.register(r"coupons", CouponViewSet, basename="coupon")
 
 urlpatterns = [
     path("", include(router.urls)),
+    path("app-invite/", AppInviteView.as_view(), name="app-invite"),
 ]

@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 
 from django.db import transaction
+from django.utils import timezone
 
 from apps.branches.models import Branch, BranchTrainerAssignment
 from apps.customers.models import Customer
@@ -14,6 +15,25 @@ from apps.users.auth import AuthToken
 from apps.users.models import User
 
 logger = logging.getLogger(__name__)
+
+# Synthetic OTP identities live under this domain. Both the legacy
+# ``{phone}@fitnation.local`` and the tenant-scoped
+# ``{phone}.{tenant_uuid}@fitnation.local`` schemes share the suffix; identity
+# checks should match on the domain, not the exact format (FBOS-011 §3.5).
+SYNTHETIC_EMAIL_DOMAIN = "@fitnation.local"
+
+
+class AutoProvisionLimitReached(Exception):
+    """The tenant's daily cap on OTP-auto-created identities was exceeded.
+
+    Surfaced as a generic 429 — the member already proved phone possession at
+    this point, so the message reveals nothing a verified caller didn't know.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("Daily account creation limit reached for this gym.")
+        self.detail = {"detail": "Too many requests. Try again later."}
+        self.status_code = 429
 
 
 def create_user(
@@ -186,8 +206,87 @@ def get_user_permissions(user: User) -> list[str]:
     return sorted(perms)
 
 
+APP_ACCESS_PERMISSION = "app.access"
+
+
+def get_effective_permissions(user: User, tenant: Tenant | None) -> list[str]:
+    """Role permissions plus entitlement-derived codes (customers only).
+
+    RBAC stays static (FBOS-009): the customer role's matrix entry is the base
+    set for every customer. Entitlement (ADR-003) layers ``app.access`` on top
+    — appended only while the member's app-access state is ``active`` or
+    ``grace``. Non-customer roles resolve exactly as
+    :func:`get_user_permissions` (wildcard roles still ``["*"]``); the
+    read-only grace case is communicated by the separate ``entitlement``
+    payload (:func:`build_entitlement_payload`), not by a permission code.
+
+    Args:
+        user: The authenticated user.
+        tenant: The tenant context the entitlement is evaluated in.
+
+    Returns:
+        Sorted list of permission codes, or ``["*"]`` for wildcard roles.
+    """
+    base = get_user_permissions(user)
+    if base == ["*"] or user.role != User.Role.CUSTOMER or tenant is None:
+        return base
+    from apps.memberships.selectors import get_app_entitlement
+
+    customer = Customer.objects.filter(tenant=tenant, user=user).only("id").first()
+    entitlement = get_app_entitlement(customer, tenant=tenant)
+    if entitlement.entitled:
+        return sorted({*base, APP_ACCESS_PERMISSION})
+    return base
+
+
+def build_entitlement_payload(user: User, tenant: Tenant | None) -> dict | None:
+    """Build the mobile-facing ``entitlement`` object for auth responses.
+
+    Shape (FBOS-011 §2.3): ``{"status", "read_only", "plan_name", "end_date",
+    "grace_end_date", "gym": {"uuid", "name"}}`` — a status string plus a
+    read-only flag; the app derives everything else (gate copy, banners) from
+    these. ``None`` for non-customer roles (staff have no member entitlement).
+
+    Args:
+        user: The authenticated user.
+        tenant: The tenant context (anchored gym in the payload).
+
+    Returns:
+        The entitlement dict for customers, else ``None``.
+    """
+    if user.role != User.Role.CUSTOMER or tenant is None:
+        return None
+    from apps.memberships.selectors import get_app_entitlement
+
+    customer = Customer.objects.filter(tenant=tenant, user=user).only("id").first()
+    entitlement = get_app_entitlement(customer, tenant=tenant)
+    payload = entitlement.as_payload()
+    payload["gym"] = {"uuid": str(tenant.uuid), "name": tenant.name}
+    return payload
+
+
+def synthetic_otp_email(phone: str, tenant: Tenant) -> str:
+    """The tenant-scoped synthetic email for a phone-keyed OTP identity.
+
+    ``User.email`` is globally unique while the phone is only unique per
+    tenant — the same human at two gyms must get two accounts (ADR-002 rule
+    2), so the synthetic address carries the tenant uuid. Legacy
+    ``{phone}@fitnation.local`` rows are NOT migrated: phone-match converges
+    before the email ever matters, and identity checks match on the
+    ``@fitnation.local`` domain suffix rather than an exact format.
+
+    Args:
+        phone: The member's phone number.
+        tenant: The tenant (gym) the identity belongs to.
+
+    Returns:
+        A ``{phone}.{tenant_uuid}@fitnation.local`` address.
+    """
+    return f"{phone}.{tenant.uuid}{SYNTHETIC_EMAIL_DOMAIN}"
+
+
 class TenantResolutionError(Exception):
-    """An OTP tenant-resolution error (P0-1: explicit anchors only)."""
+    """An OTP tenant-resolution error (explicit anchors only, FBOS-011 §3)."""
 
     def __init__(self, detail: dict, status_code: int = 400):
         super().__init__(str(detail))
@@ -214,9 +313,9 @@ def _throttle_lookup(phone: str, ip: str | None) -> None:
 
 
 def resolve_tenant_for_otp(phone: str, gym_anchor: str | None, ip: str | None = None):
-    """Resolve the tenant for an OTP flow — explicit anchors ONLY (P0-1).
+    """Resolve the tenant for an OTP flow — explicit anchors ONLY (FBOS-011 §3).
 
-    Ladder (ADR-003 P0-1):
+    Ladder:
     1. Device-bound gym anchor (tenant uuid) → explicit, validated.
     2. Rate-limited cross-tenant phone lookup: exactly one customer user →
        auto-pin; several → a minimal disambiguation list (tenant uuid +
@@ -250,11 +349,45 @@ def resolve_tenant_for_otp(phone: str, gym_anchor: str | None, ip: str | None = 
     raise TenantResolutionError({"detail": "Specify your gym to continue."}, status_code=400)
 
 
+def _check_auto_create_cap(tenant: Tenant) -> None:
+    """Enforce the per-tenant daily cap on OTP-auto-created identities.
+
+    Auto-create exists for invited walk-ins, not for farming rows
+    (FBOS-011 §3.1). Cache counter, fail-open like the anchor throttle — the
+    DB-enforced OTP daily caps remain the hard layer.
+
+    Args:
+        tenant: The tenant the new identity would be created in.
+
+    Raises:
+        AutoProvisionLimitReached: When the cap
+            (``APP_AUTOCREATE_DAILY_LIMIT``, default 50) is exhausted.
+    """
+    from django.conf import settings as dj_settings
+    from django.core.cache import cache
+
+    cap = int(getattr(dj_settings, "APP_AUTOCREATE_DAILY_LIMIT", 50))
+    key = f"app-autocreate:{tenant.pk}:{timezone.localdate().isoformat()}"
+    try:
+        count = cache.get(key) or 0
+        if count >= cap:
+            raise AutoProvisionLimitReached()
+        cache.set(key, count + 1, timeout=90000)
+    except AutoProvisionLimitReached:
+        raise
+    except Exception:  # noqa: BLE001 - cache failure must not block logins
+        logger.warning("Auto-create cap check skipped (cache unavailable)")
+
+
 def get_or_create_customer_by_phone(phone: str, tenant: Tenant) -> User:
     """Return an existing customer user by phone or create a new one.
 
-    Used by the deterministic OTP verification stub. If a user does not exist, a new
-    customer user is created with a generated email based on the phone number.
+    Used by OTP verification (FBOS-011 §3): auto-provisioning STAYS — killing
+    it would let an attacker distinguish invited phones from unknown ones
+    before possessing them — but a freshly created identity carries no
+    membership, so it resolves to entitlement ``none`` (no ``app.access``).
+    The synthetic email is tenant-scoped (:func:`synthetic_otp_email`) so the
+    same phone at two gyms no longer IntegrityErrors on the second gym.
 
     Args:
         phone: Phone number used for OTP login.
@@ -262,6 +395,10 @@ def get_or_create_customer_by_phone(phone: str, tenant: Tenant) -> User:
 
     Returns:
         An existing or newly created customer ``User``.
+
+    Raises:
+        AutoProvisionLimitReached: When the tenant's daily auto-create cap is
+            hit (generic non-enumerating 429 at the view layer).
     """
     # ADR-002 rule 2: reuse an existing owner-created customer user in the
     # tenant before provisioning a synthetic phone-keyed identity.
@@ -277,7 +414,9 @@ def get_or_create_customer_by_phone(phone: str, tenant: Tenant) -> User:
         )
         return existing
 
-    email = f"{phone}@fitnation.local"
+    _check_auto_create_cap(tenant)
+
+    email = synthetic_otp_email(phone, tenant)
     user, _ = User.objects.get_or_create(
         tenant=tenant,
         email=email,
@@ -293,7 +432,7 @@ def get_or_create_customer_by_phone(phone: str, tenant: Tenant) -> User:
         defaults={
             "tenant": tenant,
             "name": f"Customer {phone}".strip(),
-            "email": email,
+            "email": None,
         },
     )
     return user

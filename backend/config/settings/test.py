@@ -50,6 +50,7 @@ MIGRATION_MODULES = {
         "reviews",
         "access",
         "admin_ops",
+        "onboarding",
         "admin",
         "auth",
         "contenttypes",

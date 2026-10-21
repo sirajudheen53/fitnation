@@ -4,7 +4,7 @@ from typing import ClassVar
 
 from django.db import models
 
-from apps.tenants.models import TenantModelMixin
+from apps.tenants.models import Tenant, TenantManager, TenantModelMixin
 
 
 class NotificationLog(TenantModelMixin):
@@ -18,6 +18,9 @@ class NotificationLog(TenantModelMixin):
         MEMBERSHIP_EXPIRY = "membership_expiry", "Membership Expiry"
         WORKOUT_ASSIGNED = "workout_assigned", "Workout Assigned"
         PAYMENT_RECEIVED = "payment_received", "Payment Received"
+        APP_INVITE = "app_invite", "App Invite"
+        OTP = "otp", "OTP Delivery"
+        WELCOME = "welcome", "Welcome"
 
     class Status(models.TextChoices):
         """Lifecycle status of a notification attempt."""
@@ -34,6 +37,14 @@ class NotificationLog(TenantModelMixin):
         blank=True,
         related_name="notification_logs",
     )
+    actor = models.ForeignKey(
+        "users.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notification_logs",
+        help_text="The staff user who triggered the send (audit trail, FBOS-011 §10.2).",
+    )
     notification_type = models.CharField(
         max_length=30,
         choices=NotificationType.choices,
@@ -42,6 +53,11 @@ class NotificationLog(TenantModelMixin):
         max_length=20,
         choices=Status.choices,
         default=Status.PENDING,
+    )
+    channel = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text='Delivery channel used for the attempt, e.g. "whatsapp" or "sms".',
     )
     content = models.TextField(blank=True)
     wati_message_id = models.CharField(max_length=100, blank=True)
@@ -65,3 +81,64 @@ class NotificationLog(TenantModelMixin):
     def __str__(self) -> str:
         """Return a human-readable notification label."""
         return f"{self.notification_type} → {self.customer} ({self.status})"
+
+
+class DeviceToken(models.Model):
+    """A registered FCM (push) device token for the customer mobile app.
+
+    Separate domain from ``apps/access`` device models — those are gym door
+    hardware; this is the member's phone (FBOS-011 §7.4). Tokens are upserted
+    (idempotent per token: re-registering rotates the binding), and deleted
+    on logout.
+    """
+
+    class Platform(models.TextChoices):
+        """Device platforms we can push to."""
+
+        ANDROID = "android", "Android"
+        IOS = "ios", "iOS"
+        WEB = "web", "Web"
+
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="device_tokens",
+        db_index=True,
+    )
+    customer = models.ForeignKey(
+        "customers.Customer",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="device_tokens",
+    )
+    user = models.ForeignKey(
+        "users.User",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="device_tokens",
+    )
+    token = models.CharField(max_length=255, unique=True, db_index=True)
+    device_id = models.CharField(max_length=200, blank=True)
+    platform = models.CharField(max_length=20, choices=Platform.choices, default=Platform.ANDROID)
+    device_type = models.CharField(max_length=50, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = TenantManager()
+
+    class Meta:
+        """Model metadata."""
+
+        db_table = "notification_device_tokens"
+        ordering: ClassVar[list] = ["-created_at"]
+        indexes: ClassVar[list] = [
+            models.Index(fields=["tenant", "customer"], name="idx_devtoken_tenant_customer"),
+        ]
+
+    def __str__(self) -> str:
+        """Return a redacted label (never the full token)."""
+        owner = self.customer or self.user
+        return f"DeviceToken {self.token[:8]}… ({owner}, {self.platform})"

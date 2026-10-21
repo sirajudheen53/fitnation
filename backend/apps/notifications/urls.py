@@ -7,6 +7,7 @@ relative to that prefix (e.g. ``logs/`` → ``api/v1/notifications/logs/``).
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from apps.notifications.device_views import DeviceTokenViewSet
 from apps.notifications.views import (
     NotificationLogViewSet,
     NotificationSettingsView,
@@ -15,6 +16,7 @@ from apps.notifications.views import (
 
 router = DefaultRouter()
 router.register(r"logs", NotificationLogViewSet, basename="notification-log")
+router.register(r"device-tokens", DeviceTokenViewSet, basename="device-token")
 
 urlpatterns = [
     path("", include(router.urls)),

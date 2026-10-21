@@ -1,5 +1,7 @@
 """User and authentication API views."""
 
+import logging
+
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework import status
 from rest_framework.decorators import action
@@ -19,7 +21,14 @@ from apps.tenants.permissions import IsTenantMember
 from apps.users.auth import AuthToken
 from apps.users.authentication import TenantTokenAuthentication
 from apps.users.models import EmailVerificationToken
-from apps.users.otp import OtpError, OtpRateLimited, get_otp_sender, issue_otp, verify_otp
+from apps.users.otp import (
+    OtpDeliveryError,
+    OtpError,
+    OtpRateLimited,
+    issue_otp,
+    resolve_otp_senders,
+    verify_otp,
+)
 from apps.users.selectors import user_get_by_id, user_list
 from apps.users.serializers import (
     LoginSerializer,
@@ -36,8 +45,11 @@ from apps.users.serializers import (
     UserUpdateSerializer,
 )
 from apps.users.services import (
+    AutoProvisionLimitReached,
     TenantResolutionError,
+    build_entitlement_payload,
     create_user,
+    get_effective_permissions,
     get_or_create_customer_by_phone,
     get_user_permissions,
     issue_token,
@@ -60,6 +72,7 @@ from apps.users.trainer_services import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class LoginView(APIView):
@@ -129,13 +142,43 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated, IsTenantMember]
 
     def get(self, request: Request) -> Response:
-        """Return current user data."""
+        """Return current user data with effective permissions + entitlement.
+
+        Customers get role permissions plus the entitlement-derived
+        ``app.access`` code (only while entitled), and the ``entitlement``
+        object the app's gate reads. Staff keep the role-only list and
+        ``entitlement: null`` (FBOS-011 §2.3b).
+        """
         return Response(
             {
                 "user": UserSerializer(request.user).data,
-                "permissions": get_user_permissions(request.user),
+                "permissions": get_effective_permissions(request.user, request.tenant),
+                "entitlement": build_entitlement_payload(request.user, request.tenant),
             }
         )
+
+
+class EntitlementView(APIView):
+    """Live app-access entitlement for the current user (FBOS-011 §2.3c).
+
+    The mobile app calls this on app resume (throttled client-side);
+    ``/auth/me/`` remains the login-time source. No role permission — a
+    gated-out member must still be able to see WHY they're gated.
+    """
+
+    authentication_classes = [TenantTokenAuthentication]
+    permission_classes = [IsAuthenticated, IsTenantMember]
+
+    def get(self, request: Request) -> Response:
+        """Return the entitlement object (status ``none`` for staff rows)."""
+        entitlement = build_entitlement_payload(request.user, request.tenant)
+        if entitlement is None:
+            from apps.memberships.selectors import get_app_entitlement
+
+            empty = get_app_entitlement(None, tenant=request.tenant)
+            gym = {"uuid": str(request.tenant.uuid), "name": request.tenant.name} if request.tenant else None
+            entitlement = {**empty.as_payload(), "gym": gym}
+        return Response(entitlement)
 
 
 def _client_ip(request: Request) -> str | None:
@@ -145,13 +188,18 @@ def _client_ip(request: Request) -> str | None:
 
 
 class OTPRequestView(APIView):
-    """Request a real OTP (P0-2) with explicit gym anchors (P0-1)."""
+    """Request a real OTP (gym anchors + real delivery chain, FBOS-011 §4)."""
 
     authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request: Request) -> Response:
-        """Resolve the gym anchor, then issue + deliver a hashed 6-digit OTP."""
+        """Resolve the gym anchor, then issue + deliver a hashed 6-digit OTP.
+
+        Delivery walks the per-tenant sender chain (WATI → SMS); total chain
+        failure is a loud 503 — never a silent log-file drop. The code is
+        echoed in the response ONLY behind DEBUG with the stub sender.
+        """
         serializer = OTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         phone = serializer.validated_data["phone"]
@@ -165,28 +213,43 @@ class OTPRequestView(APIView):
         if disambiguation is not None:
             return Response(disambiguation, status=status.HTTP_200_OK)
 
-        sender = get_otp_sender()
+        senders = resolve_otp_senders(tenant)
         try:
-            expires_in = issue_otp(phone, tenant, ip=ip, sender=sender)
+            expires_in = issue_otp(phone, tenant, ip=ip, sender=senders)
         except OtpRateLimited as exc:
             return Response({"detail": str(exc)}, status=429)
         except OtpError as exc:
             return Response({"detail": str(exc)}, status=400)
+        except OtpDeliveryError:
+            logger.critical("OTP delivery unavailable (tenant=%s) — 503 returned", tenant.pk)
+            return Response(
+                {"detail": "OTP delivery is temporarily unavailable — please contact the gym."},
+                status=503,
+            )
 
         data = {"phone": phone, "expires_in": expires_in, "sent": True}
-        if getattr(sender, "name", "") == "stub":  # stub is test-only (OTP_SENDER never set in prod)
-            data["otp"] = getattr(sender, "code", None)  # DEBUG/test only
+        stub = next((s for s in senders if getattr(s, "name", "") == "stub"), None)
+        if stub is not None:  # DEBUG/test only — never in production
+            data["otp"] = getattr(stub, "code", None)
         return Response(data)
 
 
 class OTPVerifyView(APIView):
-    """Verify the real OTP and return an auth token (P0-2 + P0-1 anchors)."""
+    """Verify the real OTP and return an auth token (anchors + entitlement)."""
 
     authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request: Request) -> Response:
-        """Validate the code, converge the identity and issue a token."""
+        """Validate the code, converge the identity and issue a token.
+
+        The response carries effective permissions (``app.access`` only while
+        entitled) and the ``entitlement`` object (FBOS-011 §2.3a/§3):
+        auto-provisioned or membership-less phones still get a token — the
+        response never reveals registration state — but with entitlement
+        ``none`` so the app shows "ask your gym for access" instead of a hard
+        error.
+        """
         serializer = OTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -206,18 +269,21 @@ class OTPVerifyView(APIView):
         except OtpError as exc:
             return Response({"detail": str(exc)}, status=400)
 
-        user = get_or_create_customer_by_phone(phone, tenant)
+        try:
+            user = get_or_create_customer_by_phone(phone, tenant)
+        except AutoProvisionLimitReached as exc:
+            return Response(exc.detail, status=exc.status_code)
         token = issue_token(
             user,
             tenant,
             device_type=data.get("device_type", AuthToken.DeviceType.ANDROID),
         )
-        permissions = get_user_permissions(user)
         return Response(
             {
                 "token": token.key,
                 "user": UserSerializer(user).data,
-                "permissions": permissions,
+                "permissions": get_effective_permissions(user, tenant),
+                "entitlement": build_entitlement_payload(user, tenant),
             }
         )
 

@@ -344,7 +344,7 @@ class AuthToken(models.Model):
 
 
 class OtpCode(models.Model):
-    """A hashed one-time code issued for a phone (P0-2 real OTP).
+    """A hashed one-time code issued for a phone (real OTP, FBOS-011 §4).
 
     Rows carry the binding (phone + tenant), the hashed 6-digit code, the
     expiry, the verify-attempt counter and the requesting IP for rate limits

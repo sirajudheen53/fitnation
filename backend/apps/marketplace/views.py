@@ -33,6 +33,7 @@ from apps.marketplace.serializers import (
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
+from apps.permissions.entitlements import EntitlementRequired
 
 
 class ProductCategoryViewSet(ModelViewSet):
@@ -115,7 +116,7 @@ class CartView(APIView):
     """Retrieve, add-to, or clear the current user's active cart."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "marketplace.view_cart"
 
     def get(self, request: Request) -> Response:
@@ -170,7 +171,7 @@ class CartItemView(APIView):
     """Update quantity or remove a specific cart line item."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "marketplace.view_cart"
 
     def get_object(self, request: Request, item_id: int) -> CartItem:
@@ -210,7 +211,7 @@ class OrderViewSet(ModelViewSet):
     """Tenant-scoped CRUD for orders."""
 
     authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "marketplace.view_order"
     method_permissions = {
         "GET": "marketplace.view_order",

@@ -131,14 +131,14 @@ class LoginSerializer(serializers.Serializer):
 
 
 class OTPRequestSerializer(serializers.Serializer):
-    """OTP request — explicit gym anchors only (ADR-003 P0-1)."""
+    """OTP request — explicit gym anchors only (FBOS-011 §3/§4)."""
 
     phone = serializers.CharField(max_length=20)
     gym = serializers.UUIDField(required=False)  # device-bound gym anchor
 
 
 class OTPVerifySerializer(serializers.Serializer):
-    """OTP verification — explicit gym anchors only (ADR-003 P0-1)."""
+    """OTP verification — explicit gym anchors only (FBOS-011 §3/§4)."""
 
     phone = serializers.CharField(max_length=20)
     otp = serializers.CharField(max_length=6)

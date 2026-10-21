@@ -44,6 +44,7 @@ urlpatterns = [
     path("api/v1/ai/", include("apps.body_analysis.urls")),
     path("api/v1/ai/coach/", include("apps.ai_coach.urls")),
     path("api/v1/notifications/", include("apps.notifications.urls")),
+    path("api/v1/onboarding/", include("apps.onboarding.urls")),
     # feedback/, feedback-analytics/, feedback-surveys/, feedback-responses/
     path("api/v1/feedback/", include("apps.feedback.urls")),
     path("api/v1/inventory/", include("apps.inventory.urls")),

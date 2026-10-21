@@ -30,6 +30,7 @@ from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 from apps.users.models import User
+from apps.permissions.entitlements import EntitlementRequired
 
 PERIOD_TRUNC = {
     "daily": TruncDate,
@@ -57,6 +58,7 @@ class AttendanceRecordViewSet(ModelViewSet):
         IsAuthenticated,
         IsTenantMember,
         RolePermission,
+        EntitlementRequired,
     ]
     required_permission = "attendance.view_attendance"
     serializer_class = AttendanceRecordSerializer
@@ -305,6 +307,7 @@ class CheckInView(APIView):
         IsAuthenticated,
         IsTenantMember,
         RolePermission,
+        EntitlementRequired,
     ]
 
     def post(self, request: Request) -> Response:
