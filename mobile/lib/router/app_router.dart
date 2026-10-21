@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -9,6 +10,7 @@ import '../features/ai_nutrition/presentation/screens/meal_plan_detail_screen.da
 import '../features/ai_nutrition/presentation/screens/meal_plan_screen.dart';
 import '../features/ai_nutrition/presentation/screens/nutrition_screen.dart';
 import '../features/access/presentation/pages/enrollment_qr_page.dart';
+import '../features/access/presentation/pages/gate_page.dart';
 import '../features/auth/presentation/providers/auth_notifier.dart';
 import '../features/auth/presentation/screens/otp_verify_screen.dart';
 import '../features/auth/presentation/screens/phone_input_screen.dart';
@@ -31,22 +33,40 @@ import '../features/workouts/presentation/screens/workout_log_screen.dart';
 import '../features/workouts/data/models/workout_plan.dart';
 
 /// App router with GoRouter, using auth state for redirects.
+///
+/// The router is created once; auth changes (login, logout, entitlement
+/// flips) arrive through `refreshListenable` so mid-session revocation
+/// (FBOS-011 §9.4) re-runs the redirect without resetting navigation state.
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authProvider);
+  final authSignals = ValueNotifier<AuthState>(ref.read(authProvider));
+  ref.listen<AuthState>(authProvider, (_, next) => authSignals.value = next);
 
   return GoRouter(
     initialLocation: '/',
+    refreshListenable: authSignals,
     redirect: (context, state) {
+      final authState = authSignals.value;
       final isAuthenticated = authState.isAuthenticated;
       final isAuthRoute = state.matchedLocation == '/' ||
           state.matchedLocation == '/otp';
+      final onGate = state.matchedLocation == '/gate';
 
       if (!isAuthenticated && !isAuthRoute) {
         return '/'; // redirect to phone input
       }
 
-      if (isAuthenticated && isAuthRoute) {
-        return '/dashboard'; // redirect to dashboard
+      if (isAuthenticated) {
+        // App-access gate (FBOS-011 §7.2): expired/none → /gate; grace and
+        // active keep the app (grace adds the read-only banner instead).
+        if (authState.isGatedOut && !onGate) {
+          return '/gate';
+        }
+        if (onGate && !authState.isGatedOut) {
+          return '/dashboard';
+        }
+        if (isAuthRoute) {
+          return '/dashboard'; // redirect to dashboard
+        }
       }
 
       return null; // no redirect
@@ -62,6 +82,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           final phone = state.extra as String? ?? '';
           return OtpVerifyScreen(phone: phone);
         },
+      ),
+      // App-access gate (expired / not entitled members).
+      GoRoute(
+        path: '/gate',
+        builder: (context, state) => const GatePage(),
       ),
       GoRoute(
         path: '/dashboard',

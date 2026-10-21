@@ -1,16 +1,15 @@
 /// Core constants for the FitNation app.
+import '../config/app_config.dart';
+
 class AppConstants {
   AppConstants._();
 
   /// Base URL for the FBOS API, resolved per build flavor.
   ///
-  /// Presets: dev (emulator), dev-lan, cloud-dev, prod — see
-  /// ``lib/core/config/app_config.dart``. Override with:
-  /// ``flutter run --dart-define=API_BASE_URL=<url>``.
-  static const String apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000',
-  );
+  /// Delegates to [AppEnvironment.apiBaseUrl] so `--dart-define=SERVER=prod`
+  /// (and friends) actually switch hosts; an explicit
+  /// `--dart-define=API_BASE_URL=<url>` still wins (FBOS-011 correction #7).
+  static String get apiBaseUrl => AppEnvironment.apiBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   /// API endpoints.
@@ -18,6 +17,9 @@ class AppConstants {
   static const String otpVerifyEndpoint = '/users/auth/otp/verify/';
   static const String logoutEndpoint = '/users/auth/logout/';
   static const String meEndpoint = '/users/auth/me/';
+  static const String entitlementEndpoint = '/users/auth/entitlement/';
+  static const String deviceTokensEndpoint = '/notifications/device-tokens/';
+
 
   // Customer
   static const String customerProfileEndpoint = '/customers/customers/';

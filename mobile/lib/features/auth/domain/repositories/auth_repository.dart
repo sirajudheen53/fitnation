@@ -7,6 +7,7 @@ import '../../data/data_sources/api_client.dart';
 import '../../data/data_sources/auth_local_data_source.dart';
 import '../../data/data_sources/auth_remote_data_source.dart';
 import '../../data/models/auth_response.dart';
+import '../../data/models/entitlement.dart';
 import '../../data/models/user_model.dart';
 
 /// Repository that coordinates local and remote auth data sources.
@@ -17,9 +18,12 @@ class AuthRepository {
   AuthRepository(this._remote, this._local);
 
   /// Requests an OTP for the given phone number.
-  Future<({Failure? error})> requestOtp(String phone) async {
+  ///
+  /// [gymAnchor] pins the login to the inviting gym (runtime link anchor or
+  /// build-time dart-define; see `AnchorStore`).
+  Future<({Failure? error})> requestOtp(String phone, {String? gymAnchor}) async {
     try {
-      await _remote.requestOtp(phone);
+      await _remote.requestOtp(phone, gymAnchor: gymAnchor);
       return (error: null);
     } on Failure catch (e) {
       return (error: e);
@@ -32,6 +36,7 @@ class AuthRepository {
   Future<({AuthResponse? response, Failure? error})> verifyOtp({
     required String phone,
     required String otp,
+    String? gymAnchor,
   }) async {
     try {
       final deviceInfo = await _getDeviceInfo();
@@ -41,6 +46,7 @@ class AuthRepository {
         deviceType: deviceInfo.type,
         deviceId: deviceInfo.id,
         userAgent: deviceInfo.userAgent,
+        gymAnchor: gymAnchor,
       );
 
       // Persist auth state
@@ -51,6 +57,9 @@ class AuthRepository {
       await _local.saveToken(token);
       await _local.saveUser(response.user);
       await _local.savePermissions(response.permissions);
+      if (response.entitlement != null) {
+        await _local.saveEntitlement(response.entitlement!);
+      }
 
       // Update API client with new token
       ApiClient.getInstance(token: token);
@@ -64,16 +73,23 @@ class AuthRepository {
   }
 
   /// Restores the auth session from local storage (auto-login).
-  ({UserModel? user, List<String> permissions, String? token}) restoreSession() {
+  ({UserModel? user, List<String> permissions, String? token, Entitlement? entitlement})
+      restoreSession() {
     final token = _local.getToken();
     final user = _local.getUser();
     final permissions = _local.getPermissions();
+    final entitlement = _local.getEntitlement();
 
     if (token != null && user != null) {
       ApiClient.getInstance(token: token);
     }
 
-    return (user: user, permissions: permissions, token: token);
+    return (
+      user: user,
+      permissions: permissions,
+      token: token,
+      entitlement: entitlement,
+    );
   }
 
   /// Logs out the user and clears local data.
@@ -87,17 +103,46 @@ class AuthRepository {
   }
 
   /// Gets the current user profile from the server (refresh).
-  Future<({UserModel? user, List<String>? permissions, Failure? error})>
+  Future<({UserModel? user, List<String>? permissions, Entitlement? entitlement, Failure? error})}
       refreshProfile() async {
     try {
       final response = await _remote.getCurrentUser();
       await _local.saveUser(response.user);
       await _local.savePermissions(response.permissions);
-      return (user: response.user, permissions: response.permissions, error: null);
+      if (response.entitlement != null) {
+        await _local.saveEntitlement(response.entitlement!);
+      }
+      return (
+        user: response.user,
+        permissions: response.permissions,
+        entitlement: response.entitlement,
+        error: null,
+      );
     } on Failure catch (e) {
-      return (user: null, permissions: null, error: e);
+      return (user: null, permissions: null, entitlement: null, error: e);
     } catch (e) {
-      return (user: null, permissions: null, error: UnknownFailure(message: e.toString()));
+      return (
+        user: null,
+        permissions: null,
+        entitlement: null,
+        error: UnknownFailure(message: e.toString()),
+      );
+    }
+  }
+
+  /// Live entitlement from the server (FBOS-011 §2.3c).
+  ///
+  /// Called on app resume (throttled by the caller) and on gate-screen
+  /// refresh after renewing at the front desk.
+  Future<({Entitlement? entitlement, Failure? error})> fetchEntitlement() async {
+    try {
+      final entitlement = await _remote.fetchEntitlement();
+      await _local.saveEntitlement(entitlement);
+      return (entitlement: entitlement, error: null);
+    } on Failure catch (e) {
+      return (entitlement: null, error: e);
+    } catch (e) {
+      return (entitlement: null, error: UnknownFailure(message: e.toString()));
     }
   }
 

@@ -1,9 +1,9 @@
 import 'package:dio/dio.dart';
 
 import '../../../../core/constants/app_constants.dart';
-import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/failures.dart';
 import '../models/auth_response.dart';
+import '../models/entitlement.dart';
 
 /// Remote data source for authentication (OTP flow).
 class AuthRemoteDataSource {
@@ -13,15 +13,18 @@ class AuthRemoteDataSource {
 
   /// Requests an OTP to be sent to [phone].
   ///
-  /// POST /api/v1/auth/otp/request/
-  /// Body: { "phone": "+919876543210" }
-  Future<void> requestOtp(String phone) async {
+  /// POST /api/v1/users/auth/otp/request/
+  /// Body: { "phone": "+919876543210", "gym": "<tenant-uuid>"? }
+  ///
+  /// [gymAnchor] is the effective gym anchor (runtime link anchor wins over
+  /// the build-time dart-define — see `AnchorStore` docs).
+  Future<void> requestOtp(String phone, {String? gymAnchor}) async {
     try {
       await _dio.post(
         AppConstants.otpRequestEndpoint,
         data: {
           'phone': phone,
-          if (AppEnvironment.gymAnchor.isNotEmpty) 'gym': AppEnvironment.gymAnchor,
+          if (gymAnchor != null && gymAnchor.isNotEmpty) 'gym': gymAnchor,
         },
       );
     } on DioException catch (e) {
@@ -29,16 +32,20 @@ class AuthRemoteDataSource {
     }
   }
 
-  /// Verifies the OTP and returns the auth response (token + user + permissions).
+  /// Verifies the OTP and returns the auth response.
   ///
-  /// POST /api/v1/auth/otp/verify/
-  /// Body: { "phone": "+919876543210", "otp": "123456", "device_type": "android" }
+  /// POST /api/v1/users/auth/otp/verify/
+  /// Body: { "phone", "otp", "gym"?, "device_type", "device_id"?, "user_agent"? }
+  ///
+  /// The anchor is sent on verify too (FBOS-011 correction #6) so a member of
+  /// two gyms is pinned to the gym whose link they installed from.
   Future<AuthResponse> verifyOtp({
     required String phone,
     required String otp,
     required String deviceType,
     String? deviceId,
     String? userAgent,
+    String? gymAnchor,
   }) async {
     try {
       final response = await _dio.post(
@@ -49,9 +56,23 @@ class AuthRemoteDataSource {
           'device_type': deviceType,
           if (deviceId != null) 'device_id': deviceId,
           if (userAgent != null) 'user_agent': userAgent,
+          if (gymAnchor != null && gymAnchor.isNotEmpty) 'gym': gymAnchor,
         },
       );
       return AuthResponse.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  /// Live app-access entitlement (FBOS-011 §2.3c).
+  ///
+  /// GET /api/v1/users/auth/entitlement/ — called on app resume and after a
+  /// 403 `app_access_*` to re-derive the gate state from the server.
+  Future<Entitlement> fetchEntitlement() async {
+    try {
+      final response = await _dio.get(AppConstants.entitlementEndpoint);
+      return Entitlement.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw _mapDioError(e);
     }
