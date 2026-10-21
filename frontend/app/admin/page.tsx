@@ -3,20 +3,20 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Archive, KeyRound, Pause, Pencil, Play, Plus } from "lucide-react";
+import { Archive, KeyRound, Pencil, Plus } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge, Button, Card, CardBody, Spinner } from "@/components/ui";
 import {
   errorMessage,
   fetchAdminTenants,
-  updateAdminTenant,
+  updateAdminTenantStatus,
 } from "@/lib/api";
 import { getToken, getStoredUser } from "@/lib/auth";
 import { ArchiveGymDialog } from "@/features/admin/components/ArchiveGymDialog";
-import { ConfirmDialog } from "@/features/admin/components/ConfirmDialog";
 import { EditGymDialog } from "@/features/admin/components/EditGymDialog";
+import { GymStatusAction } from "@/features/admin/components/GymStatusAction";
 import { RotateCredentialsDialog } from "@/features/admin/components/RotateCredentialsDialog";
-import type { AdminTenant } from "@/types/admin";
+import type { AdminTenant, AdminTenantSwitchStatus } from "@/types/admin";
 
 const STATUS_VARIANTS: Record<string, "success" | "danger" | "warning" | "default"> = {
   active: "success",
@@ -35,8 +35,6 @@ export default function AdminGymsPage() {
   const [editTarget, setEditTarget] = useState<AdminTenant | null>(null);
   const [rotateTarget, setRotateTarget] = useState<AdminTenant | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<AdminTenant | null>(null);
-  const [suspendTarget, setSuspendTarget] = useState<AdminTenant | null>(null);
-  const [busyId, setBusyId] = useState<number | null>(null);
 
   useEffect(() => {
     if (user && user.role !== "platform_admin") {
@@ -66,22 +64,21 @@ export default function AdminGymsPage() {
     setTenants((list) => list.map((t) => (t.id === updated.id ? updated : t)));
   }
 
-  async function setTenantStatus(tenant: AdminTenant, status: "active" | "suspended") {
+  async function changeStatus(tenant: AdminTenant, status: AdminTenantSwitchStatus) {
     const token = getToken();
     if (!token) return;
-    setBusyId(tenant.id);
     try {
-      const updated = await updateAdminTenant(tenant.id, { status }, token);
-      replaceTenant(updated);
+      const updated = await updateAdminTenantStatus(tenant.id, status, token);
+      setTenants((rows) =>
+        rows.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)),
+      );
       toast.success(
         status === "suspended"
-          ? `${updated.name} suspended`
-          : `${updated.name} reactivated`,
+          ? `${updated.name} suspended — members lose access.`
+          : `${updated.name} reactivated.`,
       );
     } catch (err) {
       toast.error(errorMessage(err));
-    } finally {
-      setBusyId(null);
     }
   }
 
@@ -129,7 +126,6 @@ export default function AdminGymsPage() {
                 <tbody className="divide-y divide-gray-100">
                   {tenants.map((t) => {
                     const archived = t.status === "archived";
-                    const busy = busyId === t.id;
                     return (
                       <tr key={t.id} className={archived ? "bg-gray-50/60" : "hover:bg-gray-50"}>
                         <td className="px-4 py-3">
@@ -154,7 +150,7 @@ export default function AdminGymsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              disabled={archived || busy}
+                              disabled={archived}
                               title={archived ? "Archived gyms are read-only" : "Edit gym"}
                               aria-label={`Edit ${t.name}`}
                               onClick={() => setEditTarget(t)}
@@ -164,7 +160,7 @@ export default function AdminGymsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              disabled={archived || busy}
+                              disabled={archived}
                               title={
                                 archived
                                   ? "Archived gyms are read-only"
@@ -175,35 +171,15 @@ export default function AdminGymsPage() {
                             >
                               <KeyRound className="h-4 w-4" />
                             </Button>
-                            {t.status === "suspended" ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                disabled={archived || busy}
-                                className="text-green-600 hover:bg-green-50"
-                                title="Reactivate gym"
-                                aria-label={`Reactivate ${t.name}`}
-                                onClick={() => void setTenantStatus(t, "active")}
-                              >
-                                <Play className="h-4 w-4" />
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                disabled={archived || busy}
-                                className="text-amber-600 hover:bg-amber-50"
-                                title="Suspend gym"
-                                aria-label={`Suspend ${t.name}`}
-                                onClick={() => setSuspendTarget(t)}
-                              >
-                                <Pause className="h-4 w-4" />
-                              </Button>
-                            )}
+                            <GymStatusAction
+                              tenant={t}
+                              disabled={archived}
+                              onChangeStatus={changeStatus}
+                            />
                             <Button
                               variant="ghost"
                               size="sm"
-                              disabled={archived || busy}
+                              disabled={archived}
                               className="text-red-600 hover:bg-red-50"
                               title={archived ? "Gym is archived" : "Archive gym"}
                               aria-label={`Archive ${t.name}`}
@@ -240,25 +216,6 @@ export default function AdminGymsPage() {
           tenant={rotateTarget}
           onClose={() => setRotateTarget(null)}
         />
-      )}
-
-      {suspendTarget && (
-        <ConfirmDialog
-          title={`Suspend ${suspendTarget.name}?`}
-          confirmLabel="Suspend Gym"
-          destructive
-          onConfirm={() => {
-            const target = suspendTarget;
-            setSuspendTarget(null);
-            void setTenantStatus(target, "suspended");
-          }}
-          onClose={() => setSuspendTarget(null)}
-        >
-          <p>
-            The owner will not be able to log in, and all API access for this
-            gym is blocked until you reactivate it.
-          </p>
-        </ConfirmDialog>
       )}
 
       {archiveTarget && (

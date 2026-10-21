@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import AdminGymsPage from "@/app/admin/page";
 import { ApiError } from "@/lib/api";
 import {
@@ -6,6 +6,7 @@ import {
   fetchAdminTenants,
   rotateAdminTenantCredentials,
   updateAdminTenant,
+  updateAdminTenantStatus,
 } from "@/lib/api";
 import { ArchiveGymDialog } from "@/features/admin/components/ArchiveGymDialog";
 import { ConfirmDialog } from "@/features/admin/components/ConfirmDialog";
@@ -38,6 +39,7 @@ jest.mock("@/lib/api", () => ({
   fetchAdminTenants: jest.fn(),
   onboardGym: jest.fn(),
   updateAdminTenant: jest.fn(),
+  updateAdminTenantStatus: jest.fn(),
   rotateAdminTenantCredentials: jest.fn(),
   deleteAdminTenant: jest.fn(),
 }));
@@ -58,6 +60,15 @@ const sampleTenant = (overrides: Partial<AdminTenant> = {}): AdminTenant => ({
 beforeEach(() => {
   jest.clearAllMocks();
 });
+
+/** Develop's ConfirmDialog is a Card overlay without role="dialog" — scope to its Card. */
+function confirmCard(message: RegExp): HTMLElement {
+  const node = screen.getByText(message).closest("div.rounded-xl");
+  if (!(node instanceof HTMLElement)) {
+    throw new Error("ConfirmDialog card not found");
+  }
+  return node;
+}
 
 describe("EditGymDialog", () => {
   it("pre-fills the gym fields and saves via PATCH", async () => {
@@ -216,7 +227,11 @@ describe("AdminGymsPage", () => {
     expect(screen.getByLabelText("Rotate credentials for Legacy Barbell")).toBeDisabled();
     expect(screen.getByLabelText("Archive Legacy Barbell")).toBeDisabled();
     // Archived gyms keep the status toggle but read-only — PATCH can't un-archive.
-    expect(screen.getByLabelText("Suspend Legacy Barbell")).toBeDisabled();
+    const legacyRow = screen.getByText("Legacy Barbell").closest("tr");
+    expect(legacyRow).not.toBeNull();
+    expect(
+      within(legacyRow as HTMLElement).getByRole("button", { name: "Suspend" }),
+    ).toBeDisabled();
   });
 
   it("opens the edit dialog pre-filled from the row action", async () => {
@@ -232,24 +247,29 @@ describe("AdminGymsPage", () => {
 
   it("suspends via the confirm dialog, PATCHing only the status", async () => {
     (fetchAdminTenants as jest.Mock).mockResolvedValue([sampleTenant()]);
-    (updateAdminTenant as jest.Mock).mockResolvedValue(
+    (updateAdminTenantStatus as jest.Mock).mockResolvedValue(
       sampleTenant({ status: "suspended" }),
     );
 
     render(<AdminGymsPage />);
     await screen.findByText("Iron Temple Fitness");
 
-    fireEvent.click(screen.getByLabelText("Suspend Iron Temple Fitness"));
-    expect(await screen.findByText(/all API access for this/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
+    expect(await screen.findByText(/Members lose access/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Suspend Gym" }));
+    fireEvent.click(
+      within(confirmCard(/Members lose access/)).getByRole("button", {
+        name: "Suspend",
+      }),
+    );
 
     await waitFor(() =>
-      expect(updateAdminTenant).toHaveBeenCalledWith(
-        1,
-        { status: "suspended" },
-        "admin-token",
-      ),
+      expect(updateAdminTenantStatus).toHaveBeenCalledTimes(1),
+    );
+    expect(updateAdminTenantStatus).toHaveBeenCalledWith(
+      1,
+      "suspended",
+      "admin-token",
     );
     expect(await screen.findByText("suspended")).toBeInTheDocument();
   });
@@ -258,17 +278,17 @@ describe("AdminGymsPage", () => {
     (fetchAdminTenants as jest.Mock).mockResolvedValue([
       sampleTenant({ status: "suspended" }),
     ]);
-    (updateAdminTenant as jest.Mock).mockResolvedValue(sampleTenant());
+    (updateAdminTenantStatus as jest.Mock).mockResolvedValue(sampleTenant());
 
     render(<AdminGymsPage />);
     await screen.findByText("Iron Temple Fitness");
 
-    fireEvent.click(screen.getByLabelText("Reactivate Iron Temple Fitness"));
+    fireEvent.click(screen.getByRole("button", { name: /activate/i }));
 
     await waitFor(() =>
-      expect(updateAdminTenant).toHaveBeenCalledWith(
+      expect(updateAdminTenantStatus).toHaveBeenCalledWith(
         1,
-        { status: "active" },
+        "active",
         "admin-token",
       ),
     );

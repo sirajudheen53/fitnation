@@ -2087,7 +2087,7 @@ export function respondToReview(
   });
 }
 
-/* ── Platform admin (Sprint 10, issues #39/#41/#42) ────────────── */
+/* ── Platform admin (Sprint 10, issues #39/#41/#42/#43-#47) ────── */
 
 import {
   AdminOnboardGymFormData,
@@ -2095,6 +2095,7 @@ import {
   AdminRotateCredentialsResult,
   AdminTenant,
   AdminTenantUpdateFormData,
+  AdminTenantSwitchStatus,
 } from "@/types/admin";
 
 export function fetchAdminTenants(token: string): Promise<AdminTenant[]> {
@@ -2285,4 +2286,17 @@ export function sendWhatsappTest(
 /** Today's OTP + invite counts vs the per-tenant cap (GET /tenants/whatsapp/status/). */
 export function fetchWhatsappStatus(token: string): Promise<WhatsappStatus> {
   return request<WhatsappStatus>("/tenants/whatsapp/status/", { token });
+}
+
+/** Suspend or reactivate a gym (issue #43). Returns the updated tenant. */
+export function updateAdminTenantStatus(
+  id: number | string,
+  status: AdminTenantSwitchStatus,
+  token: string,
+): Promise<AdminTenant> {
+  return request<AdminTenant>(`/admin/tenants/${id}/`, {
+    method: "PATCH",
+    body: { status },
+    token,
+  });
 }
