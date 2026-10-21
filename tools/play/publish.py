@@ -301,13 +301,14 @@ def cmd_release(args) -> int:
                 ctype = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
                 play.call("POST", f"/edits/{edit}/listings/{args.lang}/{IMAGE_TYPES[img_type]}",
                           payload=p.read_bytes(), content_type=ctype, timeout=300, upload=True)
-        play.call("PUT", f"/edits/{edit}/tracks/{args.track}", payload=release)
+        play.call("PUT", f"/edits/{edit}/tracks/{args.track}", payload={"releases": [release]})
         play.call("POST", f"/edits/{edit}:commit", payload={})
         print(f"✅ committed edit {edit}: track {args.track} now points at versionCode "
               f"[{code}], status {args.status}")
         return 0
     except ApiError as e:
         print(f"discarding failed edit {edit} (nothing was published)", file=sys.stderr)
+        print(f"play call failed ({e.what}): HTTP {e.status}: {trim(e.body)}", file=sys.stderr)
         if e.status == 401:
             print("401: access token rejected — the SA credential may lack androidpublisher access to this app", file=sys.stderr)
         if e.status == 404:
