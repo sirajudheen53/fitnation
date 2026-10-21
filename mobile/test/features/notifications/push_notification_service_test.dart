@@ -132,6 +132,21 @@ void main() {
       // Must not throw.
       await service.initialize();
     });
+
+    test('a failing messaging client is swallowed (push stays disabled)',
+        () async {
+      // The Firebase SDK can throw on a broken installation (a dev build
+      // with a stale google-services.json, a revoked API key). The app must
+      // still boot — push is best-effort.
+      final service = PushNotificationService(
+        devices: devices,
+        messaging: _ThrowingMessagingClient(),
+      );
+
+      // Must not throw.
+      await service.initialize();
+      expect(devices.registrations, isEmpty);
+    });
   });
 
   group('token rotation', () {
@@ -175,6 +190,20 @@ void main() {
       await service.unregisterCurrentToken();
 
       expect(devices.unregistrations, ['fcm-token-1']);
+    });
+
+    test('a failing unregister is swallowed — logout still completes',
+        () async {
+      // The logout path must never be blocked by a push-cleanup failure:
+      // the member has to get signed out either way.
+      final service = PushNotificationService(
+        devices: _ThrowingUnregisterSource(),
+        messaging: messaging,
+      );
+      await service.initialize();
+
+      // Must not throw.
+      await service.unregisterCurrentToken();
     });
   });
 
@@ -258,4 +287,41 @@ class _ThrowingDeviceSource extends DeviceRemoteDataSource {
   }) async {
     throw StateError('network down');
   }
+}
+
+/// A device source whose unregistration always fails.
+class _ThrowingUnregisterSource extends DeviceRemoteDataSource {
+  _ThrowingUnregisterSource() : super(Dio());
+
+  @override
+  Future<void> register({
+    required String token,
+    required String deviceId,
+    required String platform,
+    String deviceType = 'android',
+  }) async {}
+
+  @override
+  Future<void> unregister(String token) async {
+    throw StateError('network down');
+  }
+}
+
+/// A messaging client whose SDK calls always fail.
+class _ThrowingMessagingClient implements MessagingClient {
+  @override
+  Future<bool> requestPermission() async => throw StateError('no Firebase');
+
+  @override
+  Future<String?> getToken() async => throw StateError('no Firebase');
+
+  @override
+  Stream<String> get onTokenRefresh => const Stream<String>.empty();
+
+  @override
+  Stream<PushMessage> get onMessageTap => const Stream<PushMessage>.empty();
+
+  @override
+  Future<PushMessage?> getInitialMessage() async =>
+      throw StateError('no Firebase');
 }
