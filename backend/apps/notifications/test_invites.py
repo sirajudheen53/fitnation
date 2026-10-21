@@ -2,7 +2,8 @@
 contract shapes, tenant isolation, and the CustomerSerializer surface."""
 
 from datetime import timedelta
-from unittest.mock import MagicMock, mock
+from unittest import mock
+from unittest.mock import MagicMock
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
