@@ -52,8 +52,7 @@ class AiCoachRemoteDataSource {
   Future<List<ChatMessage>> getMessages(int conversationId) async {
     try {
       final response = await _dio.get(
-        AppConstants.aiCoachMessagesEndpoint,
-        queryParameters: {'conversation': conversationId},
+        AppConstants.aiCoachMessagesEndpoint.replaceAll('{id}', '$conversationId'),
       );
       final results = _extractResults(response.data);
       return results
