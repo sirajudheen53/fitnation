@@ -292,7 +292,7 @@ def cmd_release(args) -> int:
                          f"to publish a partial listing for {args.lang}")
             listing = {"language": args.lang, "title": fields["title"],
                        "shortDescription": fields["short"], "fullDescription": fields["full"]}
-            play.call("POST", f"/edits/{edit}/listings/{args.lang}", payload=listing)
+            play.call("PUT", f"/edits/{edit}/listings/{args.lang}", payload=listing)
         if assets and args.wipe_images:
             for img_type in assets:
                 play.call("DELETE", f"/edits/{edit}/listings/{args.lang}/{IMAGE_TYPES[img_type]}")
@@ -301,7 +301,7 @@ def cmd_release(args) -> int:
                 ctype = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
                 play.call("POST", f"/edits/{edit}/listings/{args.lang}/{IMAGE_TYPES[img_type]}",
                           payload=p.read_bytes(), content_type=ctype, timeout=300, upload=True)
-        play.call("POST", f"/edits/{edit}/tracks/{args.track}", payload=release)
+        play.call("PUT", f"/edits/{edit}/tracks/{args.track}", payload=release)
         play.call("POST", f"/edits/{edit}:commit", payload={})
         print(f"✅ committed edit {edit}: track {args.track} now points at versionCode "
               f"[{code}], status {args.status}")
@@ -339,12 +339,12 @@ def cmd_listing(args) -> int:
           f"({len(listing['shortDescription'])}/80 chars) full="
           f"({len(listing['fullDescription'])}/4000 chars)")
     if args.dry_run:
-        print("dry-run: create edit → POST /listings/%s → ':commit'" % args.lang)
+        print("dry-run: create edit → PUT /listings/%s → ':commit'" % args.lang)
         return 0
     play = Play(args.package, args.sa_file, args.token_cmd)
     edit = play.edit_create(False)
     try:
-        play.call("POST", f"/edits/{edit}/listings/{args.lang}", payload=listing)
+        play.call("PUT", f"/edits/{edit}/listings/{args.lang}", payload=listing)
         play.call("POST", f"/edits/{edit}:commit", payload={})
         print(f"✅ committed edit {edit}: listing updated")
         return 0
