@@ -223,7 +223,13 @@ class InviteServiceTests(TestCase):
 
     def test_tenant_isolation_on_dedupe_query(self) -> None:
         """Another gym's invite for a same-id customer never dedupes."""
-        other = provision_tenant(name="Other Gym", contact_email="other2@local.test", features={"app_access": True})
+        other = provision_tenant(
+            name="Other Gym",
+            contact_email="other2@local.test",
+            features={"app_access": True},
+            is_wati_enabled=True,
+            wati_api_key="other-wati-key",
+        )
         other_user = User.objects.create_user(
             email="othermember@fitnation.local",
             password="x",
@@ -234,14 +240,33 @@ class InviteServiceTests(TestCase):
             phone="+919900060002",
         )
         other_customer = Customer.objects.create(tenant=other, user=other_user, name="OM", phone="+919900060002")
+        # Gym A's own sent invite for its own member.
         NotificationLog.objects.create(
             tenant=self.tenant,
             customer=self.customer,
             notification_type=NotificationLog.NotificationType.APP_INVITE,
             status=NotificationLog.Status.SENT,
         )
+        # A sent invite row filed under gym A but pointing at gym B's member
+        # (a misfiled log). Dedupe is scoped to the customer's own gym, so
+        # this foreign-tenant row must not suppress gym B's send — a dedupe
+        # query filtered on the customer alone would wrongly short-circuit
+        # to already_sent here.
+        NotificationLog.objects.create(
+            tenant=self.tenant,
+            customer=other_customer,
+            notification_type=NotificationLog.NotificationType.APP_INVITE,
+            status=NotificationLog.Status.SENT,
+        )
         result = send_app_invite(other, other_customer, poster=_ok_poster())
         self.assertEqual(result.status, "sent")
+        self.assertEqual(result.channel, "whatsapp")
+        # The other gym's invite is its own row — gym A's logs are untouched
+        # and no cross-tenant log was created.
+        self.assertEqual(result.log.tenant_id, other.pk)
+        self.assertEqual(result.log.customer_id, other_customer.pk)
+        self.assertEqual(NotificationLog.objects.for_tenant(self.tenant).count(), 2)
+        self.assertEqual(NotificationLog.objects.for_tenant(other).count(), 1)
 
 
 class LinkBuilderTests(TestCase):

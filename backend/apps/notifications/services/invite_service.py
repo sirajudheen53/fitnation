@@ -111,7 +111,21 @@ def _invite_not_applicable_reason(tenant, membership) -> str | None:
 
 
 def _sent_invite_within_window(customer, window_hours: int):
-    """Return the latest ``sent`` invite log inside the dedupe window."""
+    """Return the latest ``sent`` invite log inside the dedupe window.
+
+    Scoped to the customer's own gym, so one gym's invite history can never
+    suppress another gym's invite to the same member (multi-tenant
+    isolation). ``NotificationLog`` carries its own ``tenant`` column, so
+    this filter is what keeps a log row filed under a different gym from
+    deduping this member's send — the ``customer`` filter alone would not.
+
+    Args:
+        customer: The member whose invite history is checked.
+        window_hours: The dedupe window length in hours.
+
+    Returns:
+        The matching ``NotificationLog`` row, or ``None``.
+    """
     window_start = timezone.now() - timedelta(hours=window_hours)
     return (
         NotificationLog.objects.for_tenant(customer.tenant)
@@ -129,10 +143,14 @@ def _sent_invite_within_window(customer, window_hours: int):
 def _daily_invite_count(tenant) -> int:
     """Invites already attempted for the tenant today (hard cap check)."""
     day_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    return NotificationLog.objects.for_tenant(tenant).filter(
-        notification_type=NotificationLog.NotificationType.APP_INVITE,
-        created_at__gte=day_start,
-    ).count()
+    return (
+        NotificationLog.objects.for_tenant(tenant)
+        .filter(
+            notification_type=NotificationLog.NotificationType.APP_INVITE,
+            created_at__gte=day_start,
+        )
+        .count()
+    )
 
 
 def _render_content(tenant, customer, membership, link: str) -> str:
@@ -283,7 +301,5 @@ def invite_result_payload(result: AppInviteResult) -> dict[str, Any]:
         "reason": result.reason,
         "channel": result.channel,
         "sent_at": result.sent_at.isoformat() if result.sent_at else None,
-        "resend_allowed_after": (
-            result.resend_allowed_after.isoformat() if result.resend_allowed_after else None
-        ),
+        "resend_allowed_after": (result.resend_allowed_after.isoformat() if result.resend_allowed_after else None),
     }
