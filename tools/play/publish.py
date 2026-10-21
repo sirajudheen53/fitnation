@@ -45,6 +45,7 @@ from pathlib import Path
 
 ANDROIDPUBLISHER_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 API_ROOT = "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/"
+UPLOAD_ROOT = "https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/"
 DEFAULT_PACKAGE = "com.getfitwithus.app"
 DEFAULT_SA = os.path.join(os.path.expanduser("~"), ".play-cred", "fb-sa.json")
 DEFAULT_LANG = "en-IN"
@@ -127,8 +128,11 @@ class Play:
             self._token = _token_from_sa(self.sa_file)
         return self._token
 
-    def call(self, method: str, path: str, payload=None, body_data=None, content_type="application/json", timeout=420) -> dict:
-        url = f"{API_ROOT}{self.package}{path}"
+    def call(self, method: str, path: str, payload=None, body_data=None, content_type="application/json", timeout=420, upload: bool = False) -> dict:
+        # Binary media uploads (AAB, images) must go through Google's /upload/
+        # endpoint; the plain JSON API rejects raw binary payloads with HTTP 400.
+        root = UPLOAD_ROOT if upload else API_ROOT
+        url = f"{root}{self.package}{path}"
         headers = {"Authorization": f"Bearer {self.token()}"}
         body = None
         if payload is not None:
@@ -274,7 +278,7 @@ def cmd_release(args) -> int:
             print("uploading AAB …")
             resp = play.call("POST", f"/edits/{edit}/bundles?uploadType=media",
                              payload=Path(args.aab).read_bytes(),
-                             content_type="application/octet-stream", timeout=1200)
+                             content_type="application/octet-stream", timeout=1200, upload=True)
             uploaded = int(resp["versionCode"])
             print(f"↳ uploaded; Play versionCode={uploaded}")
             if uploaded != code:
@@ -296,7 +300,7 @@ def cmd_release(args) -> int:
             for p in paths:
                 ctype = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
                 play.call("POST", f"/edits/{edit}/listings/{args.lang}/{IMAGE_TYPES[img_type]}",
-                          payload=p.read_bytes(), content_type=ctype, timeout=300)
+                          payload=p.read_bytes(), content_type=ctype, timeout=300, upload=True)
         play.call("POST", f"/edits/{edit}/tracks/{args.track}", payload=release)
         play.call("POST", f"/edits/{edit}:commit", payload={})
         print(f"✅ committed edit {edit}: track {args.track} now points at versionCode "
@@ -374,7 +378,7 @@ def cmd_assets(args) -> int:
             for p in paths:
                 ctype = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
                 play.call("POST", f"/edits/{edit}/listings/{args.lang}/{IMAGE_TYPES[img_type]}",
-                          payload=p.read_bytes(), content_type=ctype, timeout=300)
+                          payload=p.read_bytes(), content_type=ctype, timeout=300, upload=True)
         play.call("POST", f"/edits/{edit}:commit", payload={})
         print(f"✅ committed edit {edit}: {sum(len(v) for v in assets.values())} image(s) replaced")
         return 0
