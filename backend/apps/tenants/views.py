@@ -14,11 +14,14 @@ from apps.users.authentication import TenantTokenAuthentication
 
 
 class TenantDetailView(APIView):
-    """Retrieve current tenant details."""
+    """Retrieve current tenant details / update its WhatsApp config (owner/admin)."""
 
     authentication_classes = [TenantTokenAuthentication]
     permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "tenants.view_tenant"
+    # Only gym owners / platform admins may change tenant settings; every other
+    # role lacks "tenants.change_tenant" in RolePermission's matrix → 403.
+    method_permissions = {"PATCH": "tenants.change_tenant"}
 
     def get(self, request: Any) -> Response:
         """Return the tenant associated with the current request.
@@ -32,3 +35,21 @@ class TenantDetailView(APIView):
         tenant = tenant_get_by_id(request.tenant.id)
         serializer = TenantSerializer(tenant)
         return Response(serializer.data)
+
+    def patch(self, request: Any) -> Response:
+        """Save the tenant's WhatsApp configuration.
+
+        The ``wati_api_key`` is write-only: omitted or blank keeps the stored
+        secret, while a non-blank value replaces it (encrypted at rest).
+
+        Args:
+            request: The incoming DRF request.
+
+        Returns:
+            The refreshed tenant payload (same shape as ``GET``).
+        """
+        tenant = tenant_get_by_id(request.tenant.id)
+        serializer = TenantSerializer(tenant, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(TenantSerializer(tenant_get_by_id(tenant.id)).data)
