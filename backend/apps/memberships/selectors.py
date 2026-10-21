@@ -99,9 +99,7 @@ def get_latest_membership(customer: "Customer"):
     Returns:
         The latest non-cancelled ``Membership`` (plan joined), or ``None``.
     """
-    return (
-        customer.memberships.exclude(status="cancelled").select_related("plan").order_by("-end_date", "-id").first()
-    )
+    return customer.memberships.exclude(status="cancelled").select_related("plan").order_by("-end_date", "-id").first()
 
 
 def get_app_entitlement(customer: "Customer | None", *, tenant: "Tenant", on: date | None = None) -> AppEntitlement:

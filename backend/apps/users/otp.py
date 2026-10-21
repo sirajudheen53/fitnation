@@ -20,13 +20,13 @@ import secrets
 from abc import ABC, abstractmethod
 from datetime import date, timedelta
 
-import requests
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
 
+import requests
+
 from apps.notifications.services.channels import (
-    MSG91_FLOW_URL,
     normalize_msisdn,
     post_msg91_flow,
     post_wati_template,

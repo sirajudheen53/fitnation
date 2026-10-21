@@ -25,8 +25,8 @@ from apps.feedback.serializers import (
     FeedbackSurveySerializer,
     FeedbackWriteSerializer,
 )
-from apps.permissions.permissions import RolePermission
 from apps.permissions.entitlements import EntitlementRequired
+from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 from apps.users.models import User

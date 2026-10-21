@@ -9,6 +9,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -19,7 +20,6 @@ from apps.workouts.models import (
     WorkoutLog,
     WorkoutPlan,
 )
-from apps.permissions.entitlements import EntitlementRequired
 from apps.workouts.serializers import (
     WorkoutAssignmentSerializer,
     WorkoutDayWriteSerializer,

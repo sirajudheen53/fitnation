@@ -14,6 +14,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.customers.models import Customer
+from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import RolePermission
 from apps.reviews.models import Review, ReviewResponse
 from apps.reviews.serializers import (
@@ -21,7 +22,6 @@ from apps.reviews.serializers import (
     ReviewSerializer,
     ReviewWriteSerializer,
 )
-from apps.permissions.entitlements import EntitlementRequired
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 from apps.users.models import User

@@ -30,10 +30,10 @@ from apps.marketplace.serializers import (
     ProductListSerializer,
     ProductWriteSerializer,
 )
+from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
-from apps.permissions.entitlements import EntitlementRequired
 
 
 class ProductCategoryViewSet(ModelViewSet):

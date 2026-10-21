@@ -9,7 +9,7 @@ member billing state (ADR-003 decision 1).
 from typing import Any
 
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import BasePermission, SAFE_METHODS
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from apps.customers.models import Customer
 from apps.memberships.selectors import EntitlementStatus, get_app_entitlement

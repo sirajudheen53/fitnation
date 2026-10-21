@@ -26,11 +26,11 @@ from apps.attendance.serializers import (
     TrainerAttendanceSerializer,
 )
 from apps.attendance.services import log_check_in
+from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 from apps.users.models import User
-from apps.permissions.entitlements import EntitlementRequired
 
 PERIOD_TRUNC = {
     "daily": TruncDate,

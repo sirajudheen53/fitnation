@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-import requests
 from django.conf import settings
+
+import requests
 
 WATI_SESSION_PATH = "/sendSessionMessage"
 WATI_TEMPLATE_PATH = "/api/v1/sendTemplateMessage"
