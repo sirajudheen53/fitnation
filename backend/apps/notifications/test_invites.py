@@ -9,6 +9,8 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
+import requests
+
 from apps.customers.models import Customer
 from apps.memberships.models import Membership, MembershipPlan
 from apps.notifications.models import NotificationLog
@@ -43,6 +45,30 @@ def _failing_poster():
     poster = MagicMock()
     poster.side_effect = RuntimeError("transport down")
     return poster
+
+
+def _wati_down_poster():
+    """A fake HTTP post where only the WATI host is down; MSG91 still delivers.
+
+    The two channels are separate hosts in production (``api.wati.io`` vs
+    ``control.msg91.com``), so a WhatsApp outage must not take the SMS
+    fallback down with it — the fallback is what carries the invite when
+    WATI is unavailable.
+    """
+
+    def _post(url, **kwargs):
+        if "api.wati.io" in url:
+            raise requests.exceptions.ConnectionError("transport down")
+        return MagicMock(status_code=200, raise_for_status=MagicMock())
+
+    poster = MagicMock()
+    poster.side_effect = _post
+    return poster
+
+
+def _posted_urls(poster) -> list[str]:
+    """The URLs a fake poster was called with, in call order."""
+    return [call.args[0] for call in poster.call_args_list]
 
 
 class InviteServiceTests(TestCase):
@@ -111,10 +137,17 @@ class InviteServiceTests(TestCase):
 
     def test_wati_down_falls_to_sms(self) -> None:
         """WATI transport failing → MSG91 SMS carries the invite."""
+        poster = _wati_down_poster()
         with override_settings(**SMS_INVITE_SETTINGS):
-            result = send_app_invite(self.tenant, self.customer, poster=_failing_poster())
+            result = send_app_invite(self.tenant, self.customer, poster=poster)
         self.assertEqual(result.status, "sent")
         self.assertEqual(result.channel, "sms")
+        # The WATI leg was tried and failed; the SMS leg then delivered.
+        urls = _posted_urls(poster)
+        self.assertTrue(any("api.wati.io" in url for url in urls), urls)
+        self.assertTrue(any("control.msg91.com" in url for url in urls), urls)
+        self.assertEqual(result.log.status, NotificationLog.Status.SENT)
+        self.assertEqual(result.log.channel, "sms")
 
     def test_no_channels_configured_is_skipped(self) -> None:
         """WATI off + no SMS → skipped with reason wati_not_configured."""
