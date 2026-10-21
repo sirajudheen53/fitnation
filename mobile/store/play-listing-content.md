@@ -32,22 +32,22 @@ FitNation is the official member app of your gym. Everything your gym plans
 for you — workouts, diet, classes, check-ins, progress — is now in your
 pocket, exactly as your trainer left it.
 
-**Your phone number is your login.** Open the invite link your gym sends on
+Your phone number is your login. Open the invite link your gym sends on
 WhatsApp, sign in with your mobile number and the one-time OTP that arrives
 by WhatsApp/SMS. No passwords, ever.
 
 What you get:
 
-• **Workouts** — the plan your trainer wrote for you; log sets, weight and
+• Workouts — the plan your trainer wrote for you; log sets, weight and
   reps, tick the day done.
-• **Diet plan** — today's meals in one screen, with your macros.
-• **Class booking** — book a seat for a live session with one tap.
-• **Check-in** — show the QR at the front desk; your visit is counted.
-• **Progress** — weight and body measurements, progress photos only you can
+• Diet plan — today's meals in one screen, with your macros.
+• Class booking — book a seat for a live session with one tap.
+• Check-in — show the QR at the front desk; your visit is counted.
+• Progress — weight and body measurements, progress photos only you can
   see, charts that show the trend line, not just the last reading.
-• **Streaks & reminders** — push notifications for booked classes and
+• Streaks & reminders — push notifications for booked classes and
   workout nudges from your gym.
-• **Trainer chat** — quick questions straight to your gym's trainer.
+• Trainer chat — quick questions straight to your gym's trainer.
 
 How access works: your gym (any partner on FitNation, e.g. Hash Fit) issues
 you a membership. Your active membership is your app access — there is no
@@ -64,9 +64,12 @@ picture: https://yougetfitwithus.com/privacy
 FitNation does not provide medical advice. Before starting any workout or
 diet program, please consult your physician, especially if you have a
 pre-existing condition.
-<!-- ~2000/4000 chars. Paste as-is (plain text survives the paste; bold
-     markers paste as plain text). Update the "e.g. Hash Fit" example only if
-     the pilot tenant line-up changes. -->
+<!-- ~2000/4000 chars. Paste as-is. IMPORTANT: Play listing text is PLAIN
+     TEXT — it does not render markdown. Never use **bold**, # headings, or
+     [links](url) here; write emphasis in words ("Your phone number is your
+     login." reads as a sentence). publish.py refuses to upload a listing
+     containing markdown markers (see check_limits). Update the "e.g. Hash
+     Fit" example only if the pilot tenant line-up changes. -->
 
 ## Changelog
 <!-- Release notes; one fenced block per language tag. en-IN is the default. -->
@@ -135,3 +138,14 @@ Source of truth with the reasoning per row:
 - Category "Health & Fitness", target audience 18+, content-rating
   questionnaire (answer photos honestly: private to the user).
 - Reviewer access notes (template in `docs/play-release-checklist.md` §7).
+- The Play Console paste itself — this file is the paste-copy, but pasting
+  stays a human step (the API path in `tools/play/publish.py` can do it
+  instead, see `docs/play-release-checklist.md` §3).
+
+## Plain-text rule (important)
+
+Play listing text is **plain text** — the Console renders it verbatim and does
+not interpret markdown. Never write `**bold**`, `# headings`, or `[links](url)`
+in the sections above; they would be published literally. The publisher
+(`tools/play/publish.py`) refuses to upload a listing containing markdown
+markers, and `tools/play/test_publish.py` asserts this file stays clean.

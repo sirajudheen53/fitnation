@@ -53,6 +53,23 @@ upload order — put 2, 5, 6 first if only three are used).
 ## Assets still needed from humans (not machine generatable)
 
 - Real screenshots (the 8 above) — needs device + seeded demo tenant.
-- Short description (≤80 chars) and full description — marketing copy.
 - Privacy policy URL + account-deletion URL (see
   `play-health-data-disclosure.md` open items).
+- The Console paste itself (the copy is ready in
+  `play-listing-content.md`; the paste stays a human step — or use
+  `tools/play/publish.py listing --listing-content mobile/store/play-listing-content.md`).
+
+## Marketing copy — DONE ✅
+
+App name, short description, full description and changelog are written and
+length-checked in `play-listing-content.md`:
+
+| Field | Value | Limit |
+|---|---|---|
+| Title | `FitNation: Gym, Workouts, Diet` | 30 / 30 |
+| Short description | `Workouts, diet plans, check-in QR & progress — your gym in your pocket.` | 71 / 80 |
+| Full description | 1811 chars, plain text (no markdown) | 1811 / 4000 |
+
+Play listing text is **plain text** — the Console does not render markdown, so
+`**bold**` would be published literally. `tools/play/publish.py` refuses to
+upload a listing containing markdown markers.
