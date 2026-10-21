@@ -113,6 +113,57 @@ void main() {
       expect(gym.uuid, gymUuid);
       expect(gym.name, 'your gym');
     });
+
+    test('an offline member gets a NetworkFailure, not a crash', () async {
+      // The front-desk code path is often the member's first network call
+      // (they may have just installed from a raw Play search). Being
+      // offline must degrade to a message, never to a crash.
+      final dio = Dio();
+      dio.httpClientAdapter = _RecordingAdapter(
+        (options) async => throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionError,
+          error: 'no network',
+        ),
+      );
+      final source = TenantLookupRemoteDataSource(dio);
+
+      await expectLater(
+        source.lookupByCode('HASHFIT'),
+        throwsA(isA<NetworkFailure>()),
+      );
+    });
+
+    test('a timeout becomes a NetworkFailure', () async {
+      final dio = Dio();
+      dio.httpClientAdapter = _RecordingAdapter(
+        (options) async => throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.connectionTimeout,
+        ),
+      );
+      final source = TenantLookupRemoteDataSource(dio);
+
+      await expectLater(
+        source.lookupByCode('HASHFIT'),
+        throwsA(isA<NetworkFailure>()),
+      );
+    });
+
+    test('a 500 becomes a ServerFailure carrying the backend detail',
+        () async {
+      final dio = Dio();
+      dio.httpClientAdapter = _RecordingAdapter(
+        (options) async => _response(options, 500, {'detail': 'Server exploded.'}),
+      );
+      final source = TenantLookupRemoteDataSource(dio);
+
+      await expectLater(
+        source.lookupByCode('HASHFIT'),
+        throwsA(isA<ServerFailure>()
+            .having((f) => f.statusCode, 'statusCode', 500)),
+      );
+    });
   });
 }
 
