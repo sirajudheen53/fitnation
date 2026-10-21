@@ -1,0 +1,141 @@
+# Mobile Play release — MANUAL dispatch only (building + publishing a Play AAB
+# is an orchestrated human decision, never a push-triggered one).
+#
+# Reuses the repo's own release tooling (mobile/tool/build_release.sh +
+# tools/play/publish.py) so CI and local builds follow the exact same path.
+#
+# REQUIRED repo secrets (Settings → Secrets and variables → Actions):
+#   PLAY_SERVICE_ACCOUNT_JSON — FULL raw content of the Play SA JSON
+#                               (androidpublisher-scoped, granted app access
+#                               for com.getfitwithus.app)
+#   KEYSTORE_BASE64           — `base64 -w0 mobile/android/app/upload-keystore.jks`
+#   KEYSTORE_PASSWORD         — storePassword (from the team secret manager)
+#   KEY_ALIAS                 — e.g. upload
+#   KEY_PASSWORD              — keyPassword
+# Never hardcode any of these; the run starts by refusing to proceed if any
+# is missing. The service account JSON must NEVER be committed to the repo.
+
+name: Mobile Play Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: Play track to publish to
+        type: choice
+        default: internal
+        options: [internal, alpha, beta, production]
+      release_notes:
+        description: Release notes (goes on the track release + listing changelog)
+        required: true
+        default: "FitNation member app — first public test release."
+      run_tests:
+        description: Run flutter analyze + tests before building
+        type: boolean
+        default: true
+
+concurrency:
+  group: mobile-play-release
+  cancel-in-progress: false
+
+jobs:
+  release-aab:
+    name: Build + verify + publish AAB (${{ inputs.track }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      FLUTTER_VERSION: "3.47.1"
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse to run without the required secrets
+        run: |
+          missing=0
+          for s in PLAY_SERVICE_ACCOUNT_JSON KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!s:-}" ]; then
+              echo "::error title=Missing secret::$s not set"
+              missing=1
+            fi
+          done
+          if [ "$missing" != 0 ]; then
+            echo "Add the missing secrets under Settings → Secrets and variables → Actions"
+            echo "(PLAY_SERVICE_ACCOUNT_JSON, KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD —"
+            echo " see docs/play-release-checklist.md §11)."
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"       # pinned to the toolchain mobile/RELEASE.md records
+          cache: gradle
+
+      - name: Reconstruct upload signing material (never echoed)
+        run: |
+          mkdir -p mobile/android/app
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=app/upload-keystore.jks\n' \
+            "$KEYSTORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > mobile/android/key.properties
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > mobile/android/app/upload-keystore.jks
+          keytool -list -v -keystore mobile/android/app/upload-keystore.jks -alias "$KEY_ALIAS" \
+            -storepass "$KEYSTORE_PASSWORD" 2>/dev/null | grep -E 'Alias name|SHA256:' || true
+          echo "keystore decoded (fingerprint above is public cert info; passwords never printed)"
+
+      # Pinned Flutter so the runner matches the local 3.47.1 release record.
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+
+      - name: Point the build script at this runner's flutter
+        run: echo "FLUTTER_BIN=$FLUTTER_ROOT/bin/flutter" >> "$GITHUB_ENV"
+
+      # tools/play/publish.py exchanges the service-account JSON for an
+      # access token itself (google-auth, stdlib-only otherwise). The runner's
+      # python3 does not ship it — install it here or every Play call fails.
+      - name: Install Play tooling dependency
+        run: python3 -m pip install --quiet --disable-pip-version-check "google-auth>=2.0"
+
+      - name: Build signed release AAB (analyze → test → build → verify)
+        run: |
+          if [ "${{ inputs.run_tests }}" != "true" ]; then
+            mobile/tool/build_release.sh --skip-checks
+          else
+            mobile/tool/build_release.sh
+          fi
+
+      - name: Publish to Play track
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          cat > /tmp/play-sa.json <<'SAEOF'
+          ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          SAEOF
+          printf '%s' "$RELEASE_NOTES" > /tmp/notes.txt
+          python3 tools/play/publish.py release \
+            --sa-file /tmp/play-sa.json \
+            --aab mobile/build/app/outputs/bundle/release/app-release.aab \
+            --track "${{ inputs.track }}" \
+            --status completed \
+            --changelog /tmp/notes.txt \
+            --listing-content mobile/store/play-listing-content.md \
+            --store-dir mobile/store || exit 1
+
+      - name: Read-only release verification (report only)
+        if: always()
+        run: |
+          python3 tools/play/verify_release.py \
+            --sa-file /tmp/play-sa.json \
+            --expect-track "${{ inputs.track }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup secret material
+        if: always()
+        run: rm -f /tmp/play-sa.json /tmp/notes.txt
+
+      - name: Upload AAB artifact for the release record
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-${{ github.run_id }}
+          path: mobile/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
