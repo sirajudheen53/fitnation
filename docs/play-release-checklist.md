@@ -70,6 +70,14 @@ The upload key already exists and the release build is wired to it:
       app-signing key; the `.jks` stays the upload key). Leave the
       "Google-managed signing key" at its default — do NOT switch to
       "Play-managed" upload keys (that would break the CI keystore path).
+- [ ] **After that first AAB upload (Play App Signing enrolled): ADD the
+      Play-managed app-signing key's SHA-256 as a second fingerprint in
+      `frontend/public/.well-known/assetlinks.json`** (FBOS-050) — copy it
+      from Play Console → App integrity → "Play-managed signing key" SHA-256.
+      Store builds verify Android App Links against the Google-managed key, so
+      until it is added the https App Link (`app.yougetfitwithus.com/g/{uuid}`)
+      opens the app only for dev/manual (upload-key) builds. The upload-key
+      fingerprint already listed there stays for dev/manual installs.
 - [x] Upload-key SHA-1 — store it for App Links `assetlinks.json` + Firebase:
       ```bash
       keytool -list -v -keystore mobile/android/app/upload-keystore.jks -alias upload -storepass "$STORE_PASS" | grep -E 'SHA1|SHA256'
