@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,6 +26,13 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
   bool _resendCooldown = false;
   int _cooldownSeconds = 0;
 
+  /// Ticker behind the "resend OTP" cooldown.
+  ///
+  /// Held in a field so it can be cancelled on dispose: a timer that
+  /// outlives the screen keeps the app awake and fails the widget-test
+  /// invariant that no timer may still be pending.
+  Timer? _cooldownTimer;
+
   @override
   void initState() {
     super.initState();
@@ -32,6 +41,8 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
 
   @override
   void dispose() {
+    _cooldownTimer?.cancel();
+    _cooldownTimer = null;
     for (final c in _controllers) {
       c.dispose();
     }
@@ -42,22 +53,24 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
   }
 
   void _startResendCooldown() {
+    _cooldownTimer?.cancel();
     setState(() {
       _resendCooldown = true;
       _cooldownSeconds = AppConstants.otpResendCooldown.inSeconds;
     });
 
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(seconds: 1));
-      if (!mounted) return false;
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
 
       setState(() => _cooldownSeconds--);
 
       if (_cooldownSeconds <= 0) {
+        timer.cancel();
         setState(() => _resendCooldown = false);
-        return false;
       }
-      return true;
     });
   }
 
