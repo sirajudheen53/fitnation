@@ -122,7 +122,14 @@ github.com/google/bundletool releases if absent), JDK keytool, unzip.
    `flutter build appbundle --release` exits 1 with "Release build refused:
    mobile/android/key.properties (upload-key signing material) is missing…".
 5. **Gates green** — `flutter analyze` → *No issues found*;
-   `flutter test` → *309 tests, all passed*.
+   `flutter test` → *480 tests, all passed* (re-run at the final 1.0.0+1
+   rebuild; the record above originally measured 309 before the last test
+   suites landed — the count only grows, the gate is "all passed").
+6. **Prod host baked in** —
+   `unzip -p build/app/outputs/bundle/release/app-release.aab base/lib/arm64-v8a/libapp.so | strings | grep -oE "https?://[a-z.]*yougetfitwithus\.com[^ \"]*"`
+   → `https://api.yougetfitwithus.com` (the only app host in the binary;
+   the remaining URLs are framework strings — pub.dev, fonts.gstatic,
+   github — and there are no dev/localhost hosts).
 
 Repeat steps 1 and 3 for every release build before upload.
 

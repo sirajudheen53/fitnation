@@ -3,7 +3,7 @@
 **Status:** Runbook (live document — tick items per release)
 **Date:** 2026-10-21 · **Last verified end-to-end:** AAB built + verified (appId
 `com.getfitwithus.app`, targetSdk 36, versionCode 1), `flutter analyze` clean,
-`flutter test` 272/272 green, Play API read-only calls confirmed the app shell
+`flutter test` 480/480 green, Play API read-only calls confirmed the app shell
 exists with no releases and no store listing yet.
 **Applies to:** `mobile/` (Flutter), Play developer account "Crackers Club SSC", service account `~/.play-cred/fb-sa.json` (androidpublisher scope — can upload AABs, manage tracks/listings; **cannot create a new app shell**)
 **Tooling:** `mobile/tool/build_release.sh` (build+verify) · `tools/play/publish.py` (upload/track/listing) · `tools/play/verify_release.py` (go/no-go) · `.github/workflows/release-mobile.yml` (manual CI) · `mobile/store/play-listing-content.md` (paste copy) · `mobile/RELEASE.md` (release identity)
@@ -149,8 +149,10 @@ unzip -p build/app/outputs/bundle/release/app-release.aab "META-INF/*.RSA" | key
 - [x] `versionCode` = 1 = the `+1` in `mobile/pubspec.yaml` (single source of truth)
 - [x] Signed with the **upload** key (`META-INF/UPLOAD.RSA`, SHA-256 matches the
       upload keystore) — **not** the debug certificate
-- [x] `flutter analyze` → *No issues found* · `flutter test` → *272 tests, all passed*
-- [ ] Verify the API host baked in is `https://api.yougetfitwithus.com` (`SERVER=prod`).
+- [x] `flutter analyze` → *No issues found* · `flutter test` → *480 tests, all passed*
+- [x] Verify the API host baked in is `https://api.yougetfitwithus.com` (`SERVER=prod`):
+      `unzip -p base/lib/arm64-v8a/libapp.so | strings | grep yougetfitwithus.com`
+      → `https://api.yougetfitwithus.com` (only app host in the binary; no dev/localhost).
 - [ ] Smoke the release build on a device before upload (`flutter run --release --dart-define=SERVER=prod`) — OTP request → code arrives (WATI/SMS, not console) → login.
 
 ---
@@ -219,7 +221,7 @@ and machine-checked. The asset→slot map is in `mobile/store/README.md`.
 |---|---|---|
 | App name | ≤ 30 chars | `FitNation: Gym, Workouts, Diet` (exactly 30 — the em-dash variants are 31/32 and **rejected**) |
 | Short description | ≤ 80 chars | `Workouts, diet plans, check-in QR & progress — your gym in your pocket.` (71) |
-| Full description | ≤ 4000 chars | 1843 chars, plain text — mentions OTP login ("your phone number is your login"), no password ever |
+| Full description | ≤ 4000 chars | 1811 chars, plain text — mentions OTP login ("your phone number is your login"), no password ever |
 | App icon | 512×512 PNG, ≤ 1 MB | `mobile/store/app-icon-512.png` — no alpha for the legacy icon slot |
 | Feature graphic | 1024×500 JPG/PNG, no alpha | `mobile/store/feature-graphic-1024x500.png` |
 | Phone screenshots | ≥ 2, 16:9 or 9:16, min 320 px | **NOT PRODUCED** — needs a device pass; shot list in `mobile/store/README.md` |
