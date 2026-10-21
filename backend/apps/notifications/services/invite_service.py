@@ -236,7 +236,10 @@ def send_app_invite(
             post_msg91_flow(
                 [
                     {
-                        "mobiles": normalize_msisdn(customer.phone or "", getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91")),
+                        "mobiles": normalize_msisdn(
+                            customer.phone or "",
+                            getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91"),
+                        ),
                         "NAME": customer.name,
                         "GYM": tenant.name,
                         "LINK": link,
