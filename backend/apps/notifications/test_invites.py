@@ -282,13 +282,33 @@ class LinkBuilderTests(TestCase):
         self.assertEqual(links["web"], f"https://app.yougetfitwithus.com/g/{self.tenant.uuid}")
         self.assertEqual(links["scheme"], f"fitnation://g/{self.tenant.uuid}")
         self.assertIn(f"referrer=gym%3D{self.tenant.uuid}", links["play"])
-        self.assertIn("com.fitnation.app", links["play"])
+        self.assertIn("com.getfitwithus.app", links["play"])
 
     def test_web_base_override(self) -> None:
         """APP_INVITE_WEB_BASE is honored (staging domains)."""
         with override_settings(APP_INVITE_WEB_BASE="https://staging.example.com"):
             links = build_app_invite_links(self.tenant)
         self.assertTrue(links["web"].startswith("https://staging.example.com/g/"))
+
+    def test_play_link_package_matches_the_mobile_application_id(self) -> None:
+        """The Play link must target the package the app is actually published under.
+
+        The invite's Play referrer link is dead if the backend's package
+        constant drifts from the mobile ``applicationId`` — the store page
+        404s and the install-referrer anchor (FBOS-011 §5.4, prong 2) never
+        reaches the app. Read the Gradle file so the two cannot drift apart
+        again without a failing test.
+        """
+        from pathlib import Path
+
+        gradle = Path(__file__).resolve().parents[3] / "mobile" / "android" / "app" / "build.gradle.kts"
+        if not gradle.exists():
+            self.skipTest("mobile/android/app/build.gradle.kts is not in this checkout")
+        application_id = gradle.read_text().split('applicationId = "')[1].split('"')[0]
+
+        links = build_app_invite_links(self.tenant)
+        self.assertIn(f"id={application_id}", links["play"])
+        self.assertNotIn("com.fitnation.app", links["play"])
 
     def test_payload_shape(self) -> None:
         """invite_result_payload renders the documented API block."""

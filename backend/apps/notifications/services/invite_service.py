@@ -81,7 +81,7 @@ def build_app_invite_links(tenant) -> dict[str, str]:
     """
     web_base = getattr(settings, "APP_INVITE_WEB_BASE", "https://app.yougetfitwithus.com").rstrip("/")
     scheme = getattr(settings, "APP_INVITE_SCHEME", "fitnation")
-    package = getattr(settings, "ANDROID_PACKAGE_NAME", "com.fitnation.app")
+    package = getattr(settings, "ANDROID_PACKAGE_NAME", "com.getfitwithus.app")
     return {
         "web": f"{web_base}/g/{tenant.uuid}",
         "scheme": f"{scheme}://g/{tenant.uuid}",

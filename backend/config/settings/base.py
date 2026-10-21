@@ -215,7 +215,10 @@ MSG91_INVITE_TEMPLATE_ID = env("MSG91_INVITE_TEMPLATE_ID", default="")
 # verification file; the custom scheme is handled by the Android manifest.
 APP_INVITE_WEB_BASE = env("APP_INVITE_WEB_BASE", default="https://app.yougetfitwithus.com")
 APP_INVITE_SCHEME = "fitnation"
-ANDROID_PACKAGE_NAME = "com.fitnation.app"
+# The published Play package (FBOS-011 §5.4 prong 2). Must match the mobile
+# app's ``applicationId`` — if the two drift apart the Play link 404s and the
+# install-referrer anchor is lost.
+ANDROID_PACKAGE_NAME = "com.getfitwithus.app"
 # Dedupe window for app invites (front desk can force a resend past it).
 APP_INVITE_RESEND_WINDOW_HOURS = 24
 # Hard per-tenant daily cap on invite sends (§10.1).
