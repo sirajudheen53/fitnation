@@ -332,6 +332,11 @@ class Command(BaseCommand):
                 "custom_domain": "fitnation.test",
             },
         )
+        # The live WhatsApp flag is Tenant.is_wati_enabled; the settings-level
+        # enable_whatsapp is a deprecated duplicate (FBOS-011 §6).
+        Tenant.objects.filter(pk=tenant.pk, is_wati_enabled=False).update(
+            is_wati_enabled=True,
+        )
         self._report("Tenant settings", created)
 
     # ─── 2. Users ──────────────────────────────────────────────────────────

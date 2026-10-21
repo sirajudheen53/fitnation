@@ -99,6 +99,10 @@ def _seed_tenant() -> Tenant:
             enable_razorpay=True,
         ),
     )
+    # The live WhatsApp flag is Tenant.is_wati_enabled; the settings-level
+    # enable_whatsapp is a deprecated duplicate (FBOS-011 §6).
+    tenant.is_wati_enabled = True
+    tenant.save(update_fields=["is_wati_enabled", "updated_at"])
     return tenant
 
 

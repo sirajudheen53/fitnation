@@ -107,7 +107,10 @@ class TenantSettings(models.Model):
     max_trainers = models.PositiveIntegerField(default=5)
     logo_url = models.URLField(blank=True)
     primary_color = models.CharField(max_length=7, default="#2563EB")
-    enable_whatsapp = models.BooleanField(default=False)
+    enable_whatsapp = models.BooleanField(
+        default=False,
+        help_text="Deprecated duplicate of Tenant.is_wati_enabled (FBOS-011 §6 folded the flags into the tenant-level field). Read-only; new code must use Tenant.is_wati_enabled.",
+    )
     enable_razorpay = models.BooleanField(default=False)
     custom_domain = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

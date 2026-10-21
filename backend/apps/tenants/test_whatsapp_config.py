@@ -5,10 +5,20 @@ Contract = ``frontend/lib/api.ts`` ``TenantWhatsappConfig``:
 — the API key itself is write-only and is never echoed back.
 """
 
+import importlib
+
+from django.apps import apps
+from django.test import TestCase
 from rest_framework.test import APITestCase
 
+from apps.tenants.models import TenantSettings
 from apps.tenants.services import provision_tenant
 from apps.users.models import AuthToken, User
+
+# Migration module names start with a digit; import via importlib.
+_enable_whatsapp_sync = importlib.import_module(
+    "apps.tenants.migrations.0006_alter_tenantsettings_enable_whatsapp"
+).sync_enable_whatsapp
 
 CONFIG_URL = "/api/v1/tenants/me/"
 
@@ -203,3 +213,33 @@ class WhatsappConfigWriteTests(WhatsappConfigTestBase):
         )
 
         self.assertEqual(response.status_code, 401)
+
+
+class WhatsappFlagFoldTests(TestCase):
+    """TenantSettings.enable_whatsapp is a deprecated duplicate; the 0006 sync
+    folds its True values up into the live Tenant.is_wati_enabled field."""
+
+    def test_true_settings_flag_folds_into_tenant(self) -> None:
+        """Legacy gym with the old toggle on becomes is_wati_enabled=True."""
+        tenant = provision_tenant(name="Legacy Gym", contact_email="legacy@local.test")
+        TenantSettings.objects.filter(tenant=tenant).update(enable_whatsapp=True)
+        self.assertFalse(tenant.is_wati_enabled)
+
+        _enable_whatsapp_sync(apps, None)
+
+        tenant.refresh_from_db()
+        self.assertTrue(tenant.is_wati_enabled)
+
+    def test_enabled_tenant_is_never_downgraded(self) -> None:
+        """An already-enabled tenant keeps its flag when settings say False."""
+        tenant = provision_tenant(
+            name="Live Gym",
+            contact_email="live@local.test",
+            is_wati_enabled=True,
+        )
+        TenantSettings.objects.filter(tenant=tenant).update(enable_whatsapp=False)
+
+        _enable_whatsapp_sync(apps, None)
+
+        tenant.refresh_from_db()
+        self.assertTrue(tenant.is_wati_enabled)
