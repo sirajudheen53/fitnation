@@ -1,8 +1,11 @@
 """Tenant provisioning and read services."""
 
+import logging
 from typing import Any
 
 from apps.tenants.models import Tenant, TenantSettings
+
+logger = logging.getLogger(__name__)
 
 PLAN_LIMITS: dict[str, dict[str, int]] = {
     "starter": {"max_branches": 1, "max_customers": 100, "max_trainers": 5},
@@ -116,3 +119,39 @@ def whatsapp_status_counts(tenant: Tenant) -> dict[str, int]:
         "invites_sent_today": today.filter(notification_type=NotificationLog.NotificationType.APP_INVITE).count(),
         "daily_cap": int(getattr(settings, "TENANT_WATI_OTP_DAILY_CAP", 200)),
     }
+
+
+# Unauthenticated gym-lookup throttle (per IP), mirroring the style of
+# ``apps.users.services._throttle_lookup`` (best-effort, fail-open on cache
+# errors). Kept IP-only: the lookup carries no phone or identity.
+GYM_LOOKUP_THROTTLE_LIMIT = 10
+GYM_LOOKUP_THROTTLE_WINDOW_SECONDS = 600
+
+
+def throttle_gym_lookup(ip: str | None) -> None:
+    """Rate-limit the public gym-code lookup (per IP, 10 per 10 minutes).
+
+    Fail-open on cache failure (like ``_throttle_lookup``) — the lookup itself
+    reveals nothing beyond a gym's public identity (uuid + name), and DRF's
+    global throttles remain as a backstop.
+
+    Args:
+        ip: The client IP, or ``None`` when unavailable.
+
+    Raises:
+        Throttled: DRF exception surfaced as HTTP 429 once over the limit.
+    """
+    from django.core.cache import cache
+    from rest_framework.exceptions import Throttled
+
+    try:
+        key = f"gym-lookup:{ip or 'noip'}"
+        count = (cache.get(key) or 0) + 1
+        cache.set(key, count, timeout=GYM_LOOKUP_THROTTLE_WINDOW_SECONDS)
+    except Throttled:
+        raise
+    except Exception:
+        logger.warning("Gym lookup throttle skipped (cache unavailable)")
+        return
+    if count > GYM_LOOKUP_THROTTLE_LIMIT:
+        raise Throttled(detail="Too many requests. Try again later.")

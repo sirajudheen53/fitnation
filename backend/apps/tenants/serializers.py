@@ -52,6 +52,7 @@ class TenantSerializer(serializers.ModelSerializer):
             "id",
             "uuid",
             "name",
+            "gym_code",
             "legal_name",
             "subscription_plan",
             "status",

@@ -2,16 +2,27 @@
 
 from typing import Any
 
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.permissions.permissions import RolePermission
+from apps.tenants.models import Tenant
 from apps.tenants.permissions import IsTenantMember
 from apps.tenants.selectors import tenant_get_by_id
 from apps.tenants.serializers import TenantSerializer, WhatsappTestSendSerializer
-from apps.tenants.services import send_whatsapp_test, whatsapp_status_counts
+from apps.tenants.services import (
+    send_whatsapp_test,
+    throttle_gym_lookup,
+    whatsapp_status_counts,
+)
 from apps.users.authentication import TenantTokenAuthentication
+
+
+def _client_ip(request: Any) -> str | None:
+    """Client IP for rate limits (Cloud Run sets X-Forwarded-For)."""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    return forwarded.split(",")[0].strip() or request.META.get("REMOTE_ADDR") or None
 
 
 class TenantDetailView(APIView):
@@ -105,3 +116,34 @@ class WhatsappStatusView(APIView):
             Counters matching the frontend's ``WhatsappStatus`` interface.
         """
         return Response(whatsapp_status_counts(request.tenant))
+
+
+class TenantLookupView(APIView):
+    """Unauthenticated gym lookup by code for the mobile install flow.
+
+    Serves members who install the app from Play without an invite link
+    (FBOS-011): ``GET /api/v1/tenants/lookup/?code=CODE`` → ``{uuid, name}``.
+    Public by necessity, hence IP-throttled; unknown or missing codes get the
+    same generic 404 so the endpoint cannot be used to enumerate gyms.
+    """
+
+    authentication_classes: list[str] = []
+    permission_classes = [AllowAny]
+
+    def get(self, request: Any) -> Response:
+        """Handle a code lookup.
+
+        Args:
+            request: The incoming DRF request.
+
+        Returns:
+            ``{uuid, name}`` for the gym, or a generic 404 / 429 response.
+        """
+        throttle_gym_lookup(_client_ip(request))
+        code = (request.query_params.get("code") or "").strip().upper()
+        if not code:
+            return Response({"detail": "Gym not found."}, status=404)
+        tenant = Tenant.objects.filter(gym_code=code).first()
+        if tenant is None:
+            return Response({"detail": "Gym not found."}, status=404)
+        return Response({"uuid": str(tenant.uuid), "name": tenant.name})

@@ -29,6 +29,17 @@ class Tenant(models.Model):
 
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, db_index=True)
     name = models.CharField(max_length=200)
+    gym_code = models.CharField(
+        max_length=12,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text=(
+            "Short unique code for this gym, typed by members on app install "
+            "when there is no invite link. Auto-assigned deterministically from "
+            "the uuid if blank (FBOS-011)."
+        ),
+    )
     legal_name = models.CharField(max_length=300, blank=True)
     subscription_plan = models.CharField(
         max_length=20,
@@ -64,6 +75,23 @@ class Tenant(models.Model):
     def __str__(self) -> str:
         """Return human-readable tenant label."""
         return f"{self.name} ({self.subscription_plan})"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Persist the tenant, auto-assigning a gym code when blank.
+
+        Args:
+            *args: Positional Django save args.
+            **kwargs: Keyword Django save args (``update_fields`` grows to
+                include ``gym_code`` when a code is generated).
+        """
+        if not self.gym_code:
+            from apps.tenants.gym_codes import assign_gym_code
+
+            self.gym_code = assign_gym_code(self)
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and "gym_code" not in update_fields:
+                kwargs["update_fields"] = [*update_fields, "gym_code"]
+        super().save(*args, **kwargs)
 
 
 class TenantSettings(models.Model):
