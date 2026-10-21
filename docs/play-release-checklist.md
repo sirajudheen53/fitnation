@@ -116,7 +116,9 @@ It pins Flutter 3.47.1 + JDK 17 + the Android SDK, builds with
 `bundletool` (applicationId, versionCode, versionName, minSdk, targetSdk ≥ 36)
 and `keytool` (the cert must be the **upload** cert, never a debug one).
 
-Verified output of the 1.0.0+1 build (2026-10-21):
+Verified output of the 1.0.0+1 build (2026-10-21; re-verified same day —
+rebuilds of the same version drift a few KB in zip metadata, the byte count
+below is that build's, identity facts are what matter):
 
 ```
 ════════════ RELEASE AAB READY ════════════
@@ -183,6 +185,9 @@ tools/play/publish.py release \
 
 # go/no-go report (read-only; exits 0 = GO, 1 = NO-GO)
 tools/play/verify_release.py --expect-track internal
+
+# unit tests for the publish/verify tooling (offline, no network; run from the repo root)
+python3 tools/play/test_publish.py   # 23 tests
 ```
 
 Raw endpoints the tool uses (for reference / debugging):

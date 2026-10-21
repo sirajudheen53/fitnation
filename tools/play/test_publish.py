@@ -200,7 +200,8 @@ class CommandArgs(unittest.TestCase):
 
         P.Play = boom
         try:
-            code = P.main(["release", "--dry-run", "--pubspec", "mobile/pubspec.yaml"])
+            code = P.main(["release", "--dry-run", "--pubspec",
+                           str(Path(__file__).resolve().parents[2] / "mobile" / "pubspec.yaml")])
         finally:
             P.Play = original
         self.assertEqual(code, 0)
