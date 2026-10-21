@@ -112,7 +112,9 @@ device/emulator on this machine) — see the shot list in
 2. Play App Signing: use the Google-generated app signing key, enroll the
    upload key (paste §Verification #3 fingerprint as identity proof).
 3. Paste listing: icons/feature graphic from `mobile/store/`, marketing
-   copy (needs writing), screenshots (needs a device pass), category Fitness.
+   copy from `store/play-listing-content.md` (title ≤30 / short ≤80 / full
+   ≤4000 chars are already checked there), screenshots (needs a device
+   pass — shot list in `store/README.md`), category Fitness.
 4. App content forms: privacy policy URL + account-deletion URL (owner
    decision — see open items in `play-health-data-disclosure.md`), Data
    safety answers from that same file, target-audience/content rating.
