@@ -104,7 +104,10 @@ class InviteServiceTests(TestCase):
         self.assertEqual(log.status, NotificationLog.Status.SENT)
         self.assertEqual(log.channel, "whatsapp")
         self.assertEqual(log.actor_id, self.staff.pk)
-        self.assertIn("fitnation", log.content)
+        # The product's user-facing name is "FitNation" (FBOS-011 §5.2 copy) —
+        # the audit copy must carry it plus the tenant-anchored deep link.
+        self.assertIn("FitNation", log.content)
+        self.assertIn(link, log.content)
 
     def test_wati_down_falls_to_sms(self) -> None:
         """WATI transport failing → MSG91 SMS carries the invite."""
