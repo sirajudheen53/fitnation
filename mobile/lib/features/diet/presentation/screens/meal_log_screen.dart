@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../access/presentation/widgets/read_only_guard.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../data/models/diet_plan.dart';
 import '../../data/models/meal.dart';
@@ -50,22 +51,24 @@ class _MealLogScreenState extends ConsumerState<MealLogScreen> {
           const SizedBox(height: 16),
           for (final meal in widget.day.meals) _buildMealTile(meal),
           const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: logState.isLoading
-                ? null
-                : () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Meals logged successfully!')),
-                    );
-                    context.pop();
-                  },
-            child: logState.isLoading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Text('Done'),
+          ReadOnlyGuard(
+            enabled: !logState.isLoading,
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Meals logged successfully!')),
+              );
+              context.pop();
+            },
+            builder: (onPressed) => ElevatedButton(
+              onPressed: onPressed,
+              child: logState.isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Done'),
+            ),
           ),
         ],
       ),

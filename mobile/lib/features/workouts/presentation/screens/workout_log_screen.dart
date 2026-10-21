@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../access/presentation/widgets/read_only_guard.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/providers/auth_notifier.dart';
 import '../../data/models/workout_exercise.dart';
@@ -161,15 +162,19 @@ class _WorkoutLogScreenState extends ConsumerState<WorkoutLogScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: logState.isLoading ? null : _submit,
-            child: logState.isLoading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Text('Submit Workout Log'),
+          ReadOnlyGuard(
+            enabled: !logState.isLoading,
+            onPressed: _submit,
+            builder: (onPressed) => ElevatedButton(
+              onPressed: onPressed,
+              child: logState.isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Submit Workout Log'),
+            ),
           ),
         ],
       ),

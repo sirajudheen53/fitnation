@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../access/presentation/widgets/read_only_guard.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/providers/auth_notifier.dart';
 import '../providers/attendance_provider.dart';
@@ -124,15 +125,19 @@ class _QrCheckInScreenState extends ConsumerState<QrCheckInScreen> {
                 ),
               ],
               const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: checkInState.isLoading ? null : _submit,
-                child: checkInState.isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Check In'),
+              ReadOnlyGuard(
+                enabled: !checkInState.isLoading,
+                onPressed: _submit,
+                builder: (onPressed) => ElevatedButton(
+                  onPressed: onPressed,
+                  child: checkInState.isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Check In'),
+                ),
               ),
               const Spacer(flex: 2),
             ],

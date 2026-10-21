@@ -7,6 +7,7 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/async_view.dart';
 import '../../../attendance/data/models/attendance_record.dart';
 import '../../../attendance/presentation/providers/attendance_provider.dart';
+import '../../../access/presentation/widgets/grace_banner.dart';
 import '../../../auth/presentation/providers/auth_notifier.dart';
 import '../../../diet/data/models/diet_plan.dart';
 import '../../../diet/presentation/providers/diet_provider.dart';
@@ -31,6 +32,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final tabs = _buildTabs();
+    // Read-only grace: the app stays usable but a persistent notice tells
+    // the member why their writes are blocked (FBOS-011 §3.4).
+    final entitlement = ref.watch(authProvider).entitlement;
+    final showGraceBanner = entitlement != null && entitlement.isReadOnlyGrace;
 
     return Scaffold(
       appBar: AppBar(
@@ -43,7 +48,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ],
       ),
-      body: tabs[_currentIndex].body,
+      body: Column(
+        children: [
+          if (showGraceBanner) GraceBanner(entitlement: entitlement),
+          Expanded(child: tabs[_currentIndex].body),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),
