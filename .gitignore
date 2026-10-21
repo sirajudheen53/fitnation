@@ -12,10 +12,16 @@ venv/
 .coverage
 htmlcov/
 coverage.xml
+# Generated coverage reports (jest/istanbul) — never committed. These were
+# polluting every agent turn's git-status context snapshot with 100+ files.
+frontend/coverage/
 
 # Django
 *.log
 db.sqlite3
+# Local dev database — never committed (it churned every agent turn's context
+# snapshot and helped trigger the zcode autocompact loop).
+db_local.sqlite3
 media/
 staticfiles/
 
