@@ -1,4 +1,4 @@
-# Play Release Checklist — FitNation Android (`com.fitnation.app`)
+# Play Release Checklist — FitNation Android (`com.getfitwithus.app`)
 
 **Status:** Runbook (live document — tick items per release)
 **Date:** 2026-10-21
@@ -12,7 +12,7 @@
 ### 0.1 App shell (Play Console UI — Siju; the service account cannot do this)
 - [ ] Play Console → **Create app**: name `FitNation — Gym, Workouts & Diet`, default language en-IN, **App** (not game), **Free**.
 - [ ] Accept the declarations (developers policy, US export laws, health-apps acknowledgment — see §5).
-- [ ] Note the **package name you're about to commit to**: `com.fitnation.app`. It is **immutable** for the app's lifetime.
+- [ ] Note the **package name you're about to commit to**: `com.getfitwithus.app`. It is **immutable** for the app's lifetime.
 - [ ] Create the **Internal testing** track; add the pilot testers' emails (Hash Fit owner + 6 members' Google accounts + team).
 
 ### 0.2 Signing (do this BEFORE the shell accepts an AAB — the first upload sets the course)
@@ -61,8 +61,8 @@
   ```
 
 ### 0.3 Package rename (must land before the shell is created)
-- [ ] `android/app/build.gradle.kts`: `namespace` + `applicationId` → `com.fitnation.app` (from `com.fitnation.fitnation_app`).
-- [ ] Move `android/app/src/main/kotlin/com/fitnation/fitnation_app/` → `…/com/fitnation/app/`; update the `package` line in `MainActivity.kt`.
+- [ ] `android/app/build.gradle.kts`: `namespace` + `applicationId` → `com.getfitwithus.app` (from `com.fitnation.fitnation_app`).
+- [ ] Move `android/app/src/main/kotlin/com/fitnation/fitnation_app/` → `…/com/getfitwithus/app/`; update the `package` line in `MainActivity.kt`.
 - [ ] App unpublished → no migration concerns. After publication this rename becomes impossible; do not merge it after first upload.
 
 ### 0.4 API-level floor
@@ -109,9 +109,9 @@ flutter build appbundle --release \
 Two equivalent paths; the service account covers both.
 
 **A. API (scriptable — same pattern as the existing helpers in `~/.play-cred/`, which currently drive a different package):**
-- [ ] Point the edit at package `com.fitnation.app`; upload the AAB to the **internal** track:
+- [ ] Point the edit at package `com.getfitwithus.app`; upload the AAB to the **internal** track:
   ```
-  POST https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.fitnation.app/edits/{editId}/bundles
+  POST https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.getfitwithus.app/edits/{editId}/bundles
   POST …/edits/{editId}/tracks/internal   (versionCodes: [<new>], stagedRollout off)
   POST …/edits/{editId}:commit
   ```

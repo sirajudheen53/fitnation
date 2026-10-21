@@ -23,7 +23,7 @@ The task brief was verified against `develop` before writing. These points diffe
 9. **`Membership` has three statuses** — `active | expired | cancelled` (`apps/memberships/models.py:55-60`). The 7-day grace applies to `expired` only; `cancelled` revokes app access immediately (§1).
 10. **WATI endpoint config stores a full session-message URL**, not a base URL (`DEFAULT_WATI_ENDPOINT = "https://api.wati.io/api/v1/sendSessionMessage"`, `apps/notifications/services/wati_service.py:43`). Business-initiated WhatsApp (OTP, invite) requires *template* messages on a different path. §4/§5 define an endpoint-normalization rule so no tenant-facing config migration is needed.
 11. **The customer role's permission set is much larger than FBOS-009 documents** — it includes marketplace, reviews, AI-nutrition and health-profile codes (`apps/permissions/permissions.py:105-127`). §2 keeps that set as the RBAC base and layers entitlement on top.
-12. **The brief's "server presets" and Play tooling are real:** `~/.play-cred/fb-sa.json` exists with helper scripts (one currently drives a *different* package, `com.lifestyle.tailoring` — same developer account). The runbook reuses the pattern for `com.fitnation.app`.
+12. **The brief's "server presets" and Play tooling are real:** `~/.play-cred/fb-sa.json` exists with helper scripts (one currently drives a *different* package, `com.lifestyle.tailoring` — same developer account). The runbook reuses the pattern for `com.getfitwithus.app`.
 
 ---
 
@@ -39,7 +39,7 @@ The task brief was verified against `develop` before writing. These points diffe
 | D6 | Invite | New `app_invite` notification type, sent by the onboarding flow, resend endpoint with a 24 h dedupe window; WhatsApp template + DLT SMS fallback |
 | D7 | Join link | `https://app.yougetfitwithus.com/g/{tenant_uuid}` (App Link + custom scheme `fitnation://g/…`), Play referrer `gym%3D{tenant_uuid}`, plus a human **gym code** fallback (`Tenant.gym_code`) |
 | D8 | Mobile gate | GoRouter redirect to `/gate` driven by an `entitlement` object on the auth state; per-request server enforcement is the source of truth (opaque tokens carry no claims) |
-| D9 | Package rename | Full rename to `com.fitnation.app` (applicationId + namespace + Kotlin sources) — app is unpublished, so no migration constraints |
+| D9 | Package rename | Full rename to `com.getfitwithus.app` (applicationId + namespace + Kotlin sources) — app is unpublished, so no migration constraints |
 | D10 | Rollout | Per-tenant feature flag `tenant.features["app_access"]`; pilot = "Hash Fit", 6 members |
 
 ---
@@ -407,10 +407,10 @@ Three-pronged (each prong degrades to the next):
 | Prong | Mechanism | Captures anchor when |
 |---|---|---|
 | 1. App Link | `https://app.yougetfitwithus.com/g/{tenant_uuid}` (also `fitnation://g/{tenant_uuid}`) | app **already installed** → Android opens the app directly |
-| 2. Play referrer | `https://play.google.com/store/apps/details?id=com.fitnation.app&referrer=gym%3D{tenant_uuid}` | fresh install via that exact Play link → Install Referrer API hands the app `gym={uuid}` on first open |
+| 2. Play referrer | `https://play.google.com/store/apps/details?id=com.getfitwithus.app&referrer=gym%3D{tenant_uuid}` | fresh install via that exact Play link → Install Referrer API hands the app `gym={uuid}` on first open |
 | 3. Gym code | human-readable `Tenant.gym_code` (§5.5) entered on the app's "Find your gym" screen | everything else (link shared as text, referrer lost, sideloaded APK) |
 
-- The WhatsApp/SMS invite carries prong 1 as the tappable link. The redirect page (a tiny Next.js route in the ERP frontend, `/g/[uuid]/page.tsx`) renders "Get the FitNation app" with the Play badge wired to prong 2 and an `intent://` fallback: `intent://g/{uuid}#Intent;scheme=fitnation;package=com.fitnation.app;S.browser_fallback_url=<play+referrer>;end`.
+- The WhatsApp/SMS invite carries prong 1 as the tappable link. The redirect page (a tiny Next.js route in the ERP frontend, `/g/[uuid]/page.tsx`) renders "Get the FitNation app" with the Play badge wired to prong 2 and an `intent://` fallback: `intent://g/{uuid}#Intent;scheme=fitnation;package=com.getfitwithus.app;S.browser_fallback_url=<play+referrer>;end`.
 - Domain **`app.yougetfitwithus.com`** is proposed (sibling of `api.yougetfitwithus.com`, `mobile/lib/core/config/app_config.dart:31`) — **Siju confirms the domain**; it must own the `assetlinks.json` App-Links verification file.
 - **`fitnation_app` is not yet published, so referrer loss has a guaranteed floor:** the pilot uses the gym-code entry as the universal fallback, and single-gym deployments are the overwhelming case (phone-first auto-pin handles them without any anchor — `apps/users/services.py:240-243`).
 
@@ -457,11 +457,11 @@ New screens beyond the wizard:
 
 ---
 
-## 7. Mobile app changes (Flutter, `com.fitnation.app`)
+## 7. Mobile app changes (Flutter, `com.getfitwithus.app`)
 
 ### 7.1 Build identity & config fixes
 
-- **Rename (D9):** `android/app/build.gradle.kts` — `namespace` and `applicationId` → **`com.fitnation.app`**; move `android/app/src/main/kotlin/com/fitnation/fitnation_app/` → `…/com/fitnation/app/` and update the `MainActivity.kt` package line. The app has never been published: no Play constraint, no installed base, no Deep Link namespace legacy. (Counterfactual for the checklist: after publication `applicationId` is immutable — this is the last cheap moment.)
+- **Rename (D9):** `android/app/build.gradle.kts` — `namespace` and `applicationId` → **`com.getfitwithus.app`**; move `android/app/src/main/kotlin/com/fitnation/fitnation_app/` → `…/com/getfitwithus/app/` and update the `MainActivity.kt` package line. The app has never been published: no Play constraint, no installed base, no Deep Link namespace legacy. (Counterfactual for the checklist: after publication `applicationId` is immutable — this is the last cheap moment.)
 - **API host fix (correction #7):** `AppConstants.apiBaseUrl` delegates to `AppEnvironment.apiBaseUrl` (the `SERVER` presets) instead of its own `String.fromEnvironment` default. One-line change, unblocks every pilot build.
 - **Anchor precedence:** new `AnchorStore` (Hive): `effectiveAnchor = runtimeAnchor (from link/gym code) ?? AppEnvironment.gymAnchor (build-time)`. `AuthRemoteDataSource.requestOtp` keeps sending `gym`; **`verifyOtp` now sends it too** (correction #6).
 - **Signing:** upload keystore + `key.properties` (gitignored), release `signingConfig` reads it (today release is signed with debug keys — `android/app/build.gradle.kts:32-35`). Full steps: `docs/play-release-checklist.md`.
@@ -542,7 +542,7 @@ Every task ships tests in the same commit (AGENTS.md). "Contract" = the API shap
 
 | # | Task | Depends on | Acceptance criteria |
 |---|---|---|---|
-| **M1** | Package rename `com.fitnation.app` (gradle + Kotlin sources), upload keystore + signing config, version policy doc, **API host fix (SERVER presets wired)** | — | `flutter build appbundle --release` succeeds signed with the upload key; `--dart-define=SERVER=prod` hits `api.yougetfitwithus.com` |
+| **M1** | Package rename `com.getfitwithus.app` (gradle + Kotlin sources), upload keystore + signing config, version policy doc, **API host fix (SERVER presets wired)** | — | `flutter build appbundle --release` succeeds signed with the upload key; `--dart-define=SERVER=prod` hits `api.yougetfitwithus.com` |
 | **M2** | Anchor capture: deep links (App Link + custom scheme), Install Referrer, gym-code screen, `AnchorStore` precedence; `verifyOtp` sends anchor | B9 (lookup) | Widget tests: link parse, code lookup, precedence; deep-link intent test |
 | **M3** | Entitlement: model + interceptor (403 codes), gate screen (3 variants), GoRouter redirect, grace banner, permission-driven nav v1 | B2 contract | Widget tests per §7.2; integration test OTP→verify→gate with mocked Dio; resume re-validation throttled |
 | **M4** | FCM: firebase_core/messaging, token registration + logout deletion, `onTokenRefresh` | B7 contract | Token upsert called on login; deleted on logout; no crash without google-services.json in dev (guarded) |

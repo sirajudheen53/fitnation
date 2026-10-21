@@ -9,7 +9,7 @@
 
 ## Context
 
-- The customer Android app (`com.fitnation.app`) is going to Google Play. Access must be gated by gym membership: a paid member gets the app; an expired member gets a 7-day read-only grace; after that the app gates them out.
+- The customer Android app (`com.getfitwithus.app`) is going to Google Play. Access must be gated by gym membership: a paid member gets the app; an expired member gets a 7-day read-only grace; after that the app gates them out.
 - Today there is **no gate at all**: OTP verify auto-provisions a customer user + `Customer` for any verified phone with a resolved tenant (`apps/users/services.py:253-299`), and authorization is role-only — every customer gets the same static permission set (`apps/permissions/permissions.py:105-127`). A walk-in who never bought anything and a yearly member are indistinguishable to the API.
 - Authorization must stay multi-tenant (FBOS-010) and role-based (FBOS-009); the backend is opaque-token (no JWT claims to embed facts in; `apps/users/models.py:286-338`) and has **no Celery**, so anything requiring background jobs is a non-starter.
 - Product-owner constraints (locked, not relitigated here): access is a **toggle on the membership plan** defaulting **True** for all existing plans at launch; **7-day read-only grace** after expiry; front-desk onboarding ends with a WhatsApp invite in ~90 s.
