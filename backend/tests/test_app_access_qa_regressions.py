@@ -2,9 +2,12 @@
 
 These pin the gaps found during the FBOS-011 end-to-end verification
 (``docs/qa/app-access-e2e-verification.md``). They are **regression guards,
-not fixes** — each one fails against the current ``develop`` tree for the
-reason named in its docstring, and the corresponding follow-up ticket is
-listed in the QA report.
+not fixes** — everything here is green except
+``test_registration_is_idempotent_per_token``, which carries an
+``xfail(strict)`` marker for **QA-DEF-001** (it currently FAILS against the
+``develop`` tree for the reason named in its docstring; the corresponding
+follow-up tickets are listed in the QA report). If the defect is fixed and
+this test starts XPASSing, CI must go red until the marker is removed.
 
 The suite is deterministic: no network, no real WhatsApp/SMS, no Play
 uploads, no real money.
@@ -13,6 +16,7 @@ uploads, no real money.
 from datetime import timedelta
 from unittest import mock
 
+import pytest
 from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
@@ -318,6 +322,39 @@ class DeviceTokenCrossTenantTests(APITestCase):
         self._auth(self.user_a)
         deleted = self.client.delete(f"/api/v1/notifications/device-tokens/{row_id}/")
         self.assertEqual(deleted.status_code, 404)
+
+    # QA-DEF-001 (major — FBOS-011 §7.4): DeviceTokenViewSet.create intends an
+    # upsert (``update_or_create``, 200 on re-registration), but the
+    # ModelSerializer's ``UniqueValidator`` rejects an existing token with a
+    # 400 *before* the view's upsert runs. The mobile client re-registers its
+    # FCM token on every app start (PushNotificationService._register), so
+    # every restart after the first login logs a failed registration.
+    # Do NOT fix product code here — Forge owns apps/notifications/. Guard:
+    # marked xfail(strict) so it turns red again the moment this is fixed.
+    @pytest.mark.xfail(
+        strict=True,
+        reason="QA-DEF-001: serializer UniqueValidator answers 400 'device token with this token already exists.'",
+    )
+    def test_registration_is_idempotent_per_token(self) -> None:
+        """Re-registering the same token updates the row, never duplicates."""
+        self._auth(self.user_a)
+        first = self.client.post(
+            "/api/v1/notifications/device-tokens/",
+            {"token": "fcm-a-1", "device_id": "dev-a", "platform": "android", "device_type": "phone"},
+            format="json",
+        )
+        second = self.client.post(
+            "/api/v1/notifications/device-tokens/",
+            {"token": "fcm-a-1", "device_id": "dev-a2", "platform": "android", "device_type": "phone"},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(second.status_code, 200, second.data)
+
+        from apps.notifications.models import DeviceToken
+
+        self.assertEqual(DeviceToken.objects.filter(token="fcm-a-1").count(), 1)
+        self.assertEqual(DeviceToken.objects.get(token="fcm-a-1").device_id, "dev-a2")
 
 
 class OtpSenderProductionGuardTests(APITestCase):
