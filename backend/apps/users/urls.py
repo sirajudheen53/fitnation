@@ -4,6 +4,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from apps.users.views import (
+    DeleteAccountView,
     EntitlementView,
     LoginView,
     LogoutView,
@@ -23,6 +24,7 @@ router.register(r"trainers", TrainerViewSet, basename="trainer")
 urlpatterns = [
     path("auth/login/", LoginView.as_view(), name="login"),
     path("auth/logout/", LogoutView.as_view(), name="logout"),
+    path("auth/delete-account/", DeleteAccountView.as_view(), name="delete-account"),
     path("auth/me/", MeView.as_view(), name="me"),
     path("auth/entitlement/", EntitlementView.as_view(), name="entitlement"),
     path("auth/otp/request/", OTPRequestView.as_view(), name="otp-request"),

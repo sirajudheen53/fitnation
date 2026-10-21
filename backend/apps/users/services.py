@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.branches.models import Branch, BranchTrainerAssignment
-from apps.customers.models import Customer
+from apps.customers.models import (
+    BodyMeasurement,
+    Customer,
+    FitnessGoal,
+    HealthProfile,
+    ProgressPhoto,
+)
+from apps.notifications.models import DeviceToken
 from apps.tenants.models import Tenant
 from apps.users.auth import AuthToken
-from apps.users.models import User
+from apps.users.models import EmailVerificationToken, OtpCode, User
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +30,123 @@ logger = logging.getLogger(__name__)
 # ``{phone}.{tenant_uuid}@fitnation.local`` schemes share the suffix; identity
 # checks should match on the domain, not the exact format (FBOS-011 §3.5).
 SYNTHETIC_EMAIL_DOMAIN = "@fitnation.local"
+
+# Replacement domain for deleted identities — deliberately NOT the synthetic
+# ``@fitnation.local`` suffix, so a deleted row can never be mistaken for a
+# live phone-keyed OTP identity (identity checks match on that suffix).
+DELETED_EMAIL_DOMAIN = "@deleted.invalid"
+
+
+def deleted_account_email() -> str:
+    """A neutral, unique replacement for a deleted identity's email.
+
+    The uuid is generated at deletion time and derived from nothing, so the
+    address carries no personal data and cannot be linked back to the
+    account holder; uniqueness keeps the globally-unique ``User.email``
+    constraint intact.
+    """
+    return f"deleted-{uuid.uuid4().hex}{DELETED_EMAIL_DOMAIN}"
+
+
+def delete_customer_account(user: User, tenant: Tenant) -> Customer | None:
+    """Delete the caller's own account the GDPR/Google-Play way (§8 task B8).
+
+    Google Play requires a working in-app account-deletion path for an app
+    that stores personal data — this one stores health data — so the
+    customer app calls ``POST /users/auth/delete-account/`` with its token;
+    the endpoint acts on ``request.user`` only and never accepts a target
+    user.
+
+    What happens to the data:
+
+    * **Anonymised in place** (rows stay for referential integrity, personal
+      values scrubbed to neutral): the ``User`` row (name → ``Deleted
+      Member``, email → a random ``deleted-<uuid>@deleted.invalid``, phone →
+      empty, ``is_email_verified`` off, ``is_active`` off so it can never
+      log in again) and the linked ``Customer`` profile (name, email, phone,
+      date of birth, emergency contacts, address, notes and profile photo
+      scrubbed; gender reset to "prefer not to say"; ``is_active`` off and
+      ``status`` set to ``inactive``). Business records that reference the
+      member therefore survive but no longer point at a natural person.
+    * **Purged outright** — health data and session/identity plumbing with
+      no statutory-records claim: the ``HealthProfile`` row, its
+      ``BodyMeasurement``/``FitnessGoal``/``ProgressPhoto`` rows, every
+      ``OtpCode`` issued for the user's phone within the tenant, the user's
+      ``DeviceToken`` push registrations within the tenant and any
+      ``EmailVerificationToken`` rows.
+    * **Revoked immediately** — all ``AuthToken`` rows for the user
+      (``is_active=False``, the same pattern ``MembershipViewSet.cancel``
+      uses): every device is logged out in the same atomic transaction.
+    * **Retained but non-identifying** — memberships, payments, invoices,
+      attendance, trainer assignments and access logs (statutory/financial
+      retention); they keep pointing at the anonymised customer row.
+    * **Never touched** — rows outside ``tenant``: OTP codes and push
+      bindings are per-gym and the same human may be a live member at
+      another gym (ADR-002 rule 2).
+
+    Args:
+        user: The customer account to delete (the caller's own).
+        tenant: The tenant whose member data the caller controls.
+
+    Returns:
+        The scrubbed, deactivated ``Customer`` row, or ``None`` when the
+        user had no customer profile (an anonymous identity is scrubbed all
+        the same).
+    """
+    phone = user.phone
+    customer = Customer.objects.filter(tenant=tenant, user=user).first()
+    tenant_scope = Q(tenant=tenant) if tenant is not None else Q(pk__isnull=True)
+
+    with transaction.atomic():
+        if phone:
+            OtpCode.objects.filter(tenant_scope, phone=phone).delete()
+        token_scope = Q(user=user)
+        if customer is not None:
+            token_scope |= Q(customer=customer)
+        DeviceToken.objects.filter(tenant_scope, token_scope).delete()
+
+        if customer is not None:
+            HealthProfile.objects.filter(tenant_scope, customer=customer).delete()
+            BodyMeasurement.objects.filter(tenant_scope, customer=customer).delete()
+            FitnessGoal.objects.filter(tenant_scope, customer=customer).delete()
+            ProgressPhoto.objects.filter(tenant_scope, customer=customer).delete()
+            customer.name = f"Deleted member #{customer.pk}"
+            customer.email = None
+            customer.phone = ""
+            customer.date_of_birth = None
+            customer.gender = Customer.Gender.PREFER_NOT_TO_SAY
+            customer.emergency_contact_name = None
+            customer.emergency_contact_phone = None
+            customer.address_street = ""
+            customer.address_city = ""
+            customer.address_state = ""
+            customer.address_postal_code = ""
+            customer.profile_photo = None
+            customer.notes = ""
+            customer.status = Customer.Status.INACTIVE
+            customer.is_active = False
+            customer.save()
+
+        EmailVerificationToken.objects.filter(user=user).delete()
+        AuthToken.objects.filter(user=user, is_active=True).update(is_active=False)
+
+        user.first_name = "Deleted"
+        user.last_name = "Member"
+        user.email = deleted_account_email()
+        user.phone = ""
+        user.is_email_verified = False
+        user.is_active = False
+        user.save(
+            update_fields=[
+                "first_name",
+                "last_name",
+                "email",
+                "phone",
+                "is_email_verified",
+                "is_active",
+            ]
+        )
+    return customer
 
 
 class AutoProvisionLimitReached(Exception):

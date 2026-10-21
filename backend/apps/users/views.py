@@ -49,6 +49,7 @@ from apps.users.services import (
     TenantResolutionError,
     build_entitlement_payload,
     create_user,
+    delete_customer_account,
     get_effective_permissions,
     get_or_create_customer_by_phone,
     get_user_permissions,
@@ -133,6 +134,48 @@ class LogoutView(APIView):
             token.is_active = False
             token.save(update_fields=["is_active"])
         return Response({"message": "Logged out successfully"})
+
+
+class DeleteAccountView(APIView):
+    """Delete the calling CUSTOMER's own account (spec §8 task B8).
+
+    Google Play mandates an in-app account-deletion path for any app that
+    stores personal data — this one stores health data — so this endpoint is
+    the deletion path for the member app. It acts on ``request.user`` only:
+    there is no body, no target identifier, and staff accounts are
+    rejected (staff/offboarding belongs to user management, not this
+    privacy flow).
+
+    Retention decision (see :func:`delete_customer_account` in
+    apps/users/services.py for the field-level detail):
+
+    * Anonymised in place — ``User`` first_name/last_name/email/phone and
+      the linked ``Customer`` name/email/phone/dob/gender/emergency
+      contacts/addresses/notes are scrubbed to neutral values; the rows
+      stay so business records keep their keys but cannot be linked back
+      to a natural person.
+    * Purged — health data (health profile, measurements, goals, progress
+      photos), the user's OTP rows (per-tenant), push device tokens
+      (per-tenant) and all auth tokens (every device is logged out).
+    * Retained but non-identifying — memberships, payments, invoices,
+      attendance and other business records for statutory/financial
+      reasons; Google Play allows retaining such records for legal
+      obligations while the personal identity around them is erased.
+    * Multi-tenant — only rows within ``request.tenant`` are touched.
+    """
+
+    authentication_classes = [TenantTokenAuthentication]
+    permission_classes = [IsAuthenticated, IsTenantMember]
+
+    def post(self, request: Request) -> Response:
+        """Anonymise + deactivate the caller's account, then end the response."""
+        if request.user.role != User.Role.CUSTOMER:
+            return Response(
+                {"detail": "Only customer accounts can be deleted through this endpoint."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        delete_customer_account(request.user, request.tenant)
+        return Response({"message": "Account deleted"})
 
 
 class MeView(APIView):
