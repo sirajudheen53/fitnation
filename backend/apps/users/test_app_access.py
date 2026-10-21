@@ -4,6 +4,7 @@ non-enumerating auto-provision behavior."""
 
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -21,7 +22,14 @@ class AppAccessTestBase(APITestCase):
     """Shared fixtures: flagged-on tenant, owner, plan, member machinery."""
 
     def setUp(self) -> None:
-        """Flag-on tenant + owner + plan; DEBUG+stub OTP settings."""
+        """Flag-on tenant + owner + plan; DEBUG+stub OTP settings.
+
+        The LocMem cache survives between tests (Django keys LocMem backends
+        by their settings spec, not the test), and rolled-back tests recycle
+        pks/uuids — so counters like the OTP auto-create cap would leak from
+        one test into the next. Clear it so every test starts empty.
+        """
+        cache.clear()
         self.tenant = provision_tenant(name="Hash Fit", contact_email="hash@local.test", features=FLAG_ON)
         self.owner = User.objects.create_user(
             email="owner@hash.local",
@@ -260,6 +268,23 @@ class OTPVerifyEntitlementTests(AppAccessTestBase):
         second = self.verify_otp("+919900030009", gym=str(self.tenant.uuid))
         self.assertEqual(second.status_code, 429)
         self.assertEqual(second.data, {"detail": "Too many requests. Try again later."})
+
+    def test_auto_create_cap_isolation_between_tenants(self) -> None:
+        """The cap counter is per tenant — one gym exhausting it leaves the
+        next gym with a fresh cap (keyed by uuid, never a recyclable pk)."""
+        other = provision_tenant(name="Flex Fit", contact_email="flex@local.test", features=FLAG_ON)
+        self.assertNotEqual(other.pk, self.tenant.pk)  # sanity: distinct rows
+        cap = override_settings(APP_AUTOCREATE_DAILY_LIMIT=1)
+        cap.enable()
+        self.addCleanup(cap.disable)
+        first_here = self.verify_otp("+919900030012", gym=str(self.tenant.uuid))
+        self.assertEqual(first_here.status_code, 200)
+        # Same day, same counter state — a different tenant still auto-creates.
+        first_other_gym = self.verify_otp("+919900030013", gym=str(other.uuid))
+        self.assertEqual(first_other_gym.status_code, 200)
+        # And each tenant is capped against its own usage, not the other's.
+        self.assertEqual(self.verify_otp("+919900030014", gym=str(self.tenant.uuid)).status_code, 429)
+        self.assertEqual(self.verify_otp("+919900030015", gym=str(other.uuid)).status_code, 429)
 
     def test_known_phone_not_counted_against_auto_create_cap(self) -> None:
         """Existing members log in even with the cap exhausted (cap counts

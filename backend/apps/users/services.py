@@ -367,7 +367,12 @@ def _check_auto_create_cap(tenant: Tenant) -> None:
     from django.core.cache import cache
 
     cap = int(getattr(dj_settings, "APP_AUTOCREATE_DAILY_LIMIT", 50))
-    key = f"app-autocreate:{tenant.pk}:{timezone.localdate().isoformat()}"
+    # Key by UUID, not pk: pks are recyclable (reused after a rollback/reset),
+    # so a stale counter for a dead tenant would silently cap a new one.
+    # Accepted v1 limitation: the daily cap is per cache instance —
+    # config/settings/cloudrun.py uses per-instance LocMem, so limits are not
+    # shared across GCP instances; a Redis shared cache can raise this later.
+    key = f"app-autocreate:{tenant.uuid}:{timezone.localdate().isoformat()}"
     try:
         count = cache.get(key) or 0
         if count >= cap:
