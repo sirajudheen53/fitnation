@@ -16,7 +16,6 @@ uploads, no real money.
 from datetime import timedelta
 from unittest import mock
 
-import pytest
 from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
@@ -25,7 +24,7 @@ from rest_framework.test import APITestCase
 from apps.branches.models import Branch
 from apps.customers.models import Customer
 from apps.memberships.models import Membership, MembershipPlan
-from apps.notifications.models import NotificationLog
+from apps.notifications.models import DeviceToken, NotificationLog
 from apps.notifications.services.invite_service import build_app_invite_links
 from apps.tenants.services import provision_tenant
 from apps.users.models import AuthToken, User
@@ -323,38 +322,91 @@ class DeviceTokenCrossTenantTests(APITestCase):
         deleted = self.client.delete(f"/api/v1/notifications/device-tokens/{row_id}/")
         self.assertEqual(deleted.status_code, 404)
 
-    # QA-DEF-001 (major — FBOS-011 §7.4): DeviceTokenViewSet.create intends an
-    # upsert (``update_or_create``, 200 on re-registration), but the
-    # ModelSerializer's ``UniqueValidator`` rejects an existing token with a
-    # 400 *before* the view's upsert runs. The mobile client re-registers its
-    # FCM token on every app start (PushNotificationService._register), so
-    # every restart after the first login logs a failed registration.
-    # Do NOT fix product code here — Forge owns apps/notifications/. Guard:
-    # marked xfail(strict) so it turns red again the moment this is fixed.
-    @pytest.mark.xfail(
-        strict=True,
-        reason="QA-DEF-001: serializer UniqueValidator answers 400 'device token with this token already exists.'",
-    )
+    # QA-DEF-001 (fixed): re-registering the same (device, token) pair is the
+    # documented FBOS-011 §7.4 contract — the mobile app registers on every
+    # app start / FCM token event — so the second POST must answer 200 with
+    # the existing refreshed row, never a UniqueValidator 400 or a duplicate.
     def test_registration_is_idempotent_per_token(self) -> None:
-        """Re-registering the same token updates the row, never duplicates."""
+        """Re-registering the same token refreshes the row in place."""
         self._auth(self.user_a)
+        payload = {"token": "fcm-a-1", "platform": "android", "device_type": "phone"}
         first = self.client.post(
-            "/api/v1/notifications/device-tokens/",
-            {"token": "fcm-a-1", "device_id": "dev-a", "platform": "android", "device_type": "phone"},
-            format="json",
+            "/api/v1/notifications/device-tokens/", {**payload, "device_id": "dev-a"}, format="json"
         )
         second = self.client.post(
-            "/api/v1/notifications/device-tokens/",
-            {"token": "fcm-a-1", "device_id": "dev-a2", "platform": "android", "device_type": "phone"},
-            format="json",
+            "/api/v1/notifications/device-tokens/", {**payload, "device_id": "dev-a2"}, format="json"
         )
         self.assertEqual(first.status_code, 201, first.data)
         self.assertEqual(second.status_code, 200, second.data)
-
-        from apps.notifications.models import DeviceToken
+        self.assertEqual(second.data["id"], first.data["id"])
 
         self.assertEqual(DeviceToken.objects.filter(token="fcm-a-1").count(), 1)
-        self.assertEqual(DeviceToken.objects.get(token="fcm-a-1").device_id, "dev-a2")
+        refreshed = DeviceToken.objects.get(token="fcm-a-1")
+        self.assertEqual(refreshed.device_id, "dev-a2")
+        self.assertTrue(refreshed.is_active)
+
+    def test_re_register_rebinds_a_token_to_the_new_caller(self) -> None:
+        """A token string is one device: re-register rotates user/tenant binding.
+
+        The same physical phone logging into gym B moves the row to gym B —
+        no cross-tenant duplicate is created, and gym A no longer lists it.
+        """
+        register_payload = {
+            "token": "fcm-shared-1",
+            "device_id": "dev-x",
+            "platform": "android",
+            "device_type": "phone",
+        }
+        self._auth(self.user_a)
+        registered_a = self.client.post("/api/v1/notifications/device-tokens/", register_payload, format="json")
+        self.assertIn(registered_a.status_code, (200, 201), registered_a.data)
+
+        self._auth(self.user_b)
+        rebind = self.client.post("/api/v1/notifications/device-tokens/", register_payload, format="json")
+        self.assertEqual(rebind.status_code, 200, rebind.data)
+        row = DeviceToken.objects.get(token="fcm-shared-1")
+        self.assertEqual(row.tenant_id, self.tenant_b.pk)
+        self.assertEqual(row.user_id, self.user_b.pk)
+        self.assertEqual(DeviceToken.objects.filter(token="fcm-shared-1").count(), 1)
+
+        self._auth(self.user_a)
+        listed = self.client.get("/api/v1/notifications/device-tokens/")
+        rows = listed.data.get("results", listed.data) if isinstance(listed.data, dict) else listed.data
+        self.assertNotIn("fcm-shared-1", {r["token"] for r in rows})
+
+    def test_double_delete_is_idempotent(self) -> None:
+        """Deleting an already-deleted token answers 204 again (logout retry)."""
+        self._auth(self.user_a)
+        registered = self.client.post(
+            "/api/v1/notifications/device-tokens/",
+            {"token": "fcm-del-1", "device_id": "dev-d", "platform": "android", "device_type": "phone"},
+            format="json",
+        )
+        self.assertIn(registered.status_code, (200, 201), registered.data)
+        row_id = registered.data["id"]
+
+        first_delete = self.client.delete(f"/api/v1/notifications/device-tokens/{row_id}/")
+        second_delete = self.client.delete(f"/api/v1/notifications/device-tokens/{row_id}/")
+        self.assertEqual(first_delete.status_code, 204, first_delete.data)
+        self.assertEqual(second_delete.status_code, 204, second_delete.data)
+
+    def test_staff_registration_keeps_its_403(self) -> None:
+        """Only customers register push devices — the 403 contract is unchanged."""
+        staff = User.objects.create_user(
+            email="token.staff@qa.local",
+            password="x",
+            first_name="Tok",
+            last_name="Staff",
+            role=User.Role.GYM_OWNER,
+            tenant=self.tenant_a,
+        )
+        self._auth(staff)
+        denied = self.client.post(
+            "/api/v1/notifications/device-tokens/",
+            {"token": "fcm-staff-1", "device_id": "dev-s", "platform": "android", "device_type": "phone"},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, 403, denied.data)
 
 
 class OtpSenderProductionGuardTests(APITestCase):

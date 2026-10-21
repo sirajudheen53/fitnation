@@ -7,6 +7,7 @@ ever sees its own rows.
 
 from typing import ClassVar
 
+from django.http import Http404
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -73,7 +74,21 @@ class DeviceTokenViewSet(ModelViewSet):
         return Response(output.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
     def destroy(self, request: Request, pk: int) -> Response:
-        """Delete one of the caller's device tokens (logout path)."""
-        token = self.get_object()
+        """Delete one of the caller's device tokens (logout path).
+
+        Idempotent (QA-DEF-001): re-deleting an id that is already gone
+        answers ``204`` again instead of a 404 the mobile app would treat
+        as a failed logout. An id that still exists but belongs to another
+        member/tenant keeps the ``404`` isolation contract.
+        """
+        try:
+            token = self.get_object()
+        except Http404:
+            # Existence probe only (no data returned): a live row outside the
+            # caller's scope is someone else's — keep 404; otherwise the row
+            # was already deleted (or never existed) and 204 is correct.
+            if DeviceToken.objects.filter(pk=pk).exists():
+                raise
+            return Response(status=status.HTTP_204_NO_CONTENT)
         token.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

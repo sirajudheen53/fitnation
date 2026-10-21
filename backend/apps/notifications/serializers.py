@@ -60,6 +60,11 @@ class DeviceTokenSerializer(serializers.ModelSerializer):
         model = DeviceToken
         fields = ["id", "token", "device_id", "platform", "device_type", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+        # Registration is an upsert keyed on the token string (FBOS-011 §7.4):
+        # the view's ``update_or_create`` owns uniqueness, so DRF's auto
+        # ``UniqueValidator`` must not pre-empt it with a 400 on re-register
+        # (QA-DEF-001 — the mobile app re-registers on every app start).
+        extra_kwargs: ClassVar[dict] = {"token": {"validators": []}}
 
     def validate_platform(self, value: str) -> str:
         """Default a blank platform to android (the v1 customer app)."""
