@@ -22,6 +22,13 @@ class AppConstants {
   static const String entitlementEndpoint = '/users/auth/entitlement/';
   static const String deviceTokensEndpoint = '/notifications/device-tokens/';
 
+  /// Unauthenticated gym lookup by code (FBOS-011 B9 / FBOS-011 §7.1).
+  ///
+  /// `GET /api/v1/tenants/lookup/?code=CODE` → `{uuid, name}`. Public by
+  /// necessity, so the backend throttles it and answers an unknown code
+  /// with a generic 404.
+  static const String tenantLookupEndpoint = '/tenants/lookup/';
+
 
   // Customer
   static const String customerProfileEndpoint = '/customers/customers/';

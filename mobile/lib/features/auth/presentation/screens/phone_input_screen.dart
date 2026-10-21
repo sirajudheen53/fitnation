@@ -126,6 +126,16 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
                       : const Text('Send OTP'),
                 ),
 
+                const SizedBox(height: 12),
+
+                // Members who installed from a raw Play search have no invite
+                // link — they can type the gym code instead (FBOS-011 §7.1).
+                TextButton.icon(
+                  onPressed: () => context.push('/gym-code'),
+                  icon: const Icon(Icons.storefront_outlined, size: 18),
+                  label: const Text("I have a gym code"),
+                ),
+
                 const Spacer(flex: 3),
               ],
             ),

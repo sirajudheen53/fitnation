@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/anchor/anchor_providers.dart';
+import '../../../../core/config/app_config.dart';
 import '../../data/models/entitlement.dart';
 import '../../data/models/user_model.dart';
 import '../../domain/repositories/auth_repository.dart';
@@ -77,7 +79,19 @@ enum AuthStatus { initial, authenticated, unauthenticated, error }
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthRepository _repository;
 
-  AuthNotifier(this._repository) : super(const AuthState());
+  /// Resolves the effective gym anchor for OTP calls (runtime link anchor
+  /// wins over the build-time `--dart-define=GYM_ANCHOR`).
+  ///
+  /// Null when no anchor store is wired (unit tests) — the backend then
+  /// falls back to phone-first auto-pin, which is the right behaviour for a
+  /// single-gym deployment.
+  final String? Function()? anchorResolver;
+
+  AuthNotifier(this._repository, {this.anchorResolver})
+      : super(const AuthState());
+
+  /// The anchor to send with the next OTP request/verify.
+  String? get effectiveGymAnchor => anchorResolver?.call();
 
   /// Initializes auth state from local storage (called on app start).
   Future<void> init() async {
@@ -98,10 +112,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Requests an OTP for the given phone number.
+  ///
+  /// [gymAnchor] defaults to the effective device anchor (runtime link
+  /// anchor over build-time define) so the OTP is issued by the right gym.
   Future<bool> requestOtp(String phone, {String? gymAnchor}) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
 
-    final result = await _repository.requestOtp(phone, gymAnchor: gymAnchor);
+    final anchor = gymAnchor ?? effectiveGymAnchor;
+    final result = await _repository.requestOtp(phone, gymAnchor: anchor);
 
     if (result.error != null) {
       state = state.copyWith(
@@ -124,10 +142,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
 
+    final anchor = gymAnchor ?? effectiveGymAnchor;
     final result = await _repository.verifyOtp(
       phone: phone,
       otp: otp,
-      gymAnchor: gymAnchor,
+      gymAnchor: anchor,
     );
 
     if (result.error != null) {
@@ -234,5 +253,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
 /// Note: We use a plain provider (not autoDispose) so auth state persists.
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final repository = ref.read(authRepositoryProvider);
-  return AuthNotifier(repository);
+  return AuthNotifier(
+    repository,
+    anchorResolver: () => ref.read(anchorStoreOrNullProvider)?.effectiveAnchor(
+          buildTimeAnchor: AppEnvironment.gymAnchor,
+        ),
+  );
 });

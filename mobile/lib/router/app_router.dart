@@ -11,6 +11,7 @@ import '../features/ai_nutrition/presentation/screens/meal_plan_screen.dart';
 import '../features/ai_nutrition/presentation/screens/nutrition_screen.dart';
 import '../features/access/presentation/pages/enrollment_qr_page.dart';
 import '../features/access/presentation/pages/gate_page.dart';
+import '../features/access/presentation/pages/gym_code_screen.dart';
 import '../features/auth/presentation/providers/auth_notifier.dart';
 import '../features/auth/presentation/screens/otp_verify_screen.dart';
 import '../features/auth/presentation/screens/phone_input_screen.dart';
@@ -50,8 +51,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuthRoute = state.matchedLocation == '/' ||
           state.matchedLocation == '/otp';
       final onGate = state.matchedLocation == '/gate';
+      // The gym-code screen is part of the sign-in flow: it is reachable
+      // before the member is authenticated.
+      final isGymCodeRoute = state.matchedLocation == '/gym-code';
 
-      if (!isAuthenticated && !isAuthRoute) {
+      if (!isAuthenticated && !isAuthRoute && !isGymCodeRoute) {
         return '/'; // redirect to phone input
       }
 
@@ -64,7 +68,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         if (onGate && !authState.isGatedOut) {
           return '/dashboard';
         }
-        if (isAuthRoute) {
+        if (isAuthRoute || isGymCodeRoute) {
           return '/dashboard'; // redirect to dashboard
         }
       }
@@ -87,6 +91,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/gate',
         builder: (context, state) => const GatePage(),
+      ),
+      // Manual gym-code entry (members who installed from a raw Play
+      // search and therefore have no invite link).
+      GoRoute(
+        path: '/gym-code',
+        builder: (context, state) => const GymCodeScreen(),
       ),
       GoRoute(
         path: '/dashboard',
