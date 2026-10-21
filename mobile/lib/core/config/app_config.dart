@@ -28,7 +28,12 @@ class ServerConfig {
     'cloud-dev',
     'https://fitnation-backend-6qezqfxxla-el.a.run.app',
   );
-  static const ServerConfig prod = ServerConfig('prod', 'https://api.yougetfitwithus.com');
+  // Cloud Run domain mappings are not provisionable in asia-south1, so prod
+  // is the service's stable run.app URL — the host the ERP already uses.
+  static const ServerConfig prod = ServerConfig(
+    'prod',
+    'https://fitnation-backend-prod-6qezqfxxla-el.a.run.app',
+  );
 }
 
 /// Resolved runtime environment for this build.
