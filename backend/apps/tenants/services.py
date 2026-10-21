@@ -47,3 +47,72 @@ def provision_tenant(
     tenant.config.save()
 
     return tenant
+
+
+def send_whatsapp_test(
+    tenant: Tenant,
+    phone: str,
+    actor: Any = None,
+    sender: Any = None,
+) -> Any:
+    """Send the settings-page test message via the tenant's own WATI config.
+
+    Reuses :func:`apps.notifications.services.wati_service.send_notification`
+    (single WATI client) with the welcome template copy; there is no customer
+    record for the test phone, so ``to_phone`` carries the recipient. The
+    attempt (sent/failed/skipped) is recorded in ``NotificationLog``.
+
+    Args:
+        tenant: The tenant whose WATI configuration to use.
+        phone: Recipient phone number from the settings form.
+        actor: The staff user who triggered the send (audit trail).
+        sender: Injectable HTTP post callable (tests).
+
+    Returns:
+        The created ``NotificationLog`` record.
+    """
+    from apps.notifications.models import NotificationLog
+    from apps.notifications.services.wati_service import send_notification
+
+    context = {
+        "customer_name": phone,
+        "plan_name": "Membership (test)",
+        "end_date": "—",
+        "phone": phone,
+    }
+    return send_notification(
+        tenant,
+        customer=None,
+        notification_type=NotificationLog.NotificationType.WELCOME,
+        context_data=context,
+        to_phone=phone,
+        actor=actor,
+        sender=sender,
+    )
+
+
+def whatsapp_status_counts(tenant: Tenant) -> dict[str, int]:
+    """Today's WhatsApp usage counters for the settings page.
+
+    Mirrors the invite cap convention (local-midnight day start, all attempts
+    of the type regardless of status). ``daily_cap`` is the WATI OTP cap —
+    the frontend ships a single cap value for the settings page.
+
+    Args:
+        tenant: The tenant to count for.
+
+    Returns:
+        ``{otp_sent_today, invites_sent_today, daily_cap}`` as ints.
+    """
+    from django.conf import settings
+    from django.utils import timezone
+
+    from apps.notifications.models import NotificationLog
+
+    day_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = NotificationLog.objects.for_tenant(tenant).filter(created_at__gte=day_start)
+    return {
+        "otp_sent_today": today.filter(notification_type=NotificationLog.NotificationType.OTP).count(),
+        "invites_sent_today": today.filter(notification_type=NotificationLog.NotificationType.APP_INVITE).count(),
+        "daily_cap": int(getattr(settings, "TENANT_WATI_OTP_DAILY_CAP", 200)),
+    }

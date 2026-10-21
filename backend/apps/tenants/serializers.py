@@ -26,6 +26,12 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
         ]
 
 
+class WhatsappTestSendSerializer(serializers.Serializer):
+    """Body of ``POST /tenants/whatsapp/test/`` (settings-page test send)."""
+
+    phone = serializers.CharField(max_length=20)
+
+
 class TenantSerializer(serializers.ModelSerializer):
     """Serialize tenant details, including the WhatsApp (WATI) config."""
 

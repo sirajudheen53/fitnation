@@ -1,0 +1,225 @@
+"""WhatsApp test-send + status endpoints (FBOS-011 §6).
+
+Contract = ``frontend/lib/api.ts``:
+- ``WhatsappTestResult`` → ``{status, detail?}`` where ``status`` is the
+  ``NotificationLog`` status ("sent"/"failed"/"skipped") and failure modes are
+  non-500.
+- ``WhatsappStatus`` → ``{otp_sent_today, invites_sent_today, daily_cap}``.
+"""
+
+from datetime import timedelta
+from unittest import mock
+from unittest.mock import MagicMock
+
+from django.core.cache import cache
+from django.test import override_settings
+from django.utils import timezone
+from rest_framework.test import APITestCase
+
+from apps.notifications.models import NotificationLog
+from apps.tenants.models import Tenant
+from apps.tenants.services import provision_tenant
+from apps.users.models import AuthToken, User
+
+TEST_URL = "/api/v1/tenants/whatsapp/test/"
+STATUS_URL = "/api/v1/tenants/whatsapp/status/"
+
+
+class WhatsappActionTestBase(APITestCase):
+    """Shared fixtures: configured tenant + owner + a staff non-owner."""
+
+    def setUp(self) -> None:
+        """Provision the tenant, owner, and manager; clear the throttle cache."""
+        cache.clear()
+        self.tenant = provision_tenant(name="Hash Fit", contact_email="hash@local.test")
+        self.owner = User.objects.create_user(
+            email="owner@hash.local",
+            password="F1tNati0n!",
+            first_name="Own",
+            last_name="Er",
+            role=User.Role.GYM_OWNER,
+            tenant=self.tenant,
+            is_owner=True,
+        )
+        self.manager = User.objects.create_user(
+            email="manager@hash.local",
+            password="F1tNati0n!",
+            first_name="Man",
+            last_name="Ager",
+            role=User.Role.MANAGER,
+            tenant=self.tenant,
+        )
+
+    def auth(self, user: User) -> None:
+        """Authenticate the test client as ``user``."""
+        token = AuthToken.objects.create(user=user, tenant=user.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def configure_wati(self, tenant: Tenant) -> None:
+        """Turn the tenant into a fully configured WATI setup."""
+        tenant.is_wati_enabled = True
+        tenant.wati_endpoint = "https://wati.example.com/api/v1/sendSessionMessage"
+        tenant.wati_api_key = "secret-wati-key"
+        tenant.save()
+
+
+@override_settings(TENANT_WATI_OTP_DAILY_CAP=200)
+class WhatsappTestSendTests(WhatsappActionTestBase):
+    """POST /tenants/whatsapp/test/ — sends, logs, and never 500s on WATI issues."""
+
+    def test_test_send_success(self) -> None:
+        """A configured tenant gets status=sent and a logged attempt."""
+        self.configure_wati(self.tenant)
+        self.auth(self.owner)
+        with mock.patch("apps.notifications.services.wati_service.requests.post") as post:
+            post.return_value.raise_for_status = MagicMock()
+            post.return_value.json = MagicMock(return_value={"messageId": "wamid.test"})
+            response = self.client.post(TEST_URL, {"phone": "+919876543210"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "sent")
+
+        log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
+        self.assertEqual(log.notification_type, NotificationLog.NotificationType.WELCOME)
+        self.assertEqual(log.status, NotificationLog.Status.SENT)
+        self.assertEqual(log.wati_message_id, "wamid.test")
+        self.assertEqual(log.actor_id, self.owner.id)
+        self.assertIsNone(log.customer)
+        self.assertIn("+919876543210", log.content)
+
+    def test_test_send_targets_the_request_phone(self) -> None:
+        """The WATI payload's recipient is the submitted phone (no customer)."""
+        self.configure_wati(self.tenant)
+        self.auth(self.owner)
+        with mock.patch(
+            "apps.notifications.services.wati_service.requests.post",
+        ) as post:
+            post.return_value.raise_for_status = MagicMock()
+            post.return_value.json = MagicMock(return_value={})
+            response = self.client.post(TEST_URL, {"phone": "+919876543210"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["to"], "+919876543210")
+
+    def test_unconfigured_tenant_gets_clean_response(self) -> None:
+        """WATI off → skipped (with detail), HTTP 200, logged, never a 500."""
+        self.auth(self.owner)
+        response = self.client.post(TEST_URL, {"phone": "+919876543210"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "skipped")
+        self.assertIn("not enabled", response.data["detail"])
+        log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
+        self.assertEqual(log.status, NotificationLog.Status.SKIPPED)
+
+    def test_missing_api_key_gets_clean_response(self) -> None:
+        """Enabled but keyless → status=failed with a meaningful detail."""
+        self.tenant.is_wati_enabled = True
+        self.tenant.save()
+        self.auth(self.owner)
+        response = self.client.post(TEST_URL, {"phone": "+919876543210"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertIn("API key is not configured", response.data["detail"])
+
+    def test_provider_error_gets_clean_failed_response(self) -> None:
+        """A WATI transport failure becomes status=failed (never a 500)."""
+        self.configure_wati(self.tenant)
+        self.auth(self.owner)
+        with mock.patch("apps.notifications.services.wati_service.requests.post") as post:
+            post.side_effect = RuntimeError("connection refused")
+            response = self.client.post(TEST_URL, {"phone": "+919876543210"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertIn("connection refused", response.data["detail"])
+        log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
+        self.assertEqual(log.status, NotificationLog.Status.FAILED)
+
+    def test_phone_is_required(self) -> None:
+        """An empty/missing phone is a 400, not a send."""
+        self.configure_wati(self.tenant)
+        self.auth(self.owner)
+        response = self.client.post(TEST_URL, {}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(
+            NotificationLog.objects.for_tenant(self.tenant)
+            .filter(notification_type=NotificationLog.NotificationType.WELCOME)
+            .exists()
+        )
+
+    def test_non_owner_gets_403(self) -> None:
+        """A manager cannot trigger test sends."""
+        self.configure_wati(self.tenant)
+        self.auth(self.manager)
+        response = self.client.post(TEST_URL, {"phone": "+919876543210"}, format="json")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            NotificationLog.objects.for_tenant(self.tenant)
+            .filter(notification_type=NotificationLog.NotificationType.WELCOME)
+            .count(),
+            0,
+        )
+
+    def test_requires_authentication(self) -> None:
+        """Anonymous test sends are rejected."""
+        response = self.client.post(TEST_URL, {"phone": "+919876543210"}, format="json")
+
+        self.assertEqual(response.status_code, 401)
+
+
+class WhatsappStatusTests(WhatsappActionTestBase):
+    """GET /tenants/whatsapp/status/ returns today's three counters."""
+
+    def test_status_returns_the_three_counters(self) -> None:
+        """Counters reflect today's OTP/invite logs; cap comes from settings."""
+        NotificationLog.objects.create(
+            tenant=self.tenant,
+            notification_type=NotificationLog.NotificationType.OTP,
+            status=NotificationLog.Status.SENT,
+        )
+        NotificationLog.objects.create(
+            tenant=self.tenant,
+            notification_type=NotificationLog.NotificationType.OTP,
+            status=NotificationLog.Status.FAILED,
+        )
+        NotificationLog.objects.create(
+            tenant=self.tenant,
+            notification_type=NotificationLog.NotificationType.APP_INVITE,
+            status=NotificationLog.Status.SENT,
+        )
+        stale = NotificationLog.objects.create(
+            tenant=self.tenant,
+            notification_type=NotificationLog.NotificationType.OTP,
+            status=NotificationLog.Status.SENT,
+        )
+        NotificationLog.objects.filter(id=stale.id).update(
+            created_at=timezone.now() - timedelta(days=1),
+        )
+        # Another tenant's rows must not leak into the counters.
+        other = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        NotificationLog.objects.create(
+            tenant=other,
+            notification_type=NotificationLog.NotificationType.OTP,
+            status=NotificationLog.Status.SENT,
+        )
+
+        self.auth(self.owner)
+        response = self.client.get(STATUS_URL)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["otp_sent_today"], 2)
+        self.assertEqual(response.data["invites_sent_today"], 1)
+        self.assertEqual(response.data["daily_cap"], 200)
+        for key in ("otp_sent_today", "invites_sent_today", "daily_cap"):
+            self.assertIsInstance(response.data[key], int, key)
+
+    def test_status_requires_authentication(self) -> None:
+        """Anonymous status requests are rejected."""
+        response = self.client.get(STATUS_URL)
+
+        self.assertEqual(response.status_code, 401)

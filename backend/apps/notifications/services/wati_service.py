@@ -90,6 +90,8 @@ def send_notification(
     notification_type: str,
     context_data: dict[str, Any] | None = None,
     *,
+    to_phone: str | None = None,
+    actor: Any = None,
     sender: Callable[..., Any] | None = None,
 ) -> NotificationLog:
     """Send a WhatsApp notification for a tenant, logging the attempt.
@@ -105,6 +107,9 @@ def send_notification(
         customer: The recipient customer (may be ``None``).
         notification_type: One of ``NotificationLog.NotificationType``.
         context_data: Template context values.
+        to_phone: Explicit recipient for sends without a customer record
+            (e.g. the settings-page test send). Overrides the customer phone.
+        actor: The staff user who triggered the send (audit trail).
         sender: Injectable HTTP post callable (tests).
 
     Returns:
@@ -118,6 +123,7 @@ def send_notification(
     log = NotificationLog.objects.create(
         tenant=tenant,
         customer=customer,
+        actor=actor,
         notification_type=notification_type,
         status=NotificationLog.Status.PENDING,
         content=content,
@@ -138,7 +144,7 @@ def send_notification(
     endpoint = tenant.wati_endpoint or DEFAULT_WATI_ENDPOINT
     payload: dict[str, Any] = {
         "sessionMessage": content,
-        "to": customer.phone if customer else "",
+        "to": to_phone or (customer.phone if customer else ""),
     }
     headers = {"Authorization": tenant.wati_api_key}
 
