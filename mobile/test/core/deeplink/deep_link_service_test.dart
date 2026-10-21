@@ -101,7 +101,7 @@ void main() {
       final service = build();
 
       await service.handleLink(
-        Uri.parse('https://api.yougetfitwithus.com/join?gym=$gymA&t=inv-7'),
+        Uri.parse('https://app.yougetfitwithus.com/join?gym=$gymA&t=inv-7'),
       );
 
       expect(store.inviteToken, 'inv-7');

@@ -18,10 +18,10 @@ void main() {
       expect(link.inviteToken, isNull);
     });
 
-    test('parses the api host /join?gym={uuid}&t={token}', () {
+    test('parses the app-host /join?gym={uuid}&t={token}', () {
       final link = JoinLink.tryParse(
         Uri.parse(
-          'https://api.yougetfitwithus.com/join?gym=$gymUuid&t=inv-123',
+          'https://app.yougetfitwithus.com/join?gym=$gymUuid&t=inv-123',
         ),
       );
 
@@ -107,14 +107,14 @@ void main() {
 
     test('rejects a join link with a missing gym param', () {
       expect(
-        JoinLink.tryParse(Uri.parse('https://api.yougetfitwithus.com/join?t=abc')),
+        JoinLink.tryParse(Uri.parse('https://app.yougetfitwithus.com/join?t=abc')),
         isNull,
       );
     });
 
     test('treats an empty invite token as absent', () {
       final link = JoinLink.tryParse(
-        Uri.parse('https://api.yougetfitwithus.com/join?gym=$gymUuid&t='),
+        Uri.parse('https://app.yougetfitwithus.com/join?gym=$gymUuid&t='),
       );
 
       expect(link!.inviteToken, isNull);

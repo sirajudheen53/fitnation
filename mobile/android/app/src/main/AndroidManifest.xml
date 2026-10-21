@@ -40,7 +40,6 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="https" android:host="app.yougetfitwithus.com"/>
-                <data android:scheme="https" android:host="api.yougetfitwithus.com"/>
             </intent-filter>
 
             <!-- Custom scheme: fitnation://g/{tenant-uuid}. The fallback that

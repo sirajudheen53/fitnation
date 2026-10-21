@@ -2,11 +2,12 @@
 ///
 /// The invite carries the gym anchor so the app can pin OTP logins to the
 /// inviting gym without any typing. Two link shapes are supported (the
-/// app-link domain is `app.yougetfitwithus.com`, FBOS-011 D7; the brief's
-/// `/join?gym=` shape on the API host is kept for compatibility):
+/// app-link domain is `app.yougetfitwithus.com`, FBOS-011 D7; Cloud Run
+/// domain mappings aren't provisionable in asia-south1 (FBOS-036), so the
+/// API host never goes live and is not a join host):
 ///
 /// - App Link:  `https://app.yougetfitwithus.com/g/{tenant-uuid}`
-///              `https://api.yougetfitwithus.com/join?gym={tenant-uuid}&t={token}`
+///              `https://app.yougetfitwithus.com/join?gym={tenant-uuid}&t={token}`
 /// - Custom:    `fitnation://g/{tenant-uuid}`
 ///              `fitnation://join?gym={tenant-uuid}&t={token}`
 library;
@@ -38,7 +39,6 @@ class JoinLink {
   /// Hosts whose https links we treat as join links.
   static const List<String> appLinkHosts = [
     'app.yougetfitwithus.com',
-    'api.yougetfitwithus.com',
   ];
 
   /// The custom scheme handled by the AndroidManifest intent-filter.
@@ -69,7 +69,7 @@ class JoinLink {
         // https://app.yougetfitwithus.com/g/{uuid}
         gym = uri.pathSegments[1];
       } else if (uri.pathSegments.isNotEmpty && uri.pathSegments.first == 'join') {
-        // https://api.yougetfitwithus.com/join?gym=…&t=…
+        // https://app.yougetfitwithus.com/join?gym=…&t=…
         gym = uri.queryParameters['gym'];
       }
     }
