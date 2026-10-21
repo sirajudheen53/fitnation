@@ -10,11 +10,13 @@ Grow → Store presence → Main store listing (unless noted).
 | Phone screenshots | 2–8 PNGs, min 320px, max 3840px, 9:16-ish | **NOT PRODUCED** — see "Screenshots" below |
 | App category / tags | Fitness | — (Console choice) |
 
-Canonical design source: `store/assets-source.md` below / regenerate via
-`python3 /tmp/icons.py`-style script committed at
-`mobile/store/generate_store_assets.py` (brand palette in
+Regenerate the listing art with the committed script (brand palette in
 `lib/core/theme/app_theme.dart`: primary `#6C13E2`, dark `#4B0E9F`,
-light `#9D54F0`, mint `#00E5A0`).
+light `#9D54F0`, mint `#00E5A0`):
+
+```bash
+cd mobile && python3 store/generate_store_assets.py
+```
 
 The same brand mark is also wired into the launcher itself:
 `android/app/src/main/res/mipmap-*/ic_launcher.png` (legacy) and

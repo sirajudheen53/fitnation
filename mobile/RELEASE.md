@@ -87,6 +87,13 @@ This uses Flutter's gradle wrapper (gradle 9.3.1 per
 `build/app/outputs/bundle/release/app-release.aab` (55.6 MB at 1.0.0+1).
 Android SDK at `~/development/android-sdk` (platforms 34 & 36 installed).
 
+**Which gradle path worked:** the Flutter-bundled gradle **wrapper**
+(`gradle-9.3.1-all.zip`, via `android/gradle/wrapper/gradle-wrapper.properties`)
+is fully usable on this machine — the release AAB was built through it. The
+standalone `~/gradle-8.7/bin/gradle` fallback was **not** needed and is not
+required (8.7 is also older than what the Android Gradle Plugin in this
+project expects). Keep using the wrapper.
+
 ## Verification record (1.0.0+1, 2026-10-21 — re-verified)
 
 Tools: `bundletool` 1.18.0 (`/tmp` — not committed; re-download from
@@ -115,7 +122,7 @@ github.com/google/bundletool releases if absent), JDK keytool, unzip.
    `flutter build appbundle --release` exits 1 with "Release build refused:
    mobile/android/key.properties (upload-key signing material) is missing…".
 5. **Gates green** — `flutter analyze` → *No issues found*;
-   `flutter test` → *272 tests, all passed*.
+   `flutter test` → *309 tests, all passed*.
 
 Repeat steps 1 and 3 for every release build before upload.
 
