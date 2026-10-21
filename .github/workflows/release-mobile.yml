@@ -46,6 +46,14 @@ jobs:
     env:
       FLUTTER_VERSION: "3.47.1"
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      # GitHub does not inject repo secrets into the job env on its own —
+      # every secret must be mapped explicitly or the refuse-gate below
+      # sees it as unset (run 39634817495).
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
