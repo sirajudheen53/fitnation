@@ -42,7 +42,7 @@ packages:
     source: hosted
     version: "1.0.4"
   app_links_platform_interface:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: app_links_platform_interface
       sha256: "7546f09a6e93f4a2df2fe2bd40a5c6c64310ac461b036d82b43033be7a59f809"

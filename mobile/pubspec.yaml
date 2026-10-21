@@ -51,6 +51,8 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   mockito: ^5.4.4
+  # Fake the app_links platform channel in the deep-link tests.
+  app_links_platform_interface: ^2.0.4
 
 flutter:
   uses-material-design: true

@@ -102,12 +102,15 @@ class DeepLinkService {
     return true;
   }
 
-  /// Parses a raw Play install referrer (`gym=<uuid>` after URL decoding,
-  /// e.g. `gym%3D3f7c…`) and persists it when no runtime anchor exists yet.
+  /// Parses a raw Play install referrer (`gym=<uuid>`) and persists it when
+  /// no runtime anchor exists yet.
+  ///
+  /// The Play referrer arrives URL-encoded (`gym%3D<uuid>`), so the raw
+  /// string is decoded before it is read as a query string. Decoding is
+  /// best-effort: a referrer that is not percent-encoded is used as-is.
   Future<bool> handleInstallReferrer(String raw) async {
     if (hasRuntimeAnchor) return false;
-    final decoded = Uri.tryParse('https://placeholder/?$raw')?.queryParameters['gym'] ??
-        _extractGymFallback(raw);
+    final decoded = _extractGym(raw);
     if (decoded == null || decoded.isEmpty) return false;
     final normalized = decoded.trim().toLowerCase();
     final link = JoinLink.tryParse(
@@ -124,8 +127,41 @@ class DeepLinkService {
   }
 }
 
+/// Pulls the `gym` value out of a Play install referrer.
+///
+/// Handles both encodings the Play console produces: `gym=<uuid>` and
+/// `gym%3D<uuid>`.
+String? _extractGym(String raw) {
+  final undecoded = _gymFromQueryString(raw) ?? _gymFromRegex(raw);
+  if (undecoded != null) return undecoded;
+
+  // Percent-encoded form: `gym%3D<uuid>`.
+  final decoded = _safeDecode(raw);
+  if (decoded == null || decoded == raw) return null;
+  return _gymFromQueryString(decoded) ?? _gymFromRegex(decoded);
+}
+
+/// Reads `gym` from a `key=value&…` query string.
+String? _gymFromQueryString(String raw) {
+  final uri = Uri.tryParse('https://placeholder/?$raw');
+  final value = uri?.queryParameters['gym'];
+  return (value == null || value.isEmpty) ? null : value;
+}
+
 /// Lenient fallback for referrers that are not valid query strings.
-String? _extractGymFallback(String raw) {
+String? _gymFromRegex(String raw) {
   final match = RegExp(r'gym[=:]([0-9a-fA-F-]{36})').firstMatch(raw);
   return match?.group(1);
+}
+
+/// `Uri.decodeFull` throws on malformed input (e.g. a stray `%`), which must
+/// not take the app down on a bad referrer.
+String? _safeDecode(String raw) {
+  try {
+    return Uri.decodeFull(raw);
+  } on FormatException {
+    return null;
+  } on ArgumentError {
+    return null;
+  }
 }
