@@ -1,4 +1,4 @@
-package com.fitnation.fitnation_app
+package com.getfitwithus.app
 
 import io.flutter.embedding.android.FlutterActivity
 
