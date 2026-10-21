@@ -140,7 +140,6 @@ void main() {
     test('rejects empty text and double sends', () async {
       final reply = Completer<(ChatMessage?, Failure?)>();
       var chatCalls = 0;
-      final c = container(_CannedRepository(chatResult: null));
       // Intercept at the provider level with a repo we can stall.
       final c2 = ProviderContainer(overrides: [
         aiCoachRepositoryProvider.overrideWithValue(_StalledRepository(reply, (n) => chatCalls += n)),

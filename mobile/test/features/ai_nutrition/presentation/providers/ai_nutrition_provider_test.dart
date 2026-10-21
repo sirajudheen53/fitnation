@@ -12,13 +12,11 @@ class _CannedRepository implements AiNutritionRepository {
     this.plansResult,
     this.generateResult,
     this.shoppingResult,
-    this.macrosResult,
   });
 
   final (List<MealPlan>?, Failure?)? plansResult;
   final (MealPlan?, Failure?)? generateResult;
   final (List<ShoppingListItem>?, Failure?)? shoppingResult;
-  final (bool, Failure?)? macrosResult;
 
   @override
   Future<({List<MealPlan>? plans, Failure? error})> getMealPlans() async {
@@ -46,8 +44,7 @@ class _CannedRepository implements AiNutritionRepository {
   Future<({bool success, Failure? error})> trackMacros(
     Map<String, dynamic> data,
   ) async {
-    final canned = macrosResult!;
-    return (success: canned.$1, error: canned.$2);
+    return (success: true, error: null);
   }
 }
 

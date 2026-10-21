@@ -52,13 +52,13 @@ void main() {
     return c;
   }
 
-  const _log = WorkoutLog(customerId: 10, durationMinutes: 40);
+  const savedLog = WorkoutLog(customerId: 10, durationMinutes: 40);
 
   test('a saved log flips the state to success and keeps the log', () async {
-    final c = container(_CannedRepository(logResult: (_log, null)));
+    final c = container(_CannedRepository(logResult: (savedLog, null)));
     final notifier = c.read(workoutLogProvider.notifier);
 
-    final ok = await notifier.logWorkout(_log);
+    final ok = await notifier.logWorkout(savedLog);
 
     expect(ok, isTrue);
     final state = c.read(workoutLogProvider);
@@ -73,7 +73,7 @@ void main() {
     ));
     final notifier = c.read(workoutLogProvider.notifier);
 
-    final ok = await notifier.logWorkout(_log);
+    final ok = await notifier.logWorkout(savedLog);
 
     expect(ok, isFalse);
     final state = c.read(workoutLogProvider);
@@ -83,9 +83,9 @@ void main() {
   });
 
   test('reset clears the state', () async {
-    final c = container(_CannedRepository(logResult: (_log, null)));
+    final c = container(_CannedRepository(logResult: (savedLog, null)));
     final notifier = c.read(workoutLogProvider.notifier);
-    await notifier.logWorkout(_log);
+    await notifier.logWorkout(savedLog);
 
     notifier.reset();
 
