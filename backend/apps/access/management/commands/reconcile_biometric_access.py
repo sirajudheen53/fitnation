@@ -21,7 +21,11 @@ from typing import Any
 from django.core.management.base import BaseCommand
 
 from apps.access.models import BiometricCredential
-from apps.access.propagation import DELETE_COMMAND, UPDATE_COMMAND, propagate_customer_biometric_state
+from apps.access.propagation import (
+    DELETE_COMMAND,
+    UPDATE_COMMAND,
+    propagate_customer_biometric_state,
+)
 from apps.customers.models import Customer
 from apps.tenants.models import Tenant
 

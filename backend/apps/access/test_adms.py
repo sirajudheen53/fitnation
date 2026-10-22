@@ -129,12 +129,7 @@ class CdataPushTest(AdmsEndpointTestBase):
 
     def test_attlog_post_stores_raw_rows_and_replies_ok(self) -> None:
         """Every tab-separated row is stored raw, verbatim; reply is OK."""
-        body = "\r\n".join(
-            [
-                "\t1\t2026-10-20 08:15:00\t1\t0\t1\t0",
-                "\t1\t2026-10-20 18:05:30\t0\t0\t1\t0",
-            ]
-        )
+        body = "\t1\t2026-10-20 08:15:00\t1\t0\t1\t0\r\n\t1\t2026-10-20 18:05:30\t0\t0\t1\t0"
         response = self._post(body)
         assert response.status_code == 200
         assert response.content == b"OK"

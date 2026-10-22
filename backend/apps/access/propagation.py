@@ -141,7 +141,7 @@ def executed_within_window(*, device: BiometricDevice, text: str) -> bool:
     return DeviceCommandQueue.objects.filter(device=device, payload__text=text, executed_at__gte=cutoff).exists()
 
 
-def desired_device_action(*, customer: "Customer", tenant: "Tenant") -> tuple[str, "Membership | None"]:
+def desired_device_action(*, customer: Customer, tenant: Tenant) -> tuple[str, Membership | None]:
     """Resolve the device-side state the customer should have.
 
     Returns:
@@ -154,7 +154,7 @@ def desired_device_action(*, customer: "Customer", tenant: "Tenant") -> tuple[st
     return "delete", None
 
 
-def propagate_customer_biometric_state(*, customer: "Customer") -> list[dict]:
+def propagate_customer_biometric_state(*, customer: Customer) -> list[dict]:
     """Mirror the customer's membership state onto their enrolled devices.
 
     The access-side half of membership propagation: for every active

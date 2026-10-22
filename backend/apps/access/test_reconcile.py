@@ -17,7 +17,11 @@ from django.utils import timezone
 from django.utils.timezone import localdate
 
 from apps.access.models import BiometricCredential, BiometricDevice, DeviceCommandQueue
-from apps.access.propagation import DELETE_COMMAND, UPDATE_COMMAND, propagate_customer_biometric_state
+from apps.access.propagation import (
+    DELETE_COMMAND,
+    UPDATE_COMMAND,
+    propagate_customer_biometric_state,
+)
 from apps.branches.models import Branch
 from apps.customers.models import Customer
 from apps.memberships.models import Membership, MembershipPlan

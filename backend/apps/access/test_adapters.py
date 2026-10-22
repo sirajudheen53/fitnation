@@ -11,13 +11,20 @@ from __future__ import annotations
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
+import requests
 from django.utils import timezone
 
-import requests
-
-from apps.access.adapters.base import AdapterError, AdapterNotRegisteredError, BiometricAdapter
+from apps.access.adapters.base import (
+    AdapterError,
+    AdapterNotRegisteredError,
+    BiometricAdapter,
+)
 from apps.access.adapters.generic_http import GenericHTTPAdapter
-from apps.access.adapters.registry import get_adapter, get_adapter_class, registered_vendors
+from apps.access.adapters.registry import (
+    get_adapter,
+    get_adapter_class,
+    registered_vendors,
+)
 from apps.access.adapters.zkteco import ZKTecoADMSAdapter
 from apps.access.models import BiometricCredential, BiometricDevice, DeviceCommandQueue
 from apps.access.tests import AccessTestBase

@@ -101,7 +101,7 @@ class CdataPairingTest(PunchPairingTestBase):
         self._post_attlog("\t7\t2026-10-20 18:30:00\t0\t0\t1\t0")  # keep last
         assert AttendanceRecord.objects.count() == 1
         record = AttendanceRecord.objects.get()
-        assert record.check_in_time == timezone.make_aware(datetime(2026, 10, 20, 8, 15, 0))
+        assert record.check_in_time == timezone.make_aware(datetime(2026, 10, 20, 8, 15, 0))  # noqa: DTZ001
         assert timezone.localtime(record.check_out_time).isoformat().startswith("2026-10-20T18:30:00")
 
     def test_orphan_punch_flagged_and_not_paired(self) -> None:
