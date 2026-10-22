@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
+from apps.access.propagation import propagate_customer_biometric_state
 from apps.access.services import sync_customer_devices
 from apps.customers.models import Customer
 from apps.memberships.models import Coupon, Membership, MembershipPlan
@@ -86,12 +87,17 @@ class MembershipViewSet(ModelViewSet):
         return queryset
 
     def _propagate_access_change(self, membership: Membership) -> None:
-        """Push updated allow-lists to the customer's devices (issue #24).
+        """Push updated allow-lists + user metadata to the customer's devices.
 
-        Synchronous by design: access changes must reach door hardware
-        within ~5s and this project has no Celery.
+        Two halves, both synchronous by design (this project has no
+        Celery; access changes must reach door hardware within ~5s):
+        the allow-list/door sync (issue #24) and the ADMS user-metadata
+        gate — queue DATA UPDATE/DELETE USERINFO per enrolled device so
+        the device's user table mirrors membership state, cool-off
+        included (phase 2).
         """
         sync_customer_devices(membership.customer)
+        propagate_customer_biometric_state(customer=membership.customer)
 
     def create(self, request: Request) -> Response:
         """Create a new membership, validating dates and status."""
