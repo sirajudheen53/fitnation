@@ -105,3 +105,18 @@ export interface BranchAssignmentCreatePayload {
   customer: number;
   branch?: number | null;
 }
+
+/** GET /customers/customers/{id}/pt-remaining/ — derived PT pack state. */
+export interface PtRemaining {
+  customer_id: number;
+  membership_id: number | null;
+  plan_name: string | null;
+  membership_status: "active" | "expired" | "none";
+  end_date: string | null;
+  total: number | null;
+  redeemed: number;
+  remaining: number | null;
+  unlimited: boolean;
+  can_book: boolean;
+  reason: string;
+}

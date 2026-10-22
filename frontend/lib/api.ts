@@ -706,6 +706,7 @@ export function checkOut(id: number | string, token: string): Promise<Attendance
 import {
   BranchAssignmentCreatePayload,
   BranchTrainerAssignment,
+  PtRemaining,
   Trainer,
   TrainerCreatePayload,
   TrainerListParams,
@@ -781,6 +782,31 @@ export function createTrainerAssignment(
     body: data,
     token,
   });
+}
+
+/** Deactivate a branch-scoped assignment (credit-safe, reversible via re-create). */
+export function unassignTrainerAssignment(
+  id: number,
+  token: string,
+): Promise<BranchTrainerAssignment> {
+  return request<BranchTrainerAssignment>(`/trainer-assignments/${id}/unassign/`, {
+    method: "POST",
+    token,
+  });
+}
+
+/**
+ * Customer's derived PT session-pack state. 403s for roles without
+ * customers.view_customer — callers hide the badge on failure.
+ */
+export function fetchPtRemaining(
+  customerId: number | string,
+  token: string,
+): Promise<PtRemaining> {
+  return request<PtRemaining>(
+    `/customers/customers/${customerId}/pt-remaining/`,
+    { token },
+  );
 }
 
 /** Weekly availability rows for one trainer, Monday→Sunday ordered. */
