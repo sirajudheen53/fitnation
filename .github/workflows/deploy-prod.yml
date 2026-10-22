@@ -1,7 +1,7 @@
 # FBOS Deploy to Production (yougetfitwithus)
 # Manual / tag-based deploy → GCP Cloud Run (prod backend) + Vercel (prod frontend)
 #
-# Backend:  test → build → push → migrate → deploy to fitnation-backend-prod
+# Backend:  test → build → push → migrate → deploy → promote to fitnation-backend-prod
 # Frontend: build → deploy to a SEPARATE Vercel prod project (skipped until
 #           the VERCEL_PROD_PROJECT_ID repo variable is set)
 #
@@ -145,6 +145,15 @@ jobs:
             --project ${{ env.GCP_PROJECT }} --region ${{ env.GCP_REGION }} \
             --format "value(status.url)")
           echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Promote prod traffic to the new revision
+        run: |
+          # Explicit pin: gcloud run deploy can leave 100% on the previous revision, and
+          # unpromoted revisions auto-retire within minutes (same WIF auth as above, idempotent).
+          gcloud run services update-traffic ${{ env.CLOUD_RUN_SERVICE }} \
+            --project ${{ env.GCP_PROJECT }} \
+            --region ${{ env.GCP_REGION }} \
+            --to-latest
 
       - name: Verify prod health
         run: |
