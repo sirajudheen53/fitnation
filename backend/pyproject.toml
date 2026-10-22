@@ -1,3 +1,38 @@
+[tool.ruff]
+# Mirrors the repo's other lint tooling (flake8/black/isort in this file + setup.cfg):
+# line length 120 and the same directory excludes. Migrations are generated artifacts.
+line-length = 120
+target-version = "py312"
+extend-exclude = ["migrations", "staticfiles", "media"]
+
+[tool.ruff.lint]
+# Families chosen to match the findings actually present in the codebase at adoption
+# (dominated by RUF012, DTZ011, BLE001, UP037, SIM117, B017, RUF100, I001).
+# Ruff is intentionally NOT wired into CI; this config just makes "clean" reproducible.
+select = [
+    "E",   # pycodestyle errors (line length enforced at 120, matching flake8)
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # import sorting, isort-compatible
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade (Python 3.12 idioms)
+    "SIM", # flake8-simplify
+    "DTZ", # flake8-datetimez (tz-aware datetimes)
+    "RUF", # ruff-specific rules
+    "BLE", # flake8-blind-except
+    "FLY", # f-string list joins
+]
+# Deliberate typography used in help texts, docstrings and comments (×, dashes, ℹ);
+# homoglyph detection stays active for everything else.
+allowed-confusables = ["×", "–", "‑", "−", "ℹ"]
+
+[tool.ruff.lint.isort]
+# Mirror setup.cfg's isort DJANGO section so ruff I001 and isort agree on import order.
+section-order = ["future", "standard-library", "django", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.lint.isort.sections]
+"django" = ["django", "rest_framework"]
+
 [tool.black]
 line-length = 120
 target-version = ["py312"]
