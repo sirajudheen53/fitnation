@@ -29,7 +29,7 @@ from apps.ai_nutrition.services.nutrition_service import (
     generate_shopping_list,
 )
 from apps.permissions.entitlements import EntitlementRequired
-from apps.permissions.permissions import RolePermission
+from apps.permissions.permissions import FeatureFlagRequired, RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 
@@ -54,7 +54,14 @@ class AIMealPlanViewSet(ModelViewSet):
     """Tenant-scoped CRUD for AI meal plans, with AI generation on create."""
 
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, AINutritionRole, EntitlementRequired]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        AINutritionRole,
+        FeatureFlagRequired,
+        EntitlementRequired,
+    ]
+    required_feature = "ai_nutrition"
     required_permission = "ai_nutrition.view"
     method_permissions = _METHOD_PERMISSIONS
     filter_backends: ClassVar[list] = []
@@ -160,7 +167,14 @@ class ShoppingListViewSet(ModelViewSet):
     """Tenant-scoped CRUD for shopping lists, generated from a meal plan."""
 
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, AINutritionRole, EntitlementRequired]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        AINutritionRole,
+        FeatureFlagRequired,
+        EntitlementRequired,
+    ]
+    required_feature = "ai_nutrition"
     required_permission = "ai_nutrition.view"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = ShoppingListSerializer
@@ -246,7 +260,14 @@ class MacroLogViewSet(ModelViewSet):
     """Tenant-scoped CRUD for daily macro logs, with weekly/monthly trends."""
 
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, AINutritionRole, EntitlementRequired]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        AINutritionRole,
+        FeatureFlagRequired,
+        EntitlementRequired,
+    ]
+    required_feature = "ai_nutrition"
     required_permission = "ai_nutrition.view"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = MacroLogSerializer

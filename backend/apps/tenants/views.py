@@ -7,10 +7,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.permissions.permissions import RolePermission
+from apps.tenants.features import apply_feature_overrides
 from apps.tenants.models import Tenant
 from apps.tenants.permissions import IsTenantMember
 from apps.tenants.selectors import tenant_get_by_id
-from apps.tenants.serializers import TenantSerializer, WhatsappTestSendSerializer
+from apps.tenants.serializers import (
+    TenantFeatureSettingsSerializer,
+    TenantFeatureUpdateSerializer,
+    TenantSerializer,
+    WhatsappTestSendSerializer,
+    tenant_feature_settings_payload,
+)
 from apps.tenants.services import (
     send_whatsapp_test,
     throttle_gym_lookup,
@@ -116,6 +123,49 @@ class WhatsappStatusView(APIView):
             Counters matching the frontend's ``WhatsappStatus`` interface.
         """
         return Response(whatsapp_status_counts(request.tenant))
+
+
+class TenantFeatureSettingsView(APIView):
+    """Gym-level module toggles (issue #46) — read + set ``Tenant.features``.
+
+    ``GET`` returns every registered module flag resolved for the gym plus the
+    settings-page catalog; every authenticated gym member may read it (the
+    mobile/ERP use it to hide a disabled module's surface). ``PATCH`` merges
+    ``{flags: {key: bool}}`` overrides and is owner/platform-admin only
+    (``tenants.change_tenant``), mirroring the rest of the settings page.
+    """
+
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
+    method_permissions: ClassVar[dict] = {"PATCH": "tenants.change_tenant"}
+
+    def get(self, request: Any) -> Response:
+        """Return the resolved module-flag map and toggle catalog.
+
+        Args:
+            request: The incoming DRF request.
+
+        Returns:
+            ``{flags, catalog}`` (see ``TenantFeatureSettingsSerializer``).
+        """
+        payload = tenant_feature_settings_payload(request.tenant)
+        return Response(TenantFeatureSettingsSerializer(payload).data)
+
+    def patch(self, request: Any) -> Response:
+        """Merge validated module-flag overrides into the gym's features.
+
+        Args:
+            request: The incoming DRF request.
+
+        Returns:
+            The refreshed ``{flags, catalog}`` payload after persistence.
+        """
+        body = TenantFeatureUpdateSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        tenant = request.tenant
+        apply_feature_overrides(tenant, body.validated_data["flags"])
+        tenant.save(update_fields=["features", "updated_at"])
+        return Response(TenantFeatureSettingsSerializer(tenant_feature_settings_payload(tenant)).data)
 
 
 class TenantLookupView(APIView):

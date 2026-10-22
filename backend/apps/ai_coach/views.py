@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from apps.permissions.entitlements import EntitlementRequired
-from apps.permissions.permissions import RolePermission
+from apps.permissions.permissions import FeatureFlagRequired, RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 
@@ -25,7 +25,8 @@ from .services.ai_service import generate_response
 
 class AIConversationViewSet(ModelViewSet):
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, EntitlementRequired]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, FeatureFlagRequired, EntitlementRequired]
+    required_feature = "ai_coach"
     serializer_class = AIConversationSerializer
 
     def get_queryset(self):
@@ -37,7 +38,8 @@ class AIConversationViewSet(ModelViewSet):
 
 class ChatView(APIView):
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, FeatureFlagRequired]
+    required_feature = "ai_coach"
     required_permission = "ai_coach.use_ai_coach"
 
     def post(self, request):
@@ -78,7 +80,8 @@ class ChatView(APIView):
 
 class ConversationMessagesView(APIView):
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, EntitlementRequired]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, FeatureFlagRequired, EntitlementRequired]
+    required_feature = "ai_coach"
 
     def get(self, request, conversation_id):
         conversation = AIConversation.objects.filter(id=conversation_id, user=request.user).first()
@@ -90,7 +93,8 @@ class ConversationMessagesView(APIView):
 
 class AIRecommendationViewSet(ModelViewSet):
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, EntitlementRequired]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, FeatureFlagRequired, EntitlementRequired]
+    required_feature = "ai_coach"
     serializer_class = AIRecommendationSerializer
     http_method_names: ClassVar[list[str]] = ["get", "patch"]
 

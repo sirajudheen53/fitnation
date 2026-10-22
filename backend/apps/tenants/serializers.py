@@ -4,6 +4,7 @@ from typing import Any, ClassVar
 
 from rest_framework import serializers
 
+from apps.tenants.features import MODULE_FEATURES
 from apps.tenants.models import Tenant, TenantSettings
 
 
@@ -30,6 +31,84 @@ class WhatsappTestSendSerializer(serializers.Serializer):
     """Body of ``POST /tenants/whatsapp/test/`` (settings-page test send)."""
 
     phone = serializers.CharField(max_length=20)
+
+
+class ModuleFeatureMetaSerializer(serializers.Serializer):
+    """One entry of the module-toggle catalog (``GET /tenants/features/``)."""
+
+    key = serializers.CharField(read_only=True)
+    label = serializers.CharField(read_only=True, help_text="Settings-page display name.")
+    description = serializers.CharField(read_only=True)
+    default = serializers.BooleanField(
+        read_only=True,
+        help_text="Value seeded for new tenants; re-enabling resets to this.",
+    )
+
+
+class TenantFeatureSettingsSerializer(serializers.Serializer):
+    """Shape of ``GET /tenants/features/`` (issue #46 gym-level settings).
+
+    - ``flags``: resolved ``{key: enabled}`` for every registered module —
+      what the ERP/mobile read to hide a module's surface.
+    - ``catalog``: toggle metadata for the settings UI (labels, defaults).
+    """
+
+    flags = serializers.DictField(
+        child=serializers.BooleanField(),
+        read_only=True,
+        help_text="Resolved module flags: missing stored key = registry default.",
+    )
+    catalog = ModuleFeatureMetaSerializer(many=True, read_only=True)
+
+
+def tenant_feature_settings_payload(tenant: Tenant) -> dict[str, Any]:
+    """Build the ``TenantFeatureSettingsSerializer`` payload for a tenant."""
+    from apps.tenants.features import get_feature_flags
+
+    return {
+        "flags": get_feature_flags(tenant),
+        "catalog": [
+            {
+                "key": feature.key,
+                "label": feature.label,
+                "description": feature.description,
+                "default": feature.default,
+            }
+            for feature in MODULE_FEATURES
+        ],
+    }
+
+
+class TenantFeatureUpdateSerializer(serializers.Serializer):
+    """Body of ``PATCH /tenants/features/``: partial module-flag merge.
+
+    ``flags`` keys must all be registered module features (anything else is a
+    400 so a typo can never become a dead toggle); values must be real JSON
+    booleans. The merge preserves non-module keys already on the tenant
+    (``app_access`` etc.).
+    """
+
+    flags = serializers.DictField(
+        child=serializers.BooleanField(),
+        help_text="Partial ``{key: bool}`` map of module toggles to merge.",
+    )
+
+    def validate_flags(self, value: dict[str, bool]) -> dict[str, bool]:
+        """Reject non-boolean input values and unregistered feature keys.
+
+        DRF's ``BooleanField`` coerces ``"no"``/``"0"``/``1`` silently; the API
+        requires real JSON booleans, so the raw payload is type-checked too.
+        """
+        raw = (self.initial_data or {}).get("flags") or {}
+        for key, raw_value in raw.items():
+            if not isinstance(raw_value, bool):
+                raise serializers.ValidationError({key: "Must be true or false."})
+        unknown = [key for key in value if key not in {feature.key for feature in MODULE_FEATURES}]
+        if unknown:
+            raise serializers.ValidationError(
+                {key: "Unknown module feature (typos are never stored)." for key in unknown},
+            )
+        return value
 
 
 class TenantSerializer(serializers.ModelSerializer):

@@ -33,7 +33,7 @@ from apps.marketplace.serializers import (
     ProductWriteSerializer,
 )
 from apps.permissions.entitlements import EntitlementRequired
-from apps.permissions.permissions import RolePermission
+from apps.permissions.permissions import FeatureFlagRequired, RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
 
@@ -42,7 +42,8 @@ class ProductCategoryViewSet(ModelViewSet):
     """Tenant-scoped CRUD for product categories."""
 
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, FeatureFlagRequired]
+    required_feature = "marketplace"
     required_permission = "marketplace.view_product"
     method_permissions: ClassVar[dict] = {
         "GET": "marketplace.view_product",
@@ -72,7 +73,8 @@ class ProductViewSet(ModelViewSet):
     """Tenant-scoped CRUD for products with search and filtering."""
 
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, FeatureFlagRequired]
+    required_feature = "marketplace"
     required_permission = "marketplace.view_product"
     method_permissions: ClassVar[dict] = {
         "GET": "marketplace.view_product",
@@ -118,7 +120,14 @@ class CartView(APIView):
     """Retrieve, add-to, or clear the current user's active cart."""
 
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        RolePermission,
+        FeatureFlagRequired,
+        EntitlementRequired,
+    ]
+    required_feature = "marketplace"
     required_permission = "marketplace.view_cart"
 
     def get(self, request: Request) -> Response:
@@ -173,7 +182,14 @@ class CartItemView(APIView):
     """Update quantity or remove a specific cart line item."""
 
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        RolePermission,
+        FeatureFlagRequired,
+        EntitlementRequired,
+    ]
+    required_feature = "marketplace"
     required_permission = "marketplace.view_cart"
 
     def get_object(self, request: Request, item_id: int) -> CartItem:
@@ -213,7 +229,14 @@ class OrderViewSet(ModelViewSet):
     """Tenant-scoped CRUD for orders."""
 
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        RolePermission,
+        FeatureFlagRequired,
+        EntitlementRequired,
+    ]
+    required_feature = "marketplace"
     required_permission = "marketplace.view_order"
     method_permissions: ClassVar[dict] = {
         "GET": "marketplace.view_order",

@@ -2,7 +2,10 @@
 
 from typing import Any, ClassVar
 
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission, IsAuthenticated
+
+from apps.tenants.features import MODULE_FEATURES, is_module_enabled
 
 
 class IsPlatformAdmin(BasePermission):
@@ -20,6 +23,61 @@ class IsPlatformAdmin(BasePermission):
         """
         user = request.user
         return bool(user and user.is_authenticated and user.is_superuser)
+
+
+class FeatureFlagRequired(BasePermission):
+    """Gym-level module gate (issue #46) — attach AFTER RolePermission.
+
+    A view (or viewset) declares the module it belongs to via a
+    ``required_feature`` attribute — one key or several (any-enabled wins), each
+    matching ``apps.tenants.features.MODULE_FEATURES``. Semantics are
+    **default-allow**: the module is blocked only while the gym's
+    ``Tenant.features`` stores an explicit ``False`` for the key (403 with a
+    ``code``-tagged body, mirroring :class:`~apps.permissions.entitlements.EntitlementRequired`).
+
+    Platform admins bypass the gate (support/impersonation); every other role —
+    staff and customers alike — is blocked, so both ERP and mobile surfaces of
+    a disabled module read 403.
+    """
+
+    FEATURE_DISABLED_CODE = "feature_disabled"
+
+    def has_permission(self, request: Any, view: Any) -> bool:
+        """Evaluate the caller's tenant's module flags against ``required_feature``.
+
+        Args:
+            request: The incoming DRF request.
+            view: The view being accessed. May declare ``required_feature``:
+                a module key or an iterable of keys; views without the
+                attribute (or on unresolvable tenants) are allowed.
+
+        Returns:
+            ``True`` when none of the required modules is explicitly disabled.
+
+        Raises:
+            PermissionDenied: With a ``code``/``feature``-tagged body when the
+                gym has the named module switched off.
+        """
+        if request.user.is_superuser:
+            return True
+        tenant = getattr(request, "tenant", None) or request.user.tenant
+        if tenant is None:
+            return True
+        required = getattr(view, "required_feature", None)
+        if required is None:
+            return True
+        keys = [required] if isinstance(required, str) else list(required)
+        for key in keys:
+            if not is_module_enabled(tenant, key):
+                label = next((feature.label for feature in MODULE_FEATURES if feature.key == key), key)
+                raise PermissionDenied(
+                    {
+                        "detail": f"The {label} module is disabled for your gym.",
+                        "code": self.FEATURE_DISABLED_CODE,
+                        "feature": key,
+                    },
+                )
+        return True
 
 
 class RolePermission(BasePermission):

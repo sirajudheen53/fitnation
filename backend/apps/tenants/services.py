@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from apps.tenants.features import seed_default_features
 from apps.tenants.models import Tenant, TenantSettings
 
 logger = logging.getLogger(__name__)
@@ -29,16 +30,21 @@ def provision_tenant(
         name: Display name of the tenant (gym business).
         contact_email: Primary contact email for the tenant. Must be unique globally.
         subscription_plan: One of ``starter``, ``professional``, ``enterprise``.
-        **kwargs: Additional fields accepted by the ``Tenant`` model.
+        **kwargs: Additional fields accepted by the ``Tenant`` model. A
+            ``features`` mapping is merged OVER the module-flag registry
+            defaults (issue #46) so every new gym starts with a fully-populated
+            feature map; non-module keys pass through untouched.
 
     Returns:
         The fully provisioned ``Tenant`` instance.
     """
+    features = seed_default_features(kwargs.pop("features", None))
     tenant = Tenant.objects.create(
         name=name,
         contact_email=contact_email,
         subscription_plan=subscription_plan,
         status=Tenant.Status.TRIAL,
+        features=features,
         **kwargs,
     )
     TenantSettings.objects.create(tenant=tenant)

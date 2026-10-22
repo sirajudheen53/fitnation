@@ -17,7 +17,7 @@ from rest_framework.response import Response
 
 from apps.customers.models import Customer
 from apps.permissions.entitlements import EntitlementRequired
-from apps.permissions.permissions import RolePermission
+from apps.permissions.permissions import FeatureFlagRequired, RolePermission
 from apps.reviews.models import Review, ReviewResponse
 from apps.reviews.serializers import (
     ReviewResponseSerializer,
@@ -37,7 +37,14 @@ class ReviewViewSet(viewsets.ModelViewSet):
     """
 
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
-    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        RolePermission,
+        FeatureFlagRequired,
+        EntitlementRequired,
+    ]
+    required_feature = "reviews"
     required_permission = "reviews.view_review"
     http_method_names: ClassVar[list[str]] = ["get", "post", "head", "options"]
 
