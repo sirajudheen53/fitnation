@@ -37,6 +37,9 @@ jest.mock("@/lib/auth", () => ({
     tenant_name: "FitNation",
     is_owner: true,
   }),
+  // ImpersonationBanner mounts inside DashboardLayout on every page.
+  getImpersonationSession: () => null,
+  endImpersonationSession: jest.fn(),
   logout: jest.fn(),
 }));
 

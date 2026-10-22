@@ -3,16 +3,18 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Archive, KeyRound, Pencil, Plus } from "lucide-react";
+import { Archive, KeyRound, Pencil, Plus, UserCog } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge, Button, Card, CardBody, Spinner } from "@/components/ui";
 import {
   errorMessage,
   fetchAdminTenants,
+  impersonateTenant,
   updateAdminTenantStatus,
 } from "@/lib/api";
-import { getToken, getStoredUser } from "@/lib/auth";
+import { getToken, getStoredUser, startImpersonationSession } from "@/lib/auth";
 import { ArchiveGymDialog } from "@/features/admin/components/ArchiveGymDialog";
+import { ConfirmDialog } from "@/features/admin/components/ConfirmDialog";
 import { EditGymDialog } from "@/features/admin/components/EditGymDialog";
 import { GymStatusAction } from "@/features/admin/components/GymStatusAction";
 import { RotateCredentialsDialog } from "@/features/admin/components/RotateCredentialsDialog";
@@ -35,6 +37,8 @@ export default function AdminGymsPage() {
   const [editTarget, setEditTarget] = useState<AdminTenant | null>(null);
   const [rotateTarget, setRotateTarget] = useState<AdminTenant | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<AdminTenant | null>(null);
+  const [impersonateTarget, setImpersonateTarget] = useState<AdminTenant | null>(null);
+  const [impersonating, setImpersonating] = useState(false);
 
   useEffect(() => {
     if (user && user.role !== "platform_admin") {
@@ -79,6 +83,33 @@ export default function AdminGymsPage() {
       );
     } catch (err) {
       toast.error(errorMessage(err));
+    }
+  }
+
+  async function startImpersonation() {
+    const target = impersonateTarget;
+    const adminToken = getToken();
+    const adminUser = getStoredUser();
+    if (!target || !adminToken || !adminUser) return;
+    setImpersonating(true);
+    try {
+      const result = await impersonateTenant(target.id, adminToken);
+      startImpersonationSession({
+        token: result.token,
+        expires_at: result.expires_at,
+        owner_email: result.owner_email,
+        tenant_id: target.id,
+        tenant_name: target.name,
+        admin_token: adminToken,
+        admin_user: adminUser,
+      });
+      toast.success(`Now viewing as ${result.owner_email} — 30-minute session.`);
+      router.push("/dashboard");
+    } catch (err) {
+      toast.error(errorMessage(err));
+      setImpersonateTarget(null);
+    } finally {
+      setImpersonating(false);
     }
   }
 
@@ -180,6 +211,20 @@ export default function AdminGymsPage() {
                               variant="ghost"
                               size="sm"
                               disabled={archived}
+                              title={
+                                archived
+                                  ? "Archived gyms are read-only"
+                                  : "Log in as the owner (30 min, audited)"
+                              }
+                              aria-label={`Impersonate ${t.name}`}
+                              onClick={() => setImpersonateTarget(t)}
+                            >
+                              <UserCog className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={archived}
                               className="text-red-600 hover:bg-red-50"
                               title={archived ? "Gym is archived" : "Archive gym"}
                               aria-label={`Archive ${t.name}`}
@@ -228,6 +273,28 @@ export default function AdminGymsPage() {
             toast.success(`${updated.name} archived`);
           }}
         />
+      )}
+
+      {impersonateTarget && (
+        <ConfirmDialog
+          title={`Log in as ${impersonateTarget.name}'s owner?`}
+          confirmLabel="Start Impersonation"
+          busy={impersonating}
+          onConfirm={startImpersonation}
+          onClose={() => setImpersonateTarget(null)}
+        >
+          <p>
+            You will see exactly what{" "}
+            <span className="font-medium text-gray-900">
+              {impersonateTarget.contact_email}
+            </span>{" "}
+            sees — changes you make are real.
+          </p>
+          <p>
+            The session lasts 30 minutes and is recorded in the impersonation audit
+            log (who, when, which gym).
+          </p>
+        </ConfirmDialog>
       )}
     </DashboardLayout>
   );

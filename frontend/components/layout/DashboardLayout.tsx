@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout, getStoredUser } from "@/lib/auth";
+import { ImpersonationBanner } from "@/components/layout/ImpersonationBanner";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -159,6 +160,7 @@ export function DashboardLayout({ children, title, actions }: DashboardLayoutPro
 
       {/* Main */}
       <div className="flex-1">
+        <ImpersonationBanner />
         <header className="sticky top-0 z-10 border-b border-gray-200 bg-white px-4 py-4 sm:px-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">

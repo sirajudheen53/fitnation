@@ -2121,6 +2121,7 @@ import {
   AdminTenant,
   AdminTenantUpdateFormData,
   AdminTenantSwitchStatus,
+  ImpersonateTenantResult,
 } from "@/types/admin";
 
 export function fetchAdminTenants(token: string): Promise<AdminTenant[]> {
@@ -2179,6 +2180,20 @@ export function deleteAdminTenant(
 ): Promise<AdminTenant> {
   return request<AdminTenant>(`/admin/tenants/${id}/`, {
     method: "DELETE",
+    token,
+  });
+}
+
+/**
+ * Start a 30-minute impersonated owner session (issue #45). The action is
+ * recorded in the backend impersonation audit log (who, when, which gym).
+ */
+export function impersonateTenant(
+  id: number | string,
+  token: string,
+): Promise<ImpersonateTenantResult> {
+  return request<ImpersonateTenantResult>(`/admin/tenants/${id}/impersonate/`, {
+    method: "POST",
     token,
   });
 }

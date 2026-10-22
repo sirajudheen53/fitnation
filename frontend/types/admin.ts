@@ -1,5 +1,5 @@
 /**
- * Platform admin type definitions — Sprint 10 (issues #39, #41, #42).
+ * Platform admin type definitions — Sprint 10 (issues #39, #41, #42, #45).
  *
  * Field sets mirror the backend `apps/admin_ops` serializers exactly:
  * tenants are cross-tenant rows with computed member/branch counts.
@@ -54,6 +54,16 @@ export interface AdminOnboardGymResult {
   owner_password: string;
   branch_name: string;
   plan_code: string;
+}
+
+// ── Support impersonation (issue #45) ───────────────────────────
+
+/** Result of POST /api/v1/admin/tenants/{id}/impersonate/. */
+export interface ImpersonateTenantResult {
+  token: string;
+  /** ISO timestamp — the backend enforces the 30-minute lifetime. */
+  expires_at: string;
+  owner_email: string;
 }
 
 // ── Gym edit & lifecycle (admin platform gap fix) ───────────────
