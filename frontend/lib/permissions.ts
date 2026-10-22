@@ -139,6 +139,8 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   "/exercises/new": ["exercises.edit_exercise"],
   // Sprint 12 (issue #53): trainer management is owner/manager (users.view_user).
   "/trainers": ["users.view_user"],
+  // Sprint 12 (issue #55): the PT floor — owner/manager/trainer (trainers.view_session).
+  "/pt-sessions": ["trainers.view_session"],
   "/diets": ["diets.view_diet"],
   "/diet": ["diets.view_diet"],
   "/diet/food-items": ["diets.view_diet"],

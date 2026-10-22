@@ -707,10 +707,13 @@ import {
   BranchAssignmentCreatePayload,
   BranchTrainerAssignment,
   PtRemaining,
+  SessionBookingPayload,
+  SessionStatus,
   Trainer,
   TrainerCreatePayload,
   TrainerListParams,
   TrainerScheduleSlot,
+  TrainerSession,
   TrainerUpdatePayload,
 } from "@/types/trainer";
 
@@ -807,6 +810,67 @@ export function fetchPtRemaining(
     `/customers/customers/${customerId}/pt-remaining/`,
     { token },
   );
+}
+
+/* ── PT sessions (issue #55) ──────────────────────────────────── */
+
+/** List PT sessions — trainer/customer/status are server-side filters. */
+export function fetchTrainerSessions(
+  token: string,
+  params?: { trainer?: number; customer?: number; status?: SessionStatus },
+): Promise<TrainerSession[]> {
+  const query = new URLSearchParams();
+  if (params?.trainer !== undefined) query.set("trainer", String(params.trainer));
+  if (params?.customer !== undefined) query.set("customer", String(params.customer));
+  if (params?.status) query.set("status", params.status);
+  const qs = query.toString();
+  return request<TrainerSession[] | { results?: TrainerSession[] }>(
+    `/trainer-sessions/${qs ? `?${qs}` : ""}`,
+    { token },
+  ).then(unwrapList);
+}
+
+/** Book a session — 409s with a machine-readable reason on conflict. */
+export function bookTrainerSession(
+  data: SessionBookingPayload,
+  token: string,
+): Promise<TrainerSession> {
+  return request<TrainerSession>("/trainer-sessions/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+function sessionAction(id: number, action: string, token: string): Promise<TrainerSession> {
+  return request<TrainerSession>(`/trainer-sessions/${id}/${action}/`, {
+    method: "POST",
+    token,
+  });
+}
+
+/** Mark completed — redeems one pack credit. */
+export function completeTrainerSession(
+  id: number,
+  token: string,
+): Promise<TrainerSession> {
+  return sessionAction(id, "complete", token);
+}
+
+/** Mark no-show — redeems one pack credit. */
+export function noShowTrainerSession(
+  id: number,
+  token: string,
+): Promise<TrainerSession> {
+  return sessionAction(id, "no-show", token);
+}
+
+/** Cancel — no redemption; restores a redeemed credit. */
+export function cancelTrainerSession(
+  id: number,
+  token: string,
+): Promise<TrainerSession> {
+  return sessionAction(id, "cancel", token);
 }
 
 /** Weekly availability rows for one trainer, Monday→Sunday ordered. */

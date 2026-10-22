@@ -26,6 +26,7 @@ import {
   Fingerprint,
   UserPlus,
   Medal,
+  CalendarClock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout, getStoredUser } from "@/lib/auth";
@@ -47,6 +48,7 @@ const NAV_ITEMS = [
   { href: "/devices", label: "Access Devices", icon: Fingerprint },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/trainers", label: "Trainers", icon: Medal },
+  { href: "/pt-sessions", label: "PT Sessions", icon: CalendarClock },
   { href: "/trainers/performance", label: "Trainer Performance", icon: TrendingUp },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/workouts", label: "Workouts", icon: Dumbbell },

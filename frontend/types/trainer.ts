@@ -120,3 +120,43 @@ export interface PtRemaining {
   can_book: boolean;
   reason: string;
 }
+
+/** Lifecycle status of a PT session (trainers-app engine). */
+export type SessionStatus = "booked" | "completed" | "cancelled" | "no_show";
+
+/** A scheduled personal-training session (/trainer-sessions/). */
+export interface TrainerSession {
+  id: number;
+  trainer: number;
+  customer: number;
+  branch: number | null;
+  /** ISO datetime — the slot start. */
+  scheduled_at: string;
+  duration_minutes: number;
+  status: SessionStatus;
+  notes: string;
+  trainer_email: string;
+  customer_name: string;
+  branch_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** POST /trainer-sessions/ — booking goes through the entitlement + overlap gates. */
+export interface SessionBookingPayload {
+  trainer: number;
+  customer: number;
+  branch?: number | null;
+  /** ISO datetime (tz-aware) — the slot start. */
+  scheduled_at: string;
+  duration_minutes?: number;
+  notes?: string;
+}
+
+/** Machine-readable booking-conflict reasons from the 409 body. */
+export const SESSION_CONFLICT_REASONS = [
+  "no_active_pt_membership",
+  "pt_membership_expired",
+  "session_pack_exhausted",
+  "trainer_slot_conflict",
+] as const;
