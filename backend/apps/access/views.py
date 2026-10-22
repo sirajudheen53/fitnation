@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -34,19 +35,31 @@ from apps.access.serializers import (
     BiometricDeviceSerializer,
     DeviceConnectionTestResultSerializer,
     DeviceEventsFetchResultSerializer,
+    DevicePullHistoryResultSerializer,
     DeviceSyncResultSerializer,
+    PunchLogRawSerializer,
 )
 from apps.access.services import (
     decide_and_log,
     enroll_credential,
     fetch_device_events,
     ingest_event,
+    queue_history_pull,
     sync_device,
 )
 from apps.customers.models import Customer
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
+
+
+def _scalar_detail(detail: object) -> str:
+    """Flatten a DRF ValidationError detail into one plain string."""
+    if isinstance(detail, dict):
+        detail = detail.get("detail", "")
+    if isinstance(detail, (list, tuple)):
+        return " ".join(str(part) for part in detail)
+    return str(detail)
 
 
 class BiometricDeviceViewSet(ModelViewSet):
@@ -84,6 +97,11 @@ class BiometricDeviceViewSet(ModelViewSet):
         "test_connection": "customers.edit_customer",
         "sync": "customers.edit_customer",
         "enroll": "customers.edit_customer",
+        # pull-history re-dumps stored punches — a device-mutating action,
+        # gated like sync/enroll, not a viewer action.
+        "pull_history": "customers.edit_customer",
+        # punch-raw is read-oriented (BioDebug POC): log viewers may list it.
+        "punch_raw": "access.view_log",
         # fetch-events is read-oriented: viewers may pull events too.
         "fetch_events": ("customers.edit_customer", "customers.view_customer"),
     }
@@ -175,6 +193,65 @@ class BiometricDeviceViewSet(ModelViewSet):
             DeviceEventsFetchResultSerializer(result).data,
             status=status.HTTP_200_OK,
         )
+
+    @action(detail=True, methods=["post"], url_path="pull-history")
+    def pull_history(self, request: Request, pk: int | None = None) -> Response:
+        """Make an ADMS device re-upload its STORED punch transactions.
+
+        Queues a ``DATA QUERY ATTLOG`` command the device receives on its
+        next ``/iclock/getrequest`` poll; stored rows come back through
+        ``/iclock/cdata?table=ATTLOG`` (raw store + pairing). Optional
+        query params ``from``/``to`` (ISO date or datetime) bound the
+        window; the default is the device's full stored history.
+        """
+        device = self.get_object()
+        try:
+            start = self._parse_window_param(request.query_params.get("from"))
+            end = self._parse_window_param(request.query_params.get("to"))
+        except ValueError:
+            return Response(
+                {"detail": "from/to must be an ISO-8601 date or datetime."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            result = queue_history_pull(device=device, start=start, end=end)
+        except ValidationError as exc:
+            return Response({"detail": _scalar_detail(exc.detail)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(DevicePullHistoryResultSerializer(result).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"], url_path="punch-raw")
+    def punch_raw(self, request: Request, pk: int | None = None) -> Response:
+        """List the device's stored raw punch rows, newest first (BioDebug).
+
+        Query param ``limit`` (default 100, capped at 500) bounds the page;
+        ATTLOG lines carry a best-effort ``pin``/``punch_at`` parse.
+        """
+        device = self.get_object()
+        raw_limit = request.query_params.get("limit")
+        limit = 100
+        if raw_limit is not None:
+            try:
+                limit = int(raw_limit)
+            except ValueError:
+                return Response(
+                    {"detail": "limit must be an integer."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        limit = max(1, min(limit, 500))
+        rows = list(device.punch_logs_raw.order_by("-received_at", "-pk")[:limit])
+        return Response(
+            {"count": len(rows), "results": PunchLogRawSerializer(rows, many=True).data},
+            status=status.HTTP_200_OK,
+        )
+
+    def _parse_window_param(self, raw: str | None) -> datetime | None:
+        """Parse an optional ISO date/datetime query param into an aware datetime."""
+        if not raw:
+            return None
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if timezone.is_naive(parsed):
+            parsed = timezone.make_aware(parsed)
+        return parsed
 
 
 class BiometricCredentialViewSet(ModelViewSet):

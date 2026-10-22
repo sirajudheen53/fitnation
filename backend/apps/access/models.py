@@ -250,6 +250,15 @@ class PunchLogRaw(TenantModelMixin):
         default=False,
         help_text="ATTLOG punch whose device_user_id is not linked to any customer.",
     )
+    ingested_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When the row was folded into the parsed state (attendance pairing). "
+            "NULL = pending; ingest skips rows that already carry a stamp so "
+            "re-dumps and replays never double-pair a punch."
+        ),
+    )
     received_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

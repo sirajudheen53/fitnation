@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import ClassVar
 
 from rest_framework import serializers
@@ -12,7 +13,9 @@ from apps.access.models import (
     BiometricCredential,
     BiometricDevice,
     CredentialType,
+    PunchLogRaw,
 )
+from apps.access.services import parse_attlog_punch
 from apps.customers.models import Customer
 
 
@@ -87,6 +90,43 @@ class DeviceEventsFetchResultSerializer(serializers.Serializer):
     fetched = serializers.BooleanField()
     recorded = serializers.IntegerField()
     detail = serializers.CharField()
+
+
+class DevicePullHistoryResultSerializer(serializers.Serializer):
+    """Output serializer for the device pull-history action."""
+
+    queued = serializers.BooleanField()
+    mechanism = serializers.CharField()
+    detail = serializers.CharField()
+    device_id = serializers.IntegerField()
+    last_seen_at = serializers.DateTimeField(allow_null=True)
+
+
+class PunchLogRawSerializer(serializers.Serializer):
+    """Raw punch row for the BioDebug viewer, with a cheap ATTLOG parse.
+
+    ``pin``/``punch_at`` are best-effort parses of ATTLOG lines (device
+    wall time, made aware); ``None`` for other tables and unparseable rows.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    table_name = serializers.CharField(read_only=True)
+    raw_line = serializers.CharField(read_only=True)
+    received_at = serializers.DateTimeField(read_only=True)
+    pin = serializers.SerializerMethodField()
+    punch_at = serializers.SerializerMethodField()
+
+    def get_pin(self, obj: PunchLogRaw) -> str | None:
+        """Device user id from an ATTLOG line, else None."""
+        if obj.table_name != "ATTLOG":
+            return None
+        return parse_attlog_punch(obj.raw_line)[0] or None
+
+    def get_punch_at(self, obj: PunchLogRaw) -> datetime | None:
+        """Aware punch timestamp from an ATTLOG line, else None."""
+        if obj.table_name != "ATTLOG":
+            return None
+        return parse_attlog_punch(obj.raw_line)[1]
 
 
 class BiometricCredentialSerializer(serializers.ModelSerializer):

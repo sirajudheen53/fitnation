@@ -18,7 +18,9 @@ from apps.access.models import (
     BiometricDevice,
     ConnectionType,
     CredentialType,
+    DeviceCommandQueue,
     PunchLogRaw,
+    Vendor,
 )
 from apps.access.selectors import get_device_allow_list
 
@@ -32,6 +34,23 @@ logger = logging.getLogger(__name__)
 
 _DEVICE_EVENT_TYPES = {"entry", "exit", "denied", "error"}
 _CREDENTIAL_TYPES = set(CredentialType.values)
+
+#: Vendors whose firmware speaks the ZKTeco ADMS push protocol — the only
+#: family that can be told to re-upload stored transactions (eSSL = rebranded ZKTeco).
+ADMS_HISTORY_VENDORS = frozenset({Vendor.ZKTECO, Vendor.ESSL})
+
+#: Server command that makes an ADMS device re-upload stored attendance.
+#: Delivered verbatim over /iclock/getrequest; the device answers by
+#: POSTing its stored rows to /iclock/cdata?table=ATTLOG (push SDK "data
+#: query" — verified against a pushver-2.4.x production reference).
+HISTORY_PULL_COMMAND = "DATA QUERY ATTLOG"
+
+#: Identifier reported in the pull-history API response.
+HISTORY_PULL_MECHANISM = "data_query_attlog"
+
+#: Default window start — far enough back to cover any device's stored log.
+#: Deliberately naive; made aware in the project timezone at use.
+HISTORY_EPOCH = datetime(2000, 1, 1, 0, 0, 0)  # noqa: DTZ001
 
 
 def create_device(
@@ -307,7 +326,7 @@ def resolve_punch_customer(*, device: BiometricDevice, device_user_id: str) -> C
     return fallback.customer if fallback else None
 
 
-def _parse_attlog_punch(raw_line: str) -> tuple[str, datetime | None]:
+def parse_attlog_punch(raw_line: str) -> tuple[str, datetime | None]:
     """Parse an ATTLOG row: ``<tab>PIN\\tYYYY-MM-DD HH:MM:SS\\t...``.
 
     The device pushes gym-local wall time (handshake ``TimeZone=5.5``),
@@ -339,27 +358,141 @@ def ingest_attlog_rows(*, device: BiometricDevice, rows: list) -> dict:
     not linked to any active credential are flagged ``is_orphan`` for the
     debug dashboard and excluded from attendance pairing.
 
+    Idempotency: each raw row is processed exactly once — rows carrying
+    an ``ingested_at`` stamp are skipped, and every processed row is
+    stamped afterwards (orphans included: the sanctioned replay for a
+    punch enrolled later is a fresh device re-dump, which arrives as new
+    raw rows). Identical punches re-sent by the device therefore fold
+    into attendance at most once per raw row; the pairing state machine
+    additionally ignores double-reads and stale/out-of-order repeats.
+
     Returns:
-        ``{"paired": int, "orphaned": int}``.
+        ``{"paired": int, "orphaned": int, "skipped": int}``.
     """
     from apps.attendance.services import pair_punch
 
     paired = 0
+    skipped = 0
     orphan_pks = []
+    done_pks = []
     for row in rows:
-        pin, punch_ts = _parse_attlog_punch(row.raw_line)
+        if row.ingested_at is not None:
+            skipped += 1
+            continue
+        pin, punch_ts = parse_attlog_punch(row.raw_line)
         if punch_ts is None:
             punch_ts = row.received_at
         customer = resolve_punch_customer(device=device, device_user_id=pin)
         if customer is None:
             if row.pk is not None:
                 orphan_pks.append(row.pk)
-            continue
-        pair_punch(tenant=device.tenant, customer=customer, branch=device.branch, punch_ts=punch_ts)
-        paired += 1
+        else:
+            pair_punch(tenant=device.tenant, customer=customer, branch=device.branch, punch_ts=punch_ts)
+            paired += 1
+        if row.pk is not None:
+            done_pks.append(row.pk)
     if orphan_pks:
         PunchLogRaw.objects.filter(pk__in=orphan_pks).update(is_orphan=True)
-    return {"paired": paired, "orphaned": len(orphan_pks)}
+    stamped = timezone.now()
+    if done_pks:
+        PunchLogRaw.objects.filter(pk__in=done_pks).update(ingested_at=stamped)
+    # Sync the caller's in-memory rows so a repeated call with the same
+    # list sees the stamps and stays a no-op.
+    orphan_set = set(orphan_pks)
+    done_set = set(done_pks)
+    for row in rows:
+        if row.pk in done_set:
+            row.ingested_at = row.ingested_at or stamped
+        if row.pk in orphan_set:
+            row.is_orphan = True
+    return {"paired": paired, "orphaned": len(orphan_pks), "skipped": skipped}
+
+
+def _device_walltime(value: datetime) -> str:
+    """Render a timestamp the way the device's wall clock reads it (IST)."""
+    return timezone.localtime(value).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def queue_history_pull(
+    *,
+    device: BiometricDevice,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> dict:
+    """Queue a stored-transaction re-upload for an ADMS device.
+
+    Mechanism (push SDK "data query", pushver 2.4.x): the command
+    ``DATA QUERY ATTLOG StartTime=<ts>\\tEndTime=<ts>`` rides the
+    existing :class:`~apps.access.models.DeviceCommandQueue` — the
+    device receives it verbatim on its next ``/iclock/getrequest`` poll,
+    acks via ``/iclock/devicecmd``, and re-uploads its stored attendance
+    as ATTLOG rows to ``/iclock/cdata?table=ATTLOG``, where they land in
+    :class:`~apps.access.models.PunchLogRaw` verbatim and flow through
+    :func:`ingest_attlog_rows` like live punches. The handshake options
+    stay untouched.
+
+    Args:
+        device: The ADMS push-mode device to pull from.
+        start: Window start (aware datetime); defaults to :data:`HISTORY_EPOCH`.
+        end: Window end (aware datetime); defaults to now.
+
+    Returns:
+        ``{"queued": True, "mechanism": ..., "detail": ..., "device_id": ...,
+        "last_seen_at": ...}`` — the API response payload.
+
+    Raises:
+        ValidationError: For devices that do not speak ADMS (non-eSSL/ZKTeco
+            vendors, or push-mode is not webhook).
+    """
+    if device.connection_type != ConnectionType.WEBHOOK or device.vendor not in ADMS_HISTORY_VENDORS:
+        raise ValidationError(
+            {
+                "detail": (
+                    f"History pull requires an ADMS push-mode eSSL/ZKTeco device; "
+                    f"'{device.name}' is vendor '{device.vendor}' via '{device.connection_type}'."
+                )
+            }
+        )
+
+    if start is None:
+        start = timezone.make_aware(HISTORY_EPOCH)
+    elif timezone.is_naive(start):
+        start = timezone.make_aware(start)
+    if end is None:
+        end = timezone.now()
+    elif timezone.is_naive(end):
+        end = timezone.make_aware(end)
+
+    pending = (
+        DeviceCommandQueue.objects.filter(device=device, command=HISTORY_PULL_COMMAND, executed_at__isnull=True)
+        .order_by("created_at", "pk")
+        .first()
+    )
+    if pending is not None:
+        detail = "A history pull is already queued and undelivered; the device will re-upload on its next poll."
+    else:
+        DeviceCommandQueue.objects.create(
+            tenant=device.tenant,
+            device=device,
+            command=HISTORY_PULL_COMMAND,
+            payload={
+                "text": f"{HISTORY_PULL_COMMAND} StartTime={_device_walltime(start)}\tEndTime={_device_walltime(end)}",
+                "mechanism": HISTORY_PULL_MECHANISM,
+                "start_time": start.isoformat(),
+                "end_time": end.isoformat(),
+            },
+        )
+        detail = (
+            f"Queued {HISTORY_PULL_COMMAND} for the next poll; stored punches arrive at "
+            "/iclock/cdata between the requested window bounds."
+        )
+    return {
+        "queued": True,
+        "mechanism": HISTORY_PULL_MECHANISM,
+        "detail": detail,
+        "device_id": device.pk,
+        "last_seen_at": device.last_seen_at,
+    }
 
 
 def fetch_device_events(*, device: BiometricDevice, since: datetime | None = None) -> dict:
