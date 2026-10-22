@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.contrib.auth.hashers import make_password
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
+from apps.access.models import BiometricDevice
 from apps.admin_ops.models import ImpersonationLog
 from apps.branches.models import Branch
 from apps.customers.models import Customer
+from apps.memberships.models import Membership, MembershipPlan
+from apps.payments.models import Payment
 from apps.tenants.models import Tenant
 from apps.tenants.services import provision_tenant
 from apps.users.auth import AuthToken
@@ -825,3 +829,237 @@ class ArchiveGymTests(APITestCase):
         assert response.status_code == 403
         self.tenant.refresh_from_db()
         assert self.tenant.status == Tenant.Status.ACTIVE
+
+
+class PlatformStatsTests(APITestCase):
+    """Platform-wide stats endpoint (issue #47) — superuser only."""
+
+    stats_url = "/api/v1/admin/stats/"
+
+    def setUp(self) -> None:
+        """Create the platform admin and its token."""
+        self.admin = User.objects.create_superuser(email="root@fbos.test", password="pw123456!")
+        self.admin_token = issue_token(self.admin, None)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+        self.today = timezone.localdate()
+
+    def _aware_day_start(self, day: datetime.date) -> datetime.datetime:
+        """Timezone-aware midnight of a date (test-local tz)."""
+        return timezone.make_aware(datetime.combine(day, datetime.min.time()))
+
+    def _owner(self, tenant: Tenant, email: str) -> User:
+        """Create an owner user for a tenant."""
+        return create_owner_user(
+            tenant=tenant,
+            email=email,
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="O",
+        )
+
+    def _member(self, tenant: Tenant, branch: Branch, email: str) -> Customer:
+        """Create a customer (user + profile) for a tenant."""
+        user = User.objects.create_user(
+            email=email,
+            password="pw123456!",
+            first_name="C",
+            last_name="X",
+            role=User.Role.CUSTOMER,
+            tenant=tenant,
+        )
+        return Customer.objects.create(tenant=tenant, branch=branch, user=user, name=email, email=email)
+
+    def test_unauthenticated_unauthorized(self) -> None:
+        """No credentials → 401."""
+        self.client.credentials()
+        assert self.client.get(self.stats_url).status_code == 401
+
+    def test_gym_owner_forbidden(self) -> None:
+        """A gym owner cannot read platform stats."""
+        tenant = provision_tenant(name="Stats Gym", contact_email="owner@stats.test")
+        token = issue_token(self._owner(tenant, "owner@stats.test"), tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        assert self.client.get(self.stats_url).status_code == 403
+
+    def test_empty_platform_shape(self) -> None:
+        """An empty platform renders zeroed cards and 6 months of zero points."""
+        response = self.client.get(self.stats_url)
+        assert response.status_code == 200
+        data = response.data
+        assert data["gyms"]["total"] == 0
+        assert data["gyms"]["active"] == 0
+        assert data["gyms"]["suspended"] == 0
+        assert data["members"]["total"] == 0
+        assert data["users"]["total"] == 1  # the platform admin itself
+        assert data["users"]["platform_admins"] == 1
+        assert data["memberships"] == {"total": 0, "active": 0, "expired": 0, "cancelled": 0}
+        assert data["devices"] == {"total": 0, "active": 0}
+        assert data["revenue"]["data_available"] is False
+        assert data["revenue"]["total_collected"] == "0.00"
+        assert len(data["gyms"]["by_month"]) == 6
+        assert all(point["count"] == 0 for point in data["gyms"]["by_month"])
+        assert len(data["growth"]["new_members_by_month"]) == 6
+        assert data["window_months"] == 6
+
+    def test_gym_counts_and_monthly_growth(self) -> None:
+        """Gym totals respect lifecycle status; growth buckets by created month."""
+        active = provision_tenant(name="Active Gym", contact_email="a@stats.test")
+        active_tenant = provision_tenant(name="Second Gym", contact_email="d@stats.test")
+        suspended = provision_tenant(name="Suspended Gym", contact_email="b@stats.test")
+        provision_tenant(name="Old Gym", contact_email="c@stats.test")
+        for tenant, status in (
+            (active, Tenant.Status.ACTIVE),
+            (active_tenant, Tenant.Status.ACTIVE),
+            (suspended, Tenant.Status.SUSPENDED),
+        ):
+            tenant.status = status
+            tenant.save(update_fields=["status"])
+        # Backdate one gym into the previous month (auto_now_add bypassed).
+        previous_month = self.today - timedelta(days=40)
+        Tenant.objects.filter(pk=active.pk).update(created_at=self._aware_day_start(previous_month))
+
+        response = self.client.get(self.stats_url)
+        assert response.status_code == 200
+        gyms = response.data["gyms"]
+        assert gyms["total"] == 4
+        assert gyms["active"] == 2
+        assert gyms["suspended"] == 1
+        assert gyms["new_this_month"] == 3
+        by_month = {point["month"]: point["count"] for point in gyms["by_month"]}
+        assert by_month[f"{previous_month.year:04d}-{previous_month.month:02d}"] == 1
+        current_month_key = f"{self.today.year:04d}-{self.today.month:02d}"
+        assert by_month[current_month_key] == 3
+        assert response.data["growth"]["new_gyms_by_month"] == gyms["by_month"]
+
+    def test_members_users_devices_memberships_summary(self) -> None:
+        """Member/user/device totals and the membership lifecycle split."""
+        tenant = provision_tenant(name="Cockpit Gym", contact_email="owner@cockpit.test")
+        branch = Branch.objects.create(tenant=tenant, name="Main", branch_type="gym")
+        self._member(tenant, branch, "c1@cockpit.test")
+        self._member(tenant, branch, "c2@cockpit.test")
+        self._owner(tenant, "owner@cockpit.test")
+
+        plan = MembershipPlan.objects.create(
+            tenant=tenant,
+            name="Monthly",
+            price=Decimal("1999.00"),
+            duration_days=30,
+        )
+        member_user = User.objects.get(email="c1@cockpit.test")
+        Membership.objects.create(
+            tenant=tenant,
+            customer=member_user.customer_profile,
+            plan=plan,
+            start_date=self.today - timedelta(days=10),
+            end_date=self.today + timedelta(days=20),  # active
+        )
+        expired_member = self._member(tenant, branch, "c3@cockpit.test")
+        Membership.objects.create(
+            tenant=tenant,
+            customer=expired_member,
+            plan=plan,
+            start_date=self.today - timedelta(days=60),
+            end_date=self.today - timedelta(days=30),  # auto-expired on save
+        )
+
+        BiometricDevice.objects.create(
+            tenant=tenant,
+            branch=branch,
+            vendor="zkteco",
+            model="SpeedFace",
+            serial_number="SN-001",
+            name="Main Entrance",
+            connection_type="webhook",
+            is_active=True,
+        )
+        BiometricDevice.objects.create(
+            tenant=tenant,
+            branch=branch,
+            vendor="essl",
+            model="e9c",
+            serial_number="SN-002",
+            name="Back Door",
+            connection_type="agent",
+            is_active=False,
+        )
+
+        response = self.client.get(self.stats_url)
+        assert response.status_code == 200
+        data = response.data
+        assert data["members"]["total"] == 3
+        assert data["members"]["new_this_month"] == 3
+        assert data["users"]["total"] == 5  # admin + owner + 3 members
+        assert data["users"]["customers"] == 3
+        assert data["users"]["staff"] == 1
+        assert data["users"]["platform_admins"] == 1
+        assert data["memberships"] == {"total": 2, "active": 1, "expired": 1, "cancelled": 0}
+        assert data["devices"] == {"total": 2, "active": 1}
+
+    def test_revenue_summary_and_series(self) -> None:
+        """Completed/pending/failed payments roll up into the revenue block."""
+        today = self.today
+        tenant = provision_tenant(name="Payroll Gym", contact_email="owner@payroll.test")
+        branch = Branch.objects.create(tenant=tenant, name="Main", branch_type="gym")
+        member = self._member(tenant, branch, "c1@payroll.test")
+        member2 = self._member(tenant, branch, "c2@payroll.test")
+
+        Payment.objects.create(
+            tenant=tenant,
+            customer=member,
+            amount=Decimal("1500.00"),
+            payment_method=Payment.PaymentMethod.CASH,
+            status=Payment.Status.COMPLETED,
+            paid_at=self._aware_day_start(today),  # completed this month
+        )
+        Payment.objects.create(  # completed last month
+            tenant=tenant,
+            customer=member,
+            amount=Decimal("500.00"),
+            payment_method=Payment.PaymentMethod.CASH,
+            status=Payment.Status.COMPLETED,
+            paid_at=self._aware_day_start(today - timedelta(days=40)),  # completed last month
+        )
+        Payment.objects.create(
+            tenant=tenant,
+            customer=member2,
+            amount=Decimal("250.00"),
+            payment_method=Payment.PaymentMethod.UPI,
+            status=Payment.Status.PENDING,
+        )
+        Payment.objects.create(
+            tenant=tenant,
+            customer=member2,
+            amount=Decimal("99.00"),
+            payment_method=Payment.PaymentMethod.CARD,
+            status=Payment.Status.FAILED,
+        )
+
+        response = self.client.get(self.stats_url)
+        assert response.status_code == 200
+        revenue = response.data["revenue"]
+        assert revenue["data_available"] is True
+        assert revenue["total_collected"] == "2000.00"
+        assert revenue["collected_this_month"] == "1500.00"
+        assert revenue["pending_amount"] == "250.00"
+        assert revenue["failed_count"] == 1
+        by_month = {point["month"]: point["total"] for point in revenue["by_month"]}
+        assert by_month[f"{today.year:04d}-{today.month:02d}"] == "1500.00"
+        previous_month = today - timedelta(days=40)
+        assert by_month[f"{previous_month.year:04d}-{previous_month.month:02d}"] == "500.00"
+        assert len(revenue["by_month"]) == 6
+
+    def test_revenue_bundles_members_and_admission_kinds(self) -> None:
+        """Membership-kind payments carry no special casing in the totals."""
+        today = self.today
+        tenant = provision_tenant(name="Kinds Gym", contact_email="owner@kinds.test")
+        branch = Branch.objects.create(tenant=tenant, name="Main", branch_type="gym")
+        member = self._member(tenant, branch, "c1@kinds.test")
+        Payment.objects.create(
+            tenant=tenant,
+            customer=member,
+            amount=Decimal("100.00"),
+            payment_method=Payment.PaymentMethod.CASH,
+            status=Payment.Status.COMPLETED,
+            kind=Payment.Kind.ADMISSION,
+            paid_at=timezone.make_aware(datetime.combine(today, datetime.min.time())),
+        )
+        assert self.client.get(self.stats_url).data["revenue"]["total_collected"] == "100.00"

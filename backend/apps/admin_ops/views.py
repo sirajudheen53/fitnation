@@ -8,16 +8,19 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 
 from apps.admin_ops.selectors import list_tenants
 from apps.admin_ops.serializers import (
     AdminOnboardGymSerializer,
+    PlatformStatsSerializer,
     SubscriptionPlanAdminSerializer,
     TenantAdminSerializer,
     TenantAdminUpdateSerializer,
 )
 from apps.admin_ops.services import impersonate_owner, onboard_gym, rotate_owner_credentials
+from apps.admin_ops.stats import platform_stats
 from apps.permissions.permissions import IsPlatformAdmin
 from apps.tenants.models import Tenant
 from apps.users.authentication import TenantTokenAuthentication
@@ -137,6 +140,30 @@ class AdminTenantViewSet(ReadOnlyModelViewSet):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class AdminStatsView(APIView):
+    """Platform-wide stats for the admin cockpit (issue #47) — superuser only.
+
+    ``GET /api/v1/admin/stats/`` returns the full composite document
+    (``PlatformStatsSerializer`` is the documented contract): gym totals,
+    member/user/device counts, a membership summary, collected-revenue
+    summary + 6-month series, and new-gym/new-member growth series.
+    """
+
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsPlatformAdmin]
+
+    def get(self, request: Any) -> Response:
+        """Compute and serialize the platform-wide stats payload.
+
+        Args:
+            request: The incoming DRF request (superuser only).
+
+        Returns:
+            The document rendered by ``PlatformStatsSerializer``.
+        """
+        return Response(PlatformStatsSerializer(platform_stats()).data)
 
 
 class AdminPlanViewSet(ModelViewSet):
