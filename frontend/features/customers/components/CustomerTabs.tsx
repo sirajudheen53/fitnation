@@ -8,6 +8,7 @@ import {
   Camera,
   CreditCard,
   Fingerprint,
+  ScanFace,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,7 +20,8 @@ export type CustomerTabKey =
   | "health"
   | "photos"
   | "payments"
-  | "access";
+  | "access"
+  | "biometric";
 
 interface TabDefinition {
   key: CustomerTabKey;
@@ -35,6 +37,7 @@ const TABS: TabDefinition[] = [
   { key: "photos", label: "Progress Photos", icon: Camera },
   { key: "payments", label: "Payment History", icon: CreditCard },
   { key: "access", label: "Access Control", icon: Fingerprint },
+  { key: "biometric", label: "Biometric", icon: ScanFace },
 ];
 
 interface CustomerTabsProps {

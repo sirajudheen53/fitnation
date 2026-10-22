@@ -12,6 +12,7 @@ import { HealthProfileTab } from "@/features/customers/components/HealthProfileT
 import { ProgressPhotosTab } from "@/features/customers/components/ProgressPhotosTab";
 import { PaymentHistoryTab } from "@/features/customers/components/PaymentHistoryTab";
 import { AccessControlTab } from "@/features/access/components/AccessControlTab";
+import { BiometricTab } from "@/features/access/components/BiometricTab";
 import { AppAccessCard } from "@/features/customers/components/AppAccessCard";
 import { Spinner, Alert, Button, Badge } from "@/components/ui";
 import { getToken } from "@/lib/auth";
@@ -479,6 +480,7 @@ export default function CustomerDetailPage() {
               />
             )}
             {activeTab === "access" && <AccessControlTab customer={customer} />}
+            {activeTab === "biometric" && <BiometricTab customer={customer} />}
           </div>
         </div>
       )}
