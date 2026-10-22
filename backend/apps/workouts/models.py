@@ -4,6 +4,8 @@ Tenant-scoped workout plans composed of days and exercises, customer
 assignments, and per-session workout logs for progress tracking.
 """
 
+from typing import ClassVar
+
 from django.db import models
 from django.utils import timezone
 
@@ -60,7 +62,7 @@ class WorkoutPlan(TenantModelMixin):
         """WorkoutPlan model metadata."""
 
         db_table = "workout_plans"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return a human-readable workout plan label."""
@@ -107,7 +109,7 @@ class WorkoutDay(TenantModelMixin):
         """WorkoutDay model metadata."""
 
         db_table = "workout_days"
-        ordering = ["workout_plan", "day_number", "day_of_week"]
+        ordering: ClassVar[list[str]] = ["workout_plan", "day_number", "day_of_week"]
 
     def __str__(self) -> str:
         """Return a human-readable workout day label."""
@@ -161,7 +163,7 @@ class WorkoutExercise(TenantModelMixin):
         """WorkoutExercise model metadata."""
 
         db_table = "workout_exercises"
-        ordering = ["workout_day", "order", "id"]
+        ordering: ClassVar[list[str]] = ["workout_day", "order", "id"]
 
     def __str__(self) -> str:
         """Return a human-readable workout exercise label."""
@@ -210,7 +212,7 @@ class WorkoutAssignment(TenantModelMixin):
         """WorkoutAssignment model metadata."""
 
         db_table = "workout_assignments"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return a human-readable assignment label."""
@@ -247,7 +249,7 @@ class WorkoutLog(TenantModelMixin):
         """WorkoutLog model metadata."""
 
         db_table = "workout_logs"
-        ordering = ["-date_completed", "set_number"]
+        ordering: ClassVar[list[str]] = ["-date_completed", "set_number"]
 
     def __str__(self) -> str:
         """Return a human-readable workout log label."""

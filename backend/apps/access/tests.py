@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import StringIO
+from typing import ClassVar
 from unittest import mock
 
 from django.core.management import call_command
@@ -58,9 +59,9 @@ def _mock_response(status_code: int = 200, json_data: dict | list | None = None)
 class RecordingAdapter(BiometricAdapter):
     """In-memory fake adapter that records calls on the class."""
 
-    calls: list = []
+    calls: ClassVar[list] = []
     error: Exception | None = None
-    events: list = []
+    events: ClassVar[list] = []
 
     @classmethod
     def reset(cls) -> None:

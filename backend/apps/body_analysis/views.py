@@ -1,5 +1,7 @@
 """AI body analysis API views."""
 
+from typing import ClassVar
+
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -25,8 +27,8 @@ from apps.users.authentication import TenantTokenAuthentication
 class BodyAnalysisViewSet(ModelViewSet):
     """Tenant-scoped CRUD for body analysis sessions."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "body_analysis.view_bodyanalysis"
     serializer_class = BodyAnalysisSerializer
     lookup_field = "pk"
@@ -74,8 +76,8 @@ class BodyAnalysisViewSet(ModelViewSet):
 class BodyPhotoUploadViewSet(GenericViewSet):
     """Handle multipart body-photo uploads."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "body_analysis.create_bodyphoto"
     serializer_class = BodyPhotoUploadSerializer
     queryset = BodyPhoto.objects.none()
@@ -108,8 +110,8 @@ class BodyPhotoUploadViewSet(GenericViewSet):
 class BodyProgressLogViewSet(ModelViewSet):
     """Tenant-scoped CRUD for body progress logs."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "body_analysis.view_bodyprogresslog"
     serializer_class = BodyProgressLogSerializer
 

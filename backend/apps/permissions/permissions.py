@@ -1,6 +1,6 @@
 """DRF permission classes for role-based access control."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from rest_framework.permissions import BasePermission, IsAuthenticated
 
@@ -29,7 +29,7 @@ class RolePermission(BasePermission):
     Platform admins and gym owners are granted all tenant-scoped permissions.
     """
 
-    ROLE_PERMISSION_MATRIX: dict[str, set[str] | str] = {
+    ROLE_PERMISSION_MATRIX: ClassVar[dict[str, set[str] | str]] = {
         "platform_admin": "*",
         "gym_owner": "*",
         "manager": {
@@ -127,7 +127,7 @@ class RolePermission(BasePermission):
         },
     }
 
-    METHOD_PERMISSIONS: dict[str, str] = {}
+    METHOD_PERMISSIONS: ClassVar[dict[str, str]] = {}
 
     def has_permission(self, request: Any, view: Any) -> bool:
         """Evaluate whether the user's role grants the required permission.
@@ -212,8 +212,8 @@ class RolePermissionMixin:
     """
 
     required_permission: str | None = None
-    authentication_classes = ["apps.users.authentication.TenantTokenAuthentication"]
-    permission_classes = [
+    authentication_classes: ClassVar[list[str]] = ["apps.users.authentication.TenantTokenAuthentication"]
+    permission_classes: ClassVar[list] = [
         IsAuthenticated,
         "apps.tenants.permissions.IsTenantMember",
         RolePermission,

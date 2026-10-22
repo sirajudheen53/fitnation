@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.tenants.models import Tenant
@@ -18,7 +20,7 @@ class TenantAdminSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Tenant
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "name",
             "subscription_plan",
@@ -58,14 +60,14 @@ class TenantAdminUpdateSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Tenant
-        fields = [
+        fields: ClassVar[list[str]] = [
             "name",
             "contact_email",
             "contact_phone",
             "subscription_plan",
             "status",
         ]
-        extra_kwargs = {
+        extra_kwargs: ClassVar[dict] = {
             "subscription_plan": {"choices": SubscriptionPlan.PlanCode.choices},
             "status": {"choices": ["active", "suspended"]},
         }
@@ -82,7 +84,7 @@ class SubscriptionPlanAdminSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = SubscriptionPlan
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "code",
             "name",
@@ -97,4 +99,4 @@ class SubscriptionPlanAdminSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]

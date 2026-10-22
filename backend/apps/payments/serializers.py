@@ -170,4 +170,4 @@ class RazorpayConfigSerializer(serializers.ModelSerializer):
 
         model = RazorpayConfig
         fields: ClassVar[list] = ["id", "api_key", "is_active"]
-        extra_kwargs = {"api_key": {"write_only": True}}
+        extra_kwargs: ClassVar[dict] = {"api_key": {"write_only": True}}

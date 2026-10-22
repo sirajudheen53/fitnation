@@ -1,5 +1,7 @@
 """Attendance serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.attendance.models import (
@@ -28,7 +30,7 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = AttendanceRecord
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "person_id",
@@ -45,7 +47,7 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "date", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "date", "created_at", "updated_at"]
 
     def get_person_type(self, obj: AttendanceRecord) -> str:
         """Return the attendance person type."""
@@ -70,7 +72,7 @@ class TrainerAttendanceSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = TrainerAttendance
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "trainer",
             "person_id",
@@ -86,7 +88,7 @@ class TrainerAttendanceSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "date", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "date", "created_at", "updated_at"]
 
     def get_person_name(self, obj: TrainerAttendance) -> str:
         """Return the trainer's display name from the linked user."""
@@ -132,7 +134,7 @@ class StaffAttendanceSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = StaffAttendance
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "user",
             "person_id",
@@ -149,7 +151,7 @@ class StaffAttendanceSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "date", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "date", "created_at", "updated_at"]
 
     def get_person_name(self, obj: StaffAttendance) -> str:
         """Return the staff member's display name from the linked user."""

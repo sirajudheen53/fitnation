@@ -5,6 +5,8 @@ diet days, meals and customer assignments. Nutrition is auto-calculated from
 the underlying food item and the serving quantity multiplier.
 """
 
+from typing import ClassVar
+
 from django.db import models
 from django.utils import timezone
 
@@ -73,8 +75,8 @@ class FoodItem(models.Model):
         """FoodItem model metadata."""
 
         db_table = "diet_food_items"
-        ordering = ["name"]
-        indexes = [
+        ordering: ClassVar[list[str]] = ["name"]
+        indexes: ClassVar[list] = [
             models.Index(fields=["food_group"]),
             models.Index(fields=["is_veg"]),
         ]
@@ -126,7 +128,7 @@ class DietPlan(TenantModelMixin):
         """DietPlan model metadata."""
 
         db_table = "diet_plans"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return a human-readable diet plan label."""
@@ -152,8 +154,8 @@ class DietDay(TenantModelMixin):
         """DietDay model metadata."""
 
         db_table = "diet_days"
-        ordering = ["diet_plan", "day_number"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["diet_plan", "day_number"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["diet_plan", "day_number"],
                 name="uq_diet_day_plan_number",
@@ -235,7 +237,7 @@ class DietMeal(TenantModelMixin):
         """DietMeal model metadata."""
 
         db_table = "diet_meals"
-        ordering = ["diet_day", "meal_type", "id"]
+        ordering: ClassVar[list[str]] = ["diet_day", "meal_type", "id"]
 
     def __str__(self) -> str:
         """Return a human-readable diet meal label."""
@@ -321,7 +323,7 @@ class DietAssignment(TenantModelMixin):
         """DietAssignment model metadata."""
 
         db_table = "diet_assignments"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return a human-readable assignment label."""

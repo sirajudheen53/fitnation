@@ -1,6 +1,7 @@
 """Equipment & inventory models, tenant-scoped."""
 
 import uuid as uuid_lib
+from typing import ClassVar
 
 from django.db import models
 from django.utils import timezone
@@ -28,8 +29,8 @@ class Equipment(TenantModelMixin):
         """Equipment model metadata."""
 
         db_table = "equipment"
-        ordering = ["name"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["name"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(fields=["tenant", "uuid"], name="uq_equipment_tenant_uuid"),
         ]
 
@@ -51,8 +52,8 @@ class InventoryItem(TenantModelMixin):
         """InventoryItem model metadata."""
 
         db_table = "inventory_items"
-        ordering = ["id"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["id"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(fields=["tenant", "equipment"], name="uq_inventory_tenant_equipment"),
         ]
 
@@ -90,7 +91,7 @@ class MaintenanceLog(TenantModelMixin):
         """MaintenanceLog model metadata."""
 
         db_table = "maintenance_logs"
-        ordering = ["-performed_at"]
+        ordering: ClassVar[list[str]] = ["-performed_at"]
 
     def __str__(self) -> str:
         return f"{self.equipment.name} – {self.status}"

@@ -6,6 +6,8 @@ Endpoints:
 - ``POST /reviews/{id}/respond/`` — staff respond to a review.
 """
 
+from typing import ClassVar
+
 from django.db.models import Avg, Count
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -34,10 +36,10 @@ class ReviewViewSet(viewsets.ModelViewSet):
     all reviews for the tenant and post responses.
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "reviews.view_review"
-    http_method_names = ["get", "post", "head", "options"]
+    http_method_names: ClassVar[list[str]] = ["get", "post", "head", "options"]
 
     def get_permissions(self):
         """Set the action-appropriate required permission before access is evaluated."""

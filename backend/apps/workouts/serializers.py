@@ -1,5 +1,7 @@
 """Workout Builder serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.exercises.models import Exercise
@@ -33,7 +35,7 @@ class WorkoutExerciseSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = WorkoutExercise
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "workout_day",
             "exercise",
@@ -49,8 +51,8 @@ class WorkoutExerciseSerializer(serializers.ModelSerializer):
             "alternate_exercise",
             "alternate_exercise_name",
         ]
-        read_only_fields = ["id", "exercise_name", "exercise_details", "alternate_exercise_name"]
-        extra_kwargs = {"workout_day": {"required": False}}
+        read_only_fields: ClassVar[list[str]] = ["id", "exercise_name", "exercise_details", "alternate_exercise_name"]
+        extra_kwargs: ClassVar[dict] = {"workout_day": {"required": False}}
 
     def validate_exercise(self, value: Exercise) -> Exercise:
         """Ensure the exercise belongs to the request tenant."""
@@ -96,7 +98,7 @@ class WorkoutExerciseNestedSerializer(WorkoutExerciseSerializer):
     """WorkoutExercise serializer used for nested (read) representation."""
 
     class Meta(WorkoutExerciseSerializer.Meta):
-        extra_kwargs = {
+        extra_kwargs: ClassVar[dict] = {
             "exercise": {"required": True},
             "workout_day": {"required": False},
         }
@@ -111,7 +113,7 @@ class WorkoutDaySerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = WorkoutDay
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "workout_plan",
             "day_of_week",
@@ -120,7 +122,7 @@ class WorkoutDaySerializer(serializers.ModelSerializer):
             "notes",
             "exercises",
         ]
-        read_only_fields = ["id", "workout_plan"]
+        read_only_fields: ClassVar[list[str]] = ["id", "workout_plan"]
 
     def create(self, validated_data: dict) -> WorkoutDay:
         """Create a day and its nested exercises."""
@@ -167,7 +169,7 @@ class WorkoutDayWriteSerializer(WorkoutDaySerializer):
     )
 
     class Meta(WorkoutDaySerializer.Meta):
-        read_only_fields = ["id"]
+        read_only_fields: ClassVar[list[str]] = ["id"]
 
 
 class WorkoutPlanSerializer(serializers.ModelSerializer):
@@ -183,7 +185,7 @@ class WorkoutPlanSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = WorkoutPlan
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "name",
             "description",
@@ -197,7 +199,7 @@ class WorkoutPlanSerializer(serializers.ModelSerializer):
             "updated_at",
             "days",
         ]
-        read_only_fields = ["id", "created_by", "created_by_name", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_by", "created_by_name", "created_at", "updated_at"]
 
     def create(self, validated_data: dict) -> WorkoutPlan:
         """Create a workout plan with nested days and exercises in one request."""
@@ -265,7 +267,7 @@ class WorkoutAssignmentSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = WorkoutAssignment
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "workout_plan",
@@ -279,7 +281,7 @@ class WorkoutAssignmentSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "assigned_by", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "assigned_by", "created_at", "updated_at"]
 
     def validate_customer(self, value) -> object:
         """Ensure the customer belongs to the request tenant."""
@@ -318,7 +320,7 @@ class WorkoutLogSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = WorkoutLog
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "workout_exercise",
@@ -333,7 +335,7 @@ class WorkoutLogSerializer(serializers.ModelSerializer):
             "notes",
             "created_at",
         ]
-        read_only_fields = ["id", "exercise_name", "customer_name", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "exercise_name", "customer_name", "created_at"]
 
     def validate_customer(self, value) -> object:
         """Ensure the customer belongs to the request tenant."""

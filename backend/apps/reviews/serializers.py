@@ -1,5 +1,7 @@
 """Serializers for the reviews app (FBOS-034)."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.customers.serializers import CustomerSerializer
@@ -15,7 +17,7 @@ class ReviewResponseSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = ReviewResponse
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "review",
             "text",
@@ -24,7 +26,7 @@ class ReviewResponseSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
+        read_only_fields: ClassVar[list[str]] = [
             "id",
             "review",
             "author",
@@ -50,7 +52,7 @@ class ReviewSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Review
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "customer_detail",
@@ -61,7 +63,7 @@ class ReviewSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
+        read_only_fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "customer_detail",
@@ -84,7 +86,7 @@ class ReviewWriteSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Review
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "branch",
@@ -93,8 +95,8 @@ class ReviewWriteSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "customer", "created_at", "updated_at"]
-        extra_kwargs = {"customer": {"required": False}}
+        read_only_fields: ClassVar[list[str]] = ["id", "customer", "created_at", "updated_at"]
+        extra_kwargs: ClassVar[dict] = {"customer": {"required": False}}
 
     def validate_rating(self, value: int) -> int:
         """Enforce a 1-5 rating range."""

@@ -5,7 +5,7 @@ analysis. All models are tenant-scoped via ``TenantModelMixin``.
 """
 
 import uuid
-from typing import Any
+from typing import Any, ClassVar
 
 from django.db import models
 from django.utils import timezone
@@ -64,8 +64,8 @@ class BodyAnalysis(TenantModelMixin):
         """BodyAnalysis model metadata."""
 
         db_table = "body_analyses"
-        ordering = ["-analysis_date", "-created_at"]
-        indexes = [
+        ordering: ClassVar[list[str]] = ["-analysis_date", "-created_at"]
+        indexes: ClassVar[list] = [
             models.Index(
                 fields=["tenant", "user", "analysis_date"],
                 name="idx_body_analysis_user_date",
@@ -119,7 +119,7 @@ class BodyPhoto(TenantModelMixin):
         """BodyPhoto model metadata."""
 
         db_table = "body_photos"
-        ordering = ["-uploaded_at", "-id"]
+        ordering: ClassVar[list[str]] = ["-uploaded_at", "-id"]
 
     def __str__(self) -> str:
         """Return photo label."""
@@ -160,8 +160,8 @@ class BodyProgressLog(TenantModelMixin):
         """BodyProgressLog model metadata."""
 
         db_table = "body_progress_logs"
-        ordering = ["-date", "-created_at"]
-        indexes = [
+        ordering: ClassVar[list[str]] = ["-date", "-created_at"]
+        indexes: ClassVar[list] = [
             models.Index(
                 fields=["tenant", "user", "date"],
                 name="idx_body_progress_user_date",

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -52,14 +52,14 @@ from apps.users.authentication import TenantTokenAuthentication
 class BiometricDeviceViewSet(ModelViewSet):
     """Tenant-scoped biometric device registry."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "access.view_device"
     serializer_class = BiometricDeviceSerializer
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ["name", "serial_number", "model"]
-    ordering_fields = ["name", "created_at", "last_seen_at"]
-    ordering = ["-created_at"]
+    filter_backends: ClassVar[list] = [SearchFilter, OrderingFilter]
+    search_fields: ClassVar[list[str]] = ["name", "serial_number", "model"]
+    ordering_fields: ClassVar[list[str]] = ["name", "created_at", "last_seen_at"]
+    ordering: ClassVar[list[str]] = ["-created_at"]
 
     def get_queryset(self) -> Any:
         """Return devices scoped to the request tenant."""
@@ -80,7 +80,7 @@ class BiometricDeviceViewSet(ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    ACTION_PERMISSIONS = {
+    ACTION_PERMISSIONS: ClassVar[dict] = {
         "test_connection": "customers.edit_customer",
         "sync": "customers.edit_customer",
         "enroll": "customers.edit_customer",
@@ -180,14 +180,14 @@ class BiometricDeviceViewSet(ModelViewSet):
 class BiometricCredentialViewSet(ModelViewSet):
     """Tenant-scoped credential enrollment."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "access.view_credential"
     serializer_class = BiometricCredentialSerializer
-    filter_backends = [SearchFilter, OrderingFilter]
-    ordering = ["-enrolled_at"]
+    filter_backends: ClassVar[list] = [SearchFilter, OrderingFilter]
+    ordering: ClassVar[list[str]] = ["-enrolled_at"]
 
-    ACTION_PERMISSIONS = {
+    ACTION_PERMISSIONS: ClassVar[dict] = {
         # Front-desk lifecycle action, same gate as enrollment.
         "deactivate": "customers.edit_customer",
     }
@@ -233,12 +233,12 @@ class BiometricCredentialViewSet(ModelViewSet):
 class AccessOverrideViewSet(ModelViewSet):
     """Owner access override management."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "access.view_override"
     serializer_class = AccessOverrideSerializer
-    filter_backends = [OrderingFilter]
-    ordering = ["-created_at"]
+    filter_backends: ClassVar[list] = [OrderingFilter]
+    ordering: ClassVar[list[str]] = ["-created_at"]
 
     def get_queryset(self) -> Any:
         """Return overrides scoped to the request tenant."""
@@ -269,12 +269,12 @@ class AccessOverrideViewSet(ModelViewSet):
 class AccessLogViewSet(ReadOnlyModelViewSet):
     """Read-only access event log viewer."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "access.view_log"
     serializer_class = AccessLogSerializer
-    filter_backends = [OrderingFilter]
-    ordering = ["-event_timestamp"]
+    filter_backends: ClassVar[list] = [OrderingFilter]
+    ordering: ClassVar[list[str]] = ["-event_timestamp"]
 
     def get_queryset(self) -> Any:
         """Return logs scoped to the request tenant."""
@@ -323,8 +323,8 @@ class AccessCheckView(APIView):
     row so gyms can audit why a member was granted or denied entry (#19).
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember]
 
     def get(self, request: Request) -> Response:
         """Evaluate and log the access decision for a customer + device."""
@@ -354,8 +354,8 @@ class AccessEventIngestView(APIView):
     (idempotent), and auto-creates an attendance check-in on entry.
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember]
 
     def post(self, request: Request) -> Response:
         """Ingest one access event."""

@@ -1,5 +1,7 @@
 """Body analysis serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.body_analysis.models import BodyAnalysis, BodyPhoto, BodyProgressLog
@@ -17,7 +19,7 @@ class BodyAnalysisSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = BodyAnalysis
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "user",
@@ -34,7 +36,7 @@ class BodyAnalysisSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "uuid", "bmi", "photo_count", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "uuid", "bmi", "photo_count", "created_at", "updated_at"]
 
 
 class BodyPhotoSerializer(serializers.ModelSerializer):
@@ -42,7 +44,7 @@ class BodyPhotoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BodyPhoto
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "analysis",
             "photo_type",
@@ -51,7 +53,7 @@ class BodyPhotoSerializer(serializers.ModelSerializer):
             "is_processed",
             "analysis_result",
         ]
-        read_only_fields = ["id", "uploaded_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "uploaded_at"]
 
 
 class BodyPhotoUploadSerializer(serializers.Serializer):
@@ -70,7 +72,7 @@ class BodyProgressLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = BodyProgressLog
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "user",
             "date",
@@ -80,7 +82,7 @@ class BodyProgressLogSerializer(serializers.ModelSerializer):
             "notes",
             "created_at",
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at"]
 
 
 class BodyProgressTrendSerializer(serializers.Serializer):

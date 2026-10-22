@@ -1,6 +1,7 @@
 """User and authentication API views."""
 
 import logging
+from typing import ClassVar
 
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework import status
@@ -79,8 +80,8 @@ logger = logging.getLogger(__name__)
 class LoginView(APIView):
     """Authenticate an email/password pair and issue an auth token."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def post(self, request: Request) -> Response:
         """Handle login."""
@@ -124,8 +125,8 @@ class LoginView(APIView):
 class LogoutView(APIView):
     """Deactivate the current auth token."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated]
 
     def post(self, request: Request) -> Response:
         """Handle logout."""
@@ -164,8 +165,8 @@ class DeleteAccountView(APIView):
     * Multi-tenant — only rows within ``request.tenant`` are touched.
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember]
 
     def post(self, request: Request) -> Response:
         """Anonymise + deactivate the caller's account, then end the response."""
@@ -181,8 +182,8 @@ class DeleteAccountView(APIView):
 class MeView(APIView):
     """Return the current authenticated user profile."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember]
 
     def get(self, request: Request) -> Response:
         """Return current user data with effective permissions + entitlement.
@@ -209,8 +210,8 @@ class EntitlementView(APIView):
     gated-out member must still be able to see WHY they're gated.
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember]
 
     def get(self, request: Request) -> Response:
         """Return the entitlement object (status ``none`` for staff rows)."""
@@ -233,8 +234,8 @@ def _client_ip(request: Request) -> str | None:
 class OTPRequestView(APIView):
     """Request a real OTP (gym anchors + real delivery chain, FBOS-011 §4)."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def post(self, request: Request) -> Response:
         """Resolve the gym anchor, then issue + deliver a hashed 6-digit OTP.
@@ -280,8 +281,8 @@ class OTPRequestView(APIView):
 class OTPVerifyView(APIView):
     """Verify the real OTP and return an auth token (anchors + entitlement)."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def post(self, request: Request) -> Response:
         """Validate the code, converge the identity and issue a token.
@@ -334,8 +335,8 @@ class OTPVerifyView(APIView):
 class VerifyEmailView(APIView):
     """Verify a user's email address using a token."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def get(self, request: Request, token: str) -> Response:
         """Verify the email token."""
@@ -372,8 +373,8 @@ class VerifyEmailView(APIView):
 class ResendVerificationEmailView(APIView):
     """Resend the verification email to the unverified user."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def post(self, request: Request) -> Response:
         """Send a new verification email."""
@@ -417,8 +418,8 @@ class ResendVerificationEmailView(APIView):
 class UserViewSet(ViewSet):
     """Tenant-scoped user management CRUD."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "users.view_user"
 
     def get_serializer_class(self) -> type:
@@ -534,8 +535,8 @@ class UserViewSet(ViewSet):
 class TrainerViewSet(ViewSet):
     """Tenant-scoped trainer management CRUD with schedule, assignment, and metrics."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "users.view_user"
 
     def _get_trainer(self, request: Request, pk: int):

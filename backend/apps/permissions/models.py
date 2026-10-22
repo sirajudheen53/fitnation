@@ -1,5 +1,7 @@
 """RBAC models for roles, permissions, and assignments."""
 
+from typing import ClassVar
+
 from django.db import models
 
 from apps.tenants.models import Tenant
@@ -36,8 +38,8 @@ class Role(models.Model):
         """Role model metadata."""
 
         db_table = "roles"
-        ordering = ["id"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["id"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "code"],
                 condition=models.Q(is_tenant_custom=True),
@@ -70,8 +72,8 @@ class Permission(models.Model):
         """Permission model metadata."""
 
         db_table = "permissions"
-        ordering = ["app_label", "resource", "action"]
-        unique_together = ["app_label", "action", "resource"]
+        ordering: ClassVar[list[str]] = ["app_label", "resource", "action"]
+        unique_together: ClassVar[list[str]] = ["app_label", "action", "resource"]
 
     def __str__(self) -> str:
         """Return permission label."""
@@ -98,7 +100,7 @@ class RolePermission(models.Model):
         """RolePermission model metadata."""
 
         db_table = "role_permissions"
-        unique_together = ["role", "permission"]
+        unique_together: ClassVar[list[str]] = ["role", "permission"]
 
     def __str__(self) -> str:
         """Return mapping label."""
@@ -139,4 +141,4 @@ class UserRoleAssignment(models.Model):
         """UserRoleAssignment model metadata."""
 
         db_table = "user_role_assignments"
-        ordering = ["-assigned_at"]
+        ordering: ClassVar[list[str]] = ["-assigned_at"]

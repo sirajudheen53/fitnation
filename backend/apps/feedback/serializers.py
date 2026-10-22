@@ -1,5 +1,7 @@
 """Serializers for the feedback app (FBOS-015)."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.customers.serializers import CustomerSerializer
@@ -16,7 +18,7 @@ class FeedbackSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Feedback
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "customer_detail",
@@ -31,7 +33,7 @@ class FeedbackSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
+        read_only_fields: ClassVar[list[str]] = [
             "id",
             "customer_detail",
             "response_by",
@@ -40,7 +42,7 @@ class FeedbackSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        extra_kwargs = {
+        extra_kwargs: ClassVar[dict] = {
             "customer": {"required": False, "allow_null": True},
             "response": {"required": False},
         }
@@ -63,7 +65,7 @@ class FeedbackWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Feedback
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "rating",
@@ -76,7 +78,7 @@ class FeedbackWriteSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
+        read_only_fields: ClassVar[list[str]] = [
             "id",
             "response",
             "response_by",
@@ -84,7 +86,7 @@ class FeedbackWriteSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        extra_kwargs = {"customer": {"required": False}}
+        extra_kwargs: ClassVar[dict] = {"customer": {"required": False}}
 
     def validate_rating(self, value: int) -> int:
         """Enforce a 1-5 rating range."""
@@ -98,8 +100,8 @@ class FeedbackResponseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Feedback
-        fields = ["id", "response", "response_by", "response_at"]
-        read_only_fields = ["id", "response_by", "response_at"]
+        fields: ClassVar[list[str]] = ["id", "response", "response_by", "response_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "response_by", "response_at"]
 
 
 class FeedbackSurveySerializer(serializers.ModelSerializer):
@@ -109,7 +111,7 @@ class FeedbackSurveySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FeedbackSurvey
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "name",
             "description",
@@ -119,7 +121,7 @@ class FeedbackSurveySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "question_count", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "question_count", "created_at", "updated_at"]
 
     def get_question_count(self, obj: FeedbackSurvey) -> int:
         """Return the number of questions in the survey."""
@@ -134,7 +136,7 @@ class FeedbackSurveyResponseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FeedbackResponse
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "survey",
             "survey_name",
@@ -143,5 +145,5 @@ class FeedbackSurveyResponseSerializer(serializers.ModelSerializer):
             "answers",
             "submitted_at",
         ]
-        read_only_fields = ["id", "survey_name", "customer_name", "submitted_at"]
-        extra_kwargs = {"customer": {"required": False}}
+        read_only_fields: ClassVar[list[str]] = ["id", "survey_name", "customer_name", "submitted_at"]
+        extra_kwargs: ClassVar[dict] = {"customer": {"required": False}}

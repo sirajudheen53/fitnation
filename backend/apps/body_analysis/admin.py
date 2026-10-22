@@ -1,5 +1,7 @@
 """Body analysis admin configuration."""
 
+from typing import ClassVar
+
 from django.contrib import admin
 
 from apps.body_analysis.models import BodyAnalysis, BodyPhoto, BodyProgressLog
@@ -29,7 +31,7 @@ class BodyAnalysisAdmin(admin.ModelAdmin):
     )
     list_filter = ("analysis_date",)
     search_fields = ("uuid", "user__email", "notes")
-    inlines = [BodyPhotoInline]
+    inlines: ClassVar[list] = [BodyPhotoInline]
     readonly_fields = ("uuid", "bmi", "created_at", "updated_at")
 
 

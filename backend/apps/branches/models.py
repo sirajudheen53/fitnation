@@ -1,6 +1,7 @@
 """Branch management models."""
 
 import uuid
+from typing import ClassVar
 
 from django.db import models
 
@@ -56,8 +57,8 @@ class Branch(TenantModelMixin):
         """Branch model metadata."""
 
         db_table = "branches"
-        ordering = ["-created_at"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "name"],
                 name="uq_branch_tenant_name",
@@ -84,7 +85,7 @@ class BranchAmenity(models.Model):
         """BranchAmenity model metadata."""
 
         db_table = "branch_amenities"
-        constraints = [
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["branch", "name"],
                 name="uq_amenity_branch_name",
@@ -113,7 +114,7 @@ class BranchImage(models.Model):
         """BranchImage model metadata."""
 
         db_table = "branch_images"
-        ordering = ["sort_order"]
+        ordering: ClassVar[list[str]] = ["sort_order"]
 
     def __str__(self) -> str:
         """Return image label."""
@@ -142,7 +143,7 @@ class BranchTrainerAssignment(models.Model):
         """BranchTrainerAssignment model metadata."""
 
         db_table = "branch_trainer_assignments"
-        constraints = [
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["branch", "trainer"],
                 name="uq_branch_trainer",

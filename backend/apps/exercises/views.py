@@ -1,5 +1,7 @@
 """Exercise library API views."""
 
+from typing import ClassVar
+
 from django.db.models import Count
 from rest_framework import filters
 from rest_framework.permissions import IsAuthenticated
@@ -20,10 +22,10 @@ from apps.users.authentication import TenantTokenAuthentication
 class ExerciseCategoryViewSet(ModelViewSet):
     """Tenant-scoped CRUD for exercise categories (admin/trainer write)."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "exercises.view_exercise"
-    method_permissions = {
+    method_permissions: ClassVar[dict] = {
         "GET": "exercises.view_exercise",
         "POST": "exercises.edit_exercise",
         "PUT": "exercises.edit_exercise",
@@ -31,10 +33,10 @@ class ExerciseCategoryViewSet(ModelViewSet):
         "DELETE": "exercises.delete_exercise",
     }
     serializer_class = ExerciseCategorySerializer
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["name", "description", "slug"]
-    ordering_fields = ["name", "created_at"]
-    ordering = ["name"]
+    filter_backends: ClassVar[list] = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields: ClassVar[list[str]] = ["name", "description", "slug"]
+    ordering_fields: ClassVar[list[str]] = ["name", "created_at"]
+    ordering: ClassVar[list[str]] = ["name"]
 
     def get_queryset(self):
         """Return categories scoped to the tenant with exercise counts."""
@@ -53,10 +55,10 @@ class ExerciseCategoryViewSet(ModelViewSet):
 class ExerciseViewSet(ModelViewSet):
     """Tenant-scoped CRUD for exercises with filtering and search."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "exercises.view_exercise"
-    method_permissions = {
+    method_permissions: ClassVar[dict] = {
         "GET": "exercises.view_exercise",
         "POST": "exercises.edit_exercise",
         "PUT": "exercises.edit_exercise",
@@ -64,11 +66,11 @@ class ExerciseViewSet(ModelViewSet):
         "DELETE": "exercises.delete_exercise",
     }
     serializer_class = ExerciseSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["category", "difficulty"]
-    search_fields = ["name", "description", "tips"]
-    ordering_fields = ["name", "difficulty", "created_at"]
-    ordering = ["name"]
+    filter_backends: ClassVar[list] = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields: ClassVar[list[str]] = ["category", "difficulty"]
+    search_fields: ClassVar[list[str]] = ["name", "description", "tips"]
+    ordering_fields: ClassVar[list[str]] = ["name", "difficulty", "created_at"]
+    ordering: ClassVar[list[str]] = ["name"]
 
     def get_queryset(self):
         """Return exercises scoped to the tenant with optional filters."""

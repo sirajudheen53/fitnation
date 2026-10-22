@@ -1,5 +1,7 @@
 """Customer management serializers."""
 
+from typing import ClassVar
+
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework.fields import SerializerMethodField
@@ -49,7 +51,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Customer
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "user",
             "branch",
@@ -74,7 +76,7 @@ class CustomerSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
     def get_app_invite_status(self, obj: Customer) -> dict | None:
         """Summarize the latest ``app_invite`` notification for the member.
@@ -364,7 +366,7 @@ class HealthProfileSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = HealthProfile
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "height_cm",
@@ -383,7 +385,7 @@ class HealthProfileSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "bmi", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "bmi", "created_at", "updated_at"]
 
 
 class FitnessGoalSerializer(serializers.ModelSerializer):
@@ -395,7 +397,7 @@ class FitnessGoalSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = FitnessGoal
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "goal_type",
@@ -410,7 +412,7 @@ class FitnessGoalSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
     def get_progress_percentage(self, obj: FitnessGoal) -> float | None:
         """Return the computed goal progress percentage."""
@@ -424,7 +426,7 @@ class BodyMeasurementSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = BodyMeasurement
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "date_logged",
@@ -444,7 +446,7 @@ class BodyMeasurementSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "bmi", "date_logged", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "bmi", "date_logged", "created_at", "updated_at"]
 
 
 class ProgressPhotoSerializer(serializers.ModelSerializer):
@@ -454,7 +456,7 @@ class ProgressPhotoSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = ProgressPhoto
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "image",
@@ -463,4 +465,4 @@ class ProgressPhotoSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "customer", "taken_at", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "customer", "taken_at", "created_at", "updated_at"]

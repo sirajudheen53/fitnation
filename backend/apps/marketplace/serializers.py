@@ -1,5 +1,7 @@
 """Product marketplace serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.marketplace.models import (
@@ -23,7 +25,7 @@ class ProductCategorySerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = ProductCategory
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "name",
             "slug",
@@ -32,7 +34,7 @@ class ProductCategorySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "product_count", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "product_count", "created_at", "updated_at"]
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
@@ -42,8 +44,8 @@ class ProductImageSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = ProductImage
-        fields = ["id", "product", "image_url", "alt_text", "sort_order", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        fields: ClassVar[list[str]] = ["id", "product", "image_url", "alt_text", "sort_order", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at"]
 
 
 class InventorySerializer(serializers.ModelSerializer):
@@ -53,7 +55,7 @@ class InventorySerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Inventory
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "product",
             "stock_quantity",
@@ -62,7 +64,7 @@ class InventorySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "product", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "product", "created_at", "updated_at"]
 
 
 class ProductListSerializer(serializers.ModelSerializer):
@@ -74,7 +76,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Product
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "name",
@@ -90,7 +92,14 @@ class ProductListSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "uuid", "category_name", "is_low_stock", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = [
+            "id",
+            "uuid",
+            "category_name",
+            "is_low_stock",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class ProductDetailSerializer(serializers.ModelSerializer):
@@ -104,7 +113,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Product
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "category",
@@ -125,7 +134,14 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "uuid", "category_name", "is_low_stock", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = [
+            "id",
+            "uuid",
+            "category_name",
+            "is_low_stock",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class ProductWriteSerializer(serializers.ModelSerializer):
@@ -138,7 +154,7 @@ class ProductWriteSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Product
-        fields = [
+        fields: ClassVar[list[str]] = [
             "category",
             "name",
             "slug",
@@ -213,7 +229,7 @@ class CartItemSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = CartItem
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "cart",
             "product",
@@ -226,7 +242,7 @@ class CartItemSerializer(serializers.ModelSerializer):
             "total_price",
             "created_at",
         ]
-        read_only_fields = [
+        read_only_fields: ClassVar[list[str]] = [
             "id",
             "cart",
             "product_name",
@@ -254,7 +270,7 @@ class CartSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Cart
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "user",
             "status",
@@ -264,7 +280,15 @@ class CartSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "user", "items", "item_count", "total", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = [
+            "id",
+            "user",
+            "items",
+            "item_count",
+            "total",
+            "created_at",
+            "updated_at",
+        ]
 
     def get_item_count(self, obj: Cart) -> int:
         """Return the total quantity of items in the cart."""
@@ -280,7 +304,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = OrderItem
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "order",
             "product",
@@ -290,7 +314,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "total_price",
             "created_at",
         ]
-        read_only_fields = ["id", "order", "product_name", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "order", "product_name", "created_at"]
 
 
 class OrderListSerializer(serializers.ModelSerializer):
@@ -300,7 +324,7 @@ class OrderListSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Order
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "status",
@@ -309,7 +333,7 @@ class OrderListSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "uuid", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "uuid", "created_at", "updated_at"]
 
 
 class OrderDetailSerializer(serializers.ModelSerializer):
@@ -321,7 +345,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Order
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "user",
@@ -334,7 +358,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
+        read_only_fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "user",
@@ -352,7 +376,7 @@ class OrderWriteSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Order
-        fields = [
+        fields: ClassVar[list[str]] = [
             "status",
             "shipping_address",
             "billing_address",
@@ -367,4 +391,4 @@ class OrderItemWriteSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = OrderItem
-        fields = ["product", "quantity"]
+        fields: ClassVar[list[str]] = ["product", "quantity"]

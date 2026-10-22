@@ -1,5 +1,7 @@
 """Customer management API views."""
 
+from typing import ClassVar
+
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
@@ -32,14 +34,14 @@ from apps.users.authentication import TenantTokenAuthentication
 class CustomerViewSet(ModelViewSet):
     """Tenant-scoped customer management viewset."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     # FBOS-011 §2.4/§2.5: the PROFILE stays viewable/editable in every
     # entitlement state (a gated member must still see why they're gated) —
     # these actions are exempt from the entitlement gate. Everything else on
     # this viewset (notably the progress-photos action — health data) is
     # gated: read-only in grace, blocked when expired/none.
-    entitlement_exempt_actions = {
+    entitlement_exempt_actions: ClassVar[set[str]] = {
         "list",
         "retrieve",
         "update",
@@ -51,10 +53,10 @@ class CustomerViewSet(ModelViewSet):
     }
     required_permission = "customers.view_customer"
     serializer_class = CustomerSerializer
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ["name", "phone", "email"]
-    ordering_fields = ["name", "created_at", "updated_at"]
-    ordering = ["-created_at"]
+    filter_backends: ClassVar[list] = [SearchFilter, OrderingFilter]
+    search_fields: ClassVar[list[str]] = ["name", "phone", "email"]
+    ordering_fields: ClassVar[list[str]] = ["name", "created_at", "updated_at"]
+    ordering: ClassVar[list[str]] = ["-created_at"]
 
     def get_queryset(self) -> Customer:
         """Return customers scoped to the request tenant with optional filters."""
@@ -277,8 +279,8 @@ class CustomerViewSet(ModelViewSet):
 class HealthProfileViewSet(ModelViewSet):
     """Direct health profile CRUD viewset."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "customers.view_customer"
     serializer_class = HealthProfileSerializer
 
@@ -324,8 +326,8 @@ class HealthProfileViewSet(ModelViewSet):
 class FitnessGoalViewSet(ModelViewSet):
     """Direct fitness goal CRUD viewset."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "customers.view_customer"
     serializer_class = FitnessGoalSerializer
 
@@ -371,8 +373,8 @@ class FitnessGoalViewSet(ModelViewSet):
 class BodyMeasurementViewSet(ModelViewSet):
     """Direct body measurement CRUD viewset."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "customers.view_customer"
     serializer_class = BodyMeasurementSerializer
 

@@ -1,6 +1,7 @@
 """Membership management API views."""
 
 from datetime import timedelta
+from typing import ClassVar
 
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -32,8 +33,8 @@ from apps.users.models import User
 class MembershipPlanViewSet(ModelViewSet):
     """Tenant-scoped membership plan CRUD viewset."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "memberships.view_membership"
     serializer_class = MembershipPlanSerializer
 
@@ -71,8 +72,8 @@ class MembershipPlanViewSet(ModelViewSet):
 class MembershipViewSet(ModelViewSet):
     """Tenant-scoped membership CRUD viewset."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "memberships.view_membership"
     serializer_class = MembershipSerializer
 
@@ -207,8 +208,8 @@ class AppInviteView(APIView):
     forces a new send (still capped by the tenant daily limit).
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "customers.edit_customer"
 
     def post(self, request: Request) -> Response:
@@ -245,8 +246,8 @@ class AppInviteView(APIView):
 class CouponViewSet(ModelViewSet):
     """Tenant-scoped coupon CRUD viewset."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "memberships.view_membership"
     serializer_class = CouponSerializer
 

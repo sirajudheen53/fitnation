@@ -1,6 +1,6 @@
 """Permissions API views."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -14,8 +14,8 @@ from apps.users.authentication import TenantTokenAuthentication
 class UserPermissionsView(APIView):
     """Return the permission list for the authenticated user."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember]
 
     def get(self, request: Any) -> Response:
         """Return the list of permissions available to the current user.

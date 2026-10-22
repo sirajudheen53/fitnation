@@ -1,6 +1,7 @@
 """AI Coach models — FBOS-017."""
 
 import uuid
+from typing import ClassVar
 
 from django.conf import settings
 from django.db import models
@@ -28,8 +29,8 @@ class AIConversation(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["-updated_at"]
-        indexes = [models.Index(fields=["tenant_id", "user"])]
+        ordering: ClassVar[list[str]] = ["-updated_at"]
+        indexes: ClassVar[list] = [models.Index(fields=["tenant_id", "user"])]
 
 
 class AIMessage(models.Model):
@@ -45,7 +46,7 @@ class AIMessage(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["created_at"]
+        ordering: ClassVar[list[str]] = ["created_at"]
 
 
 class AIRecommendation(models.Model):
@@ -69,5 +70,5 @@ class AIRecommendation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-created_at"]
-        indexes = [models.Index(fields=["tenant_id", "user"])]
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        indexes: ClassVar[list] = [models.Index(fields=["tenant_id", "user"])]

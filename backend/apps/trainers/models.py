@@ -1,5 +1,7 @@
 """Trainer management models (FBOS-007)."""
 
+from typing import ClassVar
+
 from django.db import models
 
 from apps.tenants.models import TenantModelMixin
@@ -41,8 +43,8 @@ class TrainerAssignment(TenantModelMixin):
         """TrainerAssignment model metadata."""
 
         db_table = "trainer_assignments"
-        ordering = ["-assigned_at"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-assigned_at"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "trainer", "customer"],
                 name="uq_trainer_assignment_tenant_trainer_customer",
@@ -93,8 +95,8 @@ class TrainerPerformance(TenantModelMixin):
         """TrainerPerformance model metadata."""
 
         db_table = "trainer_performance"
-        ordering = ["-month"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-month"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "trainer", "month"],
                 name="uq_trainer_performance_tenant_trainer_month",

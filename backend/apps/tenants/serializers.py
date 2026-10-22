@@ -1,6 +1,6 @@
 """Tenant serializers."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from rest_framework import serializers
 
@@ -14,7 +14,7 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = TenantSettings
-        fields = [
+        fields: ClassVar[list[str]] = [
             "max_branches",
             "max_customers",
             "max_trainers",
@@ -48,7 +48,7 @@ class TenantSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Tenant
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "name",

@@ -1,5 +1,7 @@
 """Membership management models."""
 
+from typing import ClassVar
+
 from django.db import models
 from django.utils import timezone
 
@@ -45,8 +47,8 @@ class MembershipPlan(TenantModelMixin):
         """MembershipPlan model metadata."""
 
         db_table = "membership_plans"
-        ordering = ["-created_at"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "name"],
                 name="uq_membership_plan_tenant_name",
@@ -93,8 +95,8 @@ class Membership(TenantModelMixin):
         """Membership model metadata."""
 
         db_table = "memberships"
-        ordering = ["-created_at"]
-        indexes = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        indexes: ClassVar[list] = [
             models.Index(fields=["tenant", "customer"], name="idx_membership_tenant_customer"),
         ]
 
@@ -151,8 +153,8 @@ class Coupon(TenantModelMixin):
         """Coupon model metadata."""
 
         db_table = "coupons"
-        ordering = ["-created_at"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "code"],
                 name="uq_coupon_tenant_code",

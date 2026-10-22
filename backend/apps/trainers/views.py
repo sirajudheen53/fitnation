@@ -1,5 +1,7 @@
 """Trainer management API views (FBOS-007)."""
 
+from typing import ClassVar
+
 from django.db.models import Avg, Sum
 from django.utils import timezone
 from rest_framework import viewsets
@@ -28,11 +30,11 @@ class TrainerViewSet(viewsets.ModelViewSet):
     queryset is scoped through ``user__tenant`` rather than a ``for_tenant`` manager.
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "trainers.view_trainer"
     serializer_class = TrainerSerializer
-    http_method_names = ["get", "head", "options"]
+    http_method_names: ClassVar[list[str]] = ["get", "head", "options"]
     pagination_class = None
 
     def get_queryset(self):
@@ -70,11 +72,11 @@ class TrainerViewSet(viewsets.ModelViewSet):
 class TrainerAssignmentViewSet(viewsets.ModelViewSet):
     """Tenant-scoped branch-level trainer↔customer assignments."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "trainers.edit_trainer"
     serializer_class = TrainerAssignmentSerializer
-    http_method_names = ["get", "post", "head", "options"]
+    http_method_names: ClassVar[list[str]] = ["get", "post", "head", "options"]
     pagination_class = None
 
     def get_queryset(self):
@@ -109,11 +111,11 @@ class TrainerAssignmentViewSet(viewsets.ModelViewSet):
 class TrainerPerformanceViewSet(viewsets.ModelViewSet):
     """Tenant-scoped monthly trainer performance snapshots."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "trainers.view_trainer"
     serializer_class = TrainerPerformanceSerializer
-    filterset_fields = ["trainer", "month"]
+    filterset_fields: ClassVar[list[str]] = ["trainer", "month"]
     pagination_class = None
 
     def get_queryset(self):
@@ -128,11 +130,11 @@ class TrainerPerformanceViewSet(viewsets.ModelViewSet):
 class TrainerScheduleViewSet(viewsets.ModelViewSet):
     """Tenant-scoped weekly availability schedules for trainers."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "trainers.view_trainer"
     serializer_class = TrainerScheduleSerializer
-    filterset_fields = ["trainer", "day_of_week"]
+    filterset_fields: ClassVar[list[str]] = ["trainer", "day_of_week"]
     pagination_class = None
 
     def get_queryset(self):

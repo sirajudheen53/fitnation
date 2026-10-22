@@ -1,5 +1,7 @@
 """Marketplace admin configuration."""
 
+from typing import ClassVar
+
 from django.contrib import admin
 
 from apps.marketplace.models import (
@@ -40,23 +42,23 @@ class OrderItemInline(admin.TabularInline):
 
     model = OrderItem
     extra = 0
-    readonly_fields = ["product", "quantity", "unit_price", "total_price"]
+    readonly_fields: ClassVar[list[str]] = ["product", "quantity", "unit_price", "total_price"]
 
 
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
     """Admin for product categories."""
 
-    list_display = ["name", "slug", "tenant", "created_at"]
-    list_filter = ["tenant"]
-    search_fields = ["name", "slug"]
+    list_display: ClassVar[list[str]] = ["name", "slug", "tenant", "created_at"]
+    list_filter: ClassVar[list[str]] = ["tenant"]
+    search_fields: ClassVar[list[str]] = ["name", "slug"]
 
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
     """Admin for products."""
 
-    list_display = [
+    list_display: ClassVar[list[str]] = [
         "name",
         "category",
         "price",
@@ -66,50 +68,50 @@ class ProductAdmin(admin.ModelAdmin):
         "tenant",
         "created_at",
     ]
-    list_filter = ["status", "is_digital", "tenant", "category"]
-    search_fields = ["name", "sku", "barcode", "brand"]
-    prepopulated_fields = {"slug": ("name",)}
-    inlines = [ProductImageInline, InventoryInline]
-    readonly_fields = ["uuid"]
+    list_filter: ClassVar[list[str]] = ["status", "is_digital", "tenant", "category"]
+    search_fields: ClassVar[list[str]] = ["name", "sku", "barcode", "brand"]
+    prepopulated_fields: ClassVar[dict] = {"slug": ("name",)}
+    inlines: ClassVar[list] = [ProductImageInline, InventoryInline]
+    readonly_fields: ClassVar[list[str]] = ["uuid"]
 
 
 @admin.register(ProductImage)
 class ProductImageAdmin(admin.ModelAdmin):
     """Admin for product images."""
 
-    list_display = ["product", "image_url", "alt_text", "sort_order", "created_at"]
-    search_fields = ["product__name", "alt_text"]
+    list_display: ClassVar[list[str]] = ["product", "image_url", "alt_text", "sort_order", "created_at"]
+    search_fields: ClassVar[list[str]] = ["product__name", "alt_text"]
 
 
 @admin.register(Inventory)
 class InventoryAdmin(admin.ModelAdmin):
     """Admin for inventory records."""
 
-    list_display = [
+    list_display: ClassVar[list[str]] = [
         "product",
         "stock_quantity",
         "low_stock_threshold",
         "track_inventory",
         "tenant",
     ]
-    list_filter = ["track_inventory", "tenant"]
+    list_filter: ClassVar[list[str]] = ["track_inventory", "tenant"]
 
 
 @admin.register(Cart)
 class CartAdmin(admin.ModelAdmin):
     """Admin for carts."""
 
-    list_display = ["id", "user", "status", "tenant", "created_at"]
-    list_filter = ["status", "tenant"]
-    search_fields = ["user__email"]
-    inlines = [CartItemInline]
+    list_display: ClassVar[list[str]] = ["id", "user", "status", "tenant", "created_at"]
+    list_filter: ClassVar[list[str]] = ["status", "tenant"]
+    search_fields: ClassVar[list[str]] = ["user__email"]
+    inlines: ClassVar[list] = [CartItemInline]
 
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     """Admin for orders."""
 
-    list_display = [
+    list_display: ClassVar[list[str]] = [
         "id",
         "uuid",
         "user",
@@ -119,7 +121,7 @@ class OrderAdmin(admin.ModelAdmin):
         "tenant",
         "created_at",
     ]
-    list_filter = ["status", "payment_status", "tenant"]
-    search_fields = ["uuid", "user__email"]
-    readonly_fields = ["uuid"]
-    inlines = [OrderItemInline]
+    list_filter: ClassVar[list[str]] = ["status", "payment_status", "tenant"]
+    search_fields: ClassVar[list[str]] = ["uuid", "user__email"]
+    readonly_fields: ClassVar[list[str]] = ["uuid"]
+    inlines: ClassVar[list] = [OrderItemInline]

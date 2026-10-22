@@ -1,6 +1,7 @@
 """Tests for the memberships app."""
 
 from datetime import date, timedelta
+from typing import ClassVar
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -422,7 +423,7 @@ class MembershipAPITests(APITestCase):
 class MembershipPlanPlanTypeAPITests(APITestCase):
     """Integration tests for plan_type values on the plan endpoints."""
 
-    plan_types = ["quarterly", "half_yearly", "pt", "trial"]
+    plan_types: ClassVar[list[str]] = ["quarterly", "half_yearly", "pt", "trial"]
 
     def setUp(self) -> None:
         """Create tenant, owner, auth token, and an editable plan."""

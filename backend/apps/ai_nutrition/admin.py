@@ -1,5 +1,7 @@
 """AI Nutrition admin registrations."""
 
+from typing import ClassVar
+
 from django.contrib import admin
 
 from apps.ai_nutrition.models import (
@@ -32,7 +34,7 @@ class AIMealPlanAdmin(admin.ModelAdmin):
     list_display = ("name", "user", "tenant", "target_calories", "status", "created_at")
     list_filter = ("status", "cuisine_preference")
     search_fields = ("name", "user__email")
-    inlines = [AIMealPlanItemInline]
+    inlines: ClassVar[list] = [AIMealPlanItemInline]
 
 
 @admin.register(ShoppingList)
@@ -42,7 +44,7 @@ class ShoppingListAdmin(admin.ModelAdmin):
     list_display = ("name", "user", "tenant", "status", "created_at")
     list_filter = ("status",)
     search_fields = ("name", "user__email")
-    inlines = [ShoppingListItemInline]
+    inlines: ClassVar[list] = [ShoppingListItemInline]
 
 
 @admin.register(MacroLog)

@@ -5,6 +5,8 @@ Staff (owners/managers/trainers) can post a single response to each review.
 All entities are tenant-scoped via ``TenantModelMixin``.
 """
 
+from typing import ClassVar
+
 from django.db import models
 
 from apps.branches.models import Branch
@@ -37,8 +39,8 @@ class Review(TenantModelMixin):
         """Review model metadata."""
 
         db_table = "reviews"
-        ordering = ["-created_at"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        constraints: ClassVar[list] = [
             models.CheckConstraint(
                 condition=models.Q(rating__gte=1, rating__lte=5),
                 name="ck_review_rating_range",
@@ -73,7 +75,7 @@ class ReviewResponse(TenantModelMixin):
         """ReviewResponse model metadata."""
 
         db_table = "review_responses"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return a human-readable response label."""

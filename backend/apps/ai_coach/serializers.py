@@ -1,5 +1,7 @@
 """AI Coach serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from .models import AIConversation, AIMessage, AIRecommendation
@@ -8,8 +10,8 @@ from .models import AIConversation, AIMessage, AIRecommendation
 class AIMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = AIMessage
-        fields = ["id", "role", "content", "metadata", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        fields: ClassVar[list[str]] = ["id", "role", "content", "metadata", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at"]
 
 
 class AIConversationSerializer(serializers.ModelSerializer):
@@ -17,15 +19,24 @@ class AIConversationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AIConversation
-        fields = ["id", "uuid", "title", "context_type", "status", "messages", "created_at", "updated_at"]
-        read_only_fields = ["id", "uuid", "messages", "created_at", "updated_at"]
+        fields: ClassVar[list[str]] = [
+            "id",
+            "uuid",
+            "title",
+            "context_type",
+            "status",
+            "messages",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields: ClassVar[list[str]] = ["id", "uuid", "messages", "created_at", "updated_at"]
 
 
 class AIRecommendationSerializer(serializers.ModelSerializer):
     class Meta:
         model = AIRecommendation
-        fields = ["id", "type", "content", "is_acted_on", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        fields: ClassVar[list[str]] = ["id", "type", "content", "is_acted_on", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at"]
 
 
 class ChatRequestSerializer(serializers.Serializer):

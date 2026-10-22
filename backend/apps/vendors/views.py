@@ -1,5 +1,7 @@
 """Vendor onboarding API views."""
 
+from typing import ClassVar
+
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
@@ -30,8 +32,8 @@ from apps.vendors.services import (
 class SignupView(APIView):
     """Create a vendor registration and trigger verification."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def post(self, request: Request) -> Response:
         """Handle vendor signup.
@@ -67,8 +69,8 @@ class SignupView(APIView):
 class EmailVerifyView(APIView):
     """Verify a vendor email via token."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def get(self, request: Request) -> Response:
         """Handle email verification.
@@ -105,8 +107,8 @@ class EmailVerifyView(APIView):
 class ResendVerificationView(APIView):
     """Resend verification email for a pending registration."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def post(self, request: Request) -> Response:
         """Handle resend verification.
@@ -135,8 +137,8 @@ class ResendVerificationView(APIView):
 class SubscriptionPlanListView(APIView):
     """List active subscription plans."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def get(self, request: Request) -> Response:
         """Return active subscription plans.
@@ -155,8 +157,8 @@ class SubscriptionPlanListView(APIView):
 class SelectPlanView(APIView):
     """Select a plan and provision the tenant + owner user."""
 
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def post(self, request: Request) -> Response:
         """Handle plan selection and provisioning.
@@ -200,8 +202,8 @@ class SelectPlanView(APIView):
 class OnboardingView(APIView):
     """Complete onboarding by creating the default branch."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember]
 
     def put(self, request: Request) -> Response:
         """Handle onboarding completion.

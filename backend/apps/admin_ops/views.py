@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from rest_framework import status
 from rest_framework.decorators import action
@@ -30,8 +30,8 @@ class AdminTenantViewSet(ReadOnlyModelViewSet):
     Superuser-only: no tenant scoping — the operator sees every gym.
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsPlatformAdmin]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsPlatformAdmin]
     serializer_class = TenantAdminSerializer
 
     def get_queryset(self):
@@ -146,8 +146,8 @@ class AdminPlanViewSet(ModelViewSet):
     keep a resolvable plan code.
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsPlatformAdmin]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsPlatformAdmin]
     serializer_class = SubscriptionPlanAdminSerializer
 
     def get_queryset(self):

@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from django.db import models
 
 
@@ -19,7 +21,7 @@ class Tenant(models.Model):
 
     class Meta:
         db_table = "tenants"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self):
         return f"{self.name} ({self.subscription_plan})"

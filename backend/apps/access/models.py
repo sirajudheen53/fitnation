@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from django.core.validators import MinLengthValidator
 from django.db import models
 
@@ -84,8 +86,8 @@ class BiometricDevice(TenantModelMixin):
     class Meta:
         """Model metadata."""
 
-        unique_together = [("branch", "serial_number")]
-        ordering = ["branch__name", "name"]
+        unique_together: ClassVar[list] = [("branch", "serial_number")]
+        ordering: ClassVar[list[str]] = ["branch__name", "name"]
 
     def __str__(self) -> str:
         """Return human-readable device name."""
@@ -122,8 +124,8 @@ class BiometricCredential(TenantModelMixin):
     class Meta:
         """Model metadata."""
 
-        unique_together = [("device", "device_user_id")]
-        ordering = ["device__name", "device_user_id"]
+        unique_together: ClassVar[list] = [("device", "device_user_id")]
+        ordering: ClassVar[list[str]] = ["device__name", "device_user_id"]
 
     def __str__(self) -> str:
         """Return human-readable credential identifier."""
@@ -172,7 +174,7 @@ class AccessOverride(TenantModelMixin):
     class Meta:
         """Model metadata."""
 
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return human-readable override identifier."""
@@ -182,7 +184,7 @@ class AccessOverride(TenantModelMixin):
 class AccessLog(TenantModelMixin):
     """An entry/exit event recorded from a biometric device."""
 
-    DEVICE_EVENT_TYPES = [
+    DEVICE_EVENT_TYPES: ClassVar[list] = [
         ("entry", "Entry"),
         ("exit", "Exit"),
         ("denied", "Access Denied"),
@@ -219,7 +221,7 @@ class AccessLog(TenantModelMixin):
     class Meta:
         """Model metadata."""
 
-        ordering = ["-event_timestamp"]
+        ordering: ClassVar[list[str]] = ["-event_timestamp"]
 
     def __str__(self) -> str:
         """Return human-readable log identifier."""
@@ -253,8 +255,8 @@ class PunchLogRaw(TenantModelMixin):
     class Meta:
         """Model metadata."""
 
-        ordering = ["received_at"]
-        indexes = [models.Index(fields=["device", "received_at"])]
+        ordering: ClassVar[list[str]] = ["received_at"]
+        indexes: ClassVar[list] = [models.Index(fields=["device", "received_at"])]
 
     def __str__(self) -> str:
         """Return a human-readable raw-punch label."""
@@ -293,8 +295,8 @@ class AdmsRequestLog(models.Model):
     class Meta:
         """Model metadata."""
 
-        ordering = ["-created_at"]
-        indexes = [models.Index(fields=["sn", "created_at"])]
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        indexes: ClassVar[list] = [models.Index(fields=["sn", "created_at"])]
 
     def __str__(self) -> str:
         """Return a human-readable request-log label."""
@@ -322,7 +324,7 @@ class DeviceCommandQueue(TenantModelMixin):
     class Meta:
         """Model metadata."""
 
-        ordering = ["created_at"]
+        ordering: ClassVar[list[str]] = ["created_at"]
 
     def __str__(self) -> str:
         """Return a human-readable command label."""
@@ -337,7 +339,7 @@ class AccessDecisionLog(TenantModelMixin):
     audit why a member was granted or denied entry.
     """
 
-    SOURCES = [
+    SOURCES: ClassVar[list] = [
         ("override", "Owner Override"),
         ("plan_active", "Active Plan"),
         ("plan_expired", "Plan Expired"),
@@ -372,7 +374,7 @@ class AccessDecisionLog(TenantModelMixin):
     class Meta:
         """Model metadata."""
 
-        ordering = ["-checked_at"]
+        ordering: ClassVar[list[str]] = ["-checked_at"]
 
     def __str__(self) -> str:
         """Return a human-readable decision label."""

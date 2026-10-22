@@ -1,5 +1,7 @@
 """Analytics serializers (FBOS-030)."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.analytics.models import (
@@ -17,7 +19,7 @@ class RevenueReportSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = RevenueReport
-        fields = ["period", "amount"]
+        fields: ClassVar[list[str]] = ["period", "amount"]
 
 
 class AttendanceHeatmapSerializer(serializers.ModelSerializer):
@@ -27,7 +29,7 @@ class AttendanceHeatmapSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = AttendanceHeatmap
-        fields = ["date", "count"]
+        fields: ClassVar[list[str]] = ["date", "count"]
 
 
 class MembershipFunnelSerializer(serializers.ModelSerializer):
@@ -37,7 +39,7 @@ class MembershipFunnelSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = MembershipFunnel
-        fields = ["stage", "count"]
+        fields: ClassVar[list[str]] = ["stage", "count"]
 
 
 class TopCustomerSerializer(serializers.ModelSerializer):
@@ -47,4 +49,4 @@ class TopCustomerSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = TopCustomer
-        fields = ["customer_id", "total_spent"]
+        fields: ClassVar[list[str]] = ["customer_id", "total_spent"]

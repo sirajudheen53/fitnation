@@ -1,5 +1,7 @@
 """Workout Builder API views."""
 
+from typing import ClassVar
+
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
@@ -131,15 +133,15 @@ class WorkoutRolePermission(RolePermission):
 class WorkoutPlanViewSet(ModelViewSet):
     """Tenant-scoped CRUD for workout plans with nested days/exercises."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
     required_permission = "workouts.view_workout"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = WorkoutPlanSerializer
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ["name", "description"]
-    ordering_fields = ["name", "goal", "difficulty", "created_at"]
-    ordering = ["-created_at"]
+    filter_backends: ClassVar[list] = [SearchFilter, OrderingFilter]
+    search_fields: ClassVar[list[str]] = ["name", "description"]
+    ordering_fields: ClassVar[list[str]] = ["name", "goal", "difficulty", "created_at"]
+    ordering: ClassVar[list[str]] = ["-created_at"]
 
     def get_queryset(self) -> WorkoutPlan:
         """Return workout plans scoped to the tenant with goal/difficulty filters."""
@@ -240,8 +242,8 @@ class WorkoutPlanViewSet(ModelViewSet):
 class WorkoutDayViewSet(ModelViewSet):
     """Tenant-scoped CRUD for workout days (nested under a plan)."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
     required_permission = "workouts.view_workout"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = WorkoutDayWriteSerializer
@@ -284,8 +286,8 @@ class WorkoutDayViewSet(ModelViewSet):
 class WorkoutExerciseViewSet(ModelViewSet):
     """Tenant-scoped CRUD for workout exercises."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
     required_permission = "workouts.view_workout"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = WorkoutExerciseNestedSerializer
@@ -340,14 +342,14 @@ class WorkoutExerciseViewSet(ModelViewSet):
 class WorkoutAssignmentViewSet(ModelViewSet):
     """Tenant-scoped CRUD for workout assignments to customers."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
     required_permission = "workouts.view_workout"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = WorkoutAssignmentSerializer
-    filter_backends = [OrderingFilter]
-    ordering_fields = ["created_at", "start_date"]
-    ordering = ["-created_at"]
+    filter_backends: ClassVar[list] = [OrderingFilter]
+    ordering_fields: ClassVar[list[str]] = ["created_at", "start_date"]
+    ordering: ClassVar[list[str]] = ["-created_at"]
 
     def get_queryset(self) -> WorkoutAssignment:
         """Return workout assignments scoped to the tenant with customer filter."""
@@ -423,14 +425,14 @@ class WorkoutAssignmentViewSet(ModelViewSet):
 class WorkoutLogViewSet(ModelViewSet):
     """Tenant-scoped CRUD for workout logs and progress tracking."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, WorkoutRolePermission, EntitlementRequired]
     required_permission = "workouts.view_workout"
     method_permissions = _LOG_METHOD_PERMISSIONS
     serializer_class = WorkoutLogSerializer
-    filter_backends = [OrderingFilter]
-    ordering_fields = ["date_completed", "created_at"]
-    ordering = ["-date_completed"]
+    filter_backends: ClassVar[list] = [OrderingFilter]
+    ordering_fields: ClassVar[list[str]] = ["date_completed", "created_at"]
+    ordering: ClassVar[list[str]] = ["-date_completed"]
 
     def get_queryset(self) -> WorkoutLog:
         """Return workout logs scoped to the tenant with customer/date filters."""

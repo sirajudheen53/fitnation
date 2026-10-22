@@ -106,7 +106,7 @@ class User(AbstractUser):
     objects = UserManager()
 
     USERNAME_FIELD = "email"
-    REQUIRED_FIELDS = ["first_name", "last_name"]
+    REQUIRED_FIELDS: ClassVar[list[str]] = ["first_name", "last_name"]
 
     class Meta:
         """User model metadata."""
@@ -234,8 +234,8 @@ class TrainerSchedule(TenantModelMixin):
         """TrainerSchedule model metadata."""
 
         db_table = "trainer_schedules"
-        ordering = ["day_of_week", "start_time"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["day_of_week", "start_time"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["trainer", "day_of_week"],
                 name="uq_trainer_schedule_day",
@@ -270,8 +270,8 @@ class TrainerCustomerAssignment(TenantModelMixin):
         """TrainerCustomerAssignment model metadata."""
 
         db_table = "trainer_customer_assignments"
-        ordering = ["-assigned_at"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-assigned_at"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["trainer", "customer"],
                 name="uq_trainer_customer_assignment",
@@ -323,7 +323,7 @@ class AuthToken(models.Model):
         """AuthToken model metadata."""
 
         db_table = "auth_tokens"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return token label."""

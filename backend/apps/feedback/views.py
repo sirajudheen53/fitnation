@@ -8,6 +8,7 @@ Endpoints:
 """
 
 from datetime import timedelta
+from typing import ClassVar
 
 from django.db.models import Avg, Count
 from django.utils import timezone
@@ -59,10 +60,10 @@ class FeedbackViewSet(viewsets.ModelViewSet):
     and owners may view all feedback for the tenant and post responses.
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "feedback.view_feedback"
-    http_method_names = ["get", "post", "put", "patch", "head", "options"]
+    http_method_names: ClassVar[list[str]] = ["get", "post", "put", "patch", "head", "options"]
 
     def get_permissions(self):
         """Set the action-appropriate required permission before evaluating access.
@@ -134,10 +135,10 @@ class FeedbackViewSet(viewsets.ModelViewSet):
 class FeedbackAnalyticsViewSet(viewsets.GenericViewSet):
     """Read-only analytics for customer feedback within a tenant."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "feedback.view_feedback"
-    http_method_names = ["get", "head", "options"]
+    http_method_names: ClassVar[list[str]] = ["get", "head", "options"]
 
     def get_queryset(self):
         """Return all feedback for the tenant."""
@@ -202,11 +203,16 @@ class FeedbackAnalyticsViewSet(viewsets.GenericViewSet):
 class FeedbackSurveyViewSet(viewsets.ModelViewSet):
     """CRUD for feedback surveys plus a submit-response action."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, FeedbackObjectPermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        FeedbackObjectPermission,
+        EntitlementRequired,
+    ]
     required_permission = "feedback.view_feedback"
     serializer_class = FeedbackSurveySerializer
-    http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
+    http_method_names: ClassVar[list[str]] = ["get", "post", "put", "patch", "delete", "head", "options"]
 
     def get_permissions(self):
         """Set the action-appropriate required permission before access is evaluated."""
@@ -274,12 +280,17 @@ class FeedbackSurveyViewSet(viewsets.ModelViewSet):
 class FeedbackResponseViewSet(viewsets.ReadOnlyModelViewSet):
     """Read-only listing of survey responses within a tenant."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, FeedbackObjectPermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [
+        IsAuthenticated,
+        IsTenantMember,
+        FeedbackObjectPermission,
+        EntitlementRequired,
+    ]
     required_permission = "feedback.view_feedback"
     serializer_class = FeedbackSurveyResponseSerializer
-    http_method_names = ["get", "head", "options"]
-    filterset_fields = ["survey"]
+    http_method_names: ClassVar[list[str]] = ["get", "head", "options"]
+    filterset_fields: ClassVar[list[str]] = ["survey"]
 
     def get_queryset(self):
         """Return responses scoped to the tenant."""

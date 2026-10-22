@@ -1,5 +1,7 @@
 """Diet Plan management serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.diet.models import (
@@ -18,7 +20,7 @@ class FoodItemSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = FoodItem
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "name",
             "serving_size",
@@ -32,7 +34,7 @@ class FoodItemSerializer(serializers.ModelSerializer):
             "is_veg",
             "created_at",
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at"]
 
 
 class DietMealSerializer(serializers.ModelSerializer):
@@ -45,7 +47,7 @@ class DietMealSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DietMeal
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "diet_day",
             "meal_type",
@@ -58,8 +60,8 @@ class DietMealSerializer(serializers.ModelSerializer):
             "fat",
             "is_completed",
         ]
-        read_only_fields = ["id", "calories", "protein", "carbs", "fat"]
-        extra_kwargs = {"diet_day": {"required": False}}
+        read_only_fields: ClassVar[list[str]] = ["id", "calories", "protein", "carbs", "fat"]
+        extra_kwargs: ClassVar[dict] = {"diet_day": {"required": False}}
 
     def validate_quantity(self, value: float) -> float:
         """Ensure quantity is a positive number."""
@@ -90,14 +92,14 @@ class DietMealNestedSerializer(DietMealSerializer):
     """DietMeal serializer used for nested (read) representation within days."""
 
     class Meta(DietMealSerializer.Meta):
-        read_only_fields = [
+        read_only_fields: ClassVar[list[str]] = [
             "id",
             "calories",
             "protein",
             "carbs",
             "fat",
         ]
-        extra_kwargs = {
+        extra_kwargs: ClassVar[dict] = {
             "food_item": {"required": True},
             "diet_day": {"required": False},
         }
@@ -110,7 +112,7 @@ class DietDaySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DietDay
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "diet_plan",
             "day_number",
@@ -118,7 +120,7 @@ class DietDaySerializer(serializers.ModelSerializer):
             "notes",
             "meals",
         ]
-        read_only_fields = ["id", "diet_plan", "total_calories"]
+        read_only_fields: ClassVar[list[str]] = ["id", "diet_plan", "total_calories"]
 
     def create(self, validated_data: dict) -> DietDay:
         """Create a day and its nested meals."""
@@ -165,7 +167,7 @@ class DietPlanSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DietPlan
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "name",
             "description",
@@ -180,7 +182,7 @@ class DietPlanSerializer(serializers.ModelSerializer):
             "updated_at",
             "days",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
     def create(self, validated_data: dict) -> DietPlan:
         """Create a diet plan with nested days and meals in a single request."""
@@ -235,7 +237,7 @@ class DietDayWriteSerializer(DietDaySerializer):
     )
 
     class Meta(DietDaySerializer.Meta):
-        read_only_fields = ["id", "total_calories"]
+        read_only_fields: ClassVar[list[str]] = ["id", "total_calories"]
 
 
 class DietAssignmentSerializer(serializers.ModelSerializer):
@@ -252,7 +254,7 @@ class DietAssignmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DietAssignment
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "diet_plan",
@@ -266,7 +268,7 @@ class DietAssignmentSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "assigned_by", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "assigned_by", "created_at", "updated_at"]
 
 
 class NutritionBreakdownSerializer(serializers.Serializer):

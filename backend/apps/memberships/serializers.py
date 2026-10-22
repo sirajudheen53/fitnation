@@ -1,5 +1,7 @@
 """Membership management serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.memberships.models import Coupon, Membership, MembershipPlan
@@ -12,7 +14,7 @@ class MembershipPlanSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = MembershipPlan
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "name",
             "plan_type",
@@ -24,7 +26,7 @@ class MembershipPlanSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
 
 class MembershipSerializer(serializers.ModelSerializer):
@@ -39,7 +41,7 @@ class MembershipSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Membership
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "customer_id",
@@ -54,7 +56,7 @@ class MembershipSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "status", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "status", "created_at", "updated_at"]
 
     def get_price(self, obj: Membership) -> float:
         """Return the plan price as a float (0 when no plan is attached)."""
@@ -87,7 +89,7 @@ class CouponSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Coupon
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "code",
             "discount_percent",
@@ -99,4 +101,4 @@ class CouponSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "used_count", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "used_count", "created_at", "updated_at"]

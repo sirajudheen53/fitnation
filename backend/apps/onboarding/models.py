@@ -1,6 +1,7 @@
 """Onboarding persistence — the resumable audit handle for the wizard."""
 
 import uuid
+from typing import ClassVar
 
 from django.db import models
 
@@ -54,7 +55,7 @@ class OnboardingSession(TenantModelMixin):
         """Model metadata."""
 
         db_table = "onboarding_sessions"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return a human-readable session label."""

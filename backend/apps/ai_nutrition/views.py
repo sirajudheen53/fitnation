@@ -1,5 +1,7 @@
 """AI Nutrition Assistant API views."""
 
+from typing import ClassVar
+
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
@@ -51,11 +53,11 @@ class AINutritionRole(RolePermission):
 class AIMealPlanViewSet(ModelViewSet):
     """Tenant-scoped CRUD for AI meal plans, with AI generation on create."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, AINutritionRole, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, AINutritionRole, EntitlementRequired]
     required_permission = "ai_nutrition.view"
     method_permissions = _METHOD_PERMISSIONS
-    filter_backends = []
+    filter_backends: ClassVar[list] = []
 
     def get_serializer_class(self):
         """Return the write serializer for creation, read otherwise."""
@@ -157,12 +159,12 @@ class AIMealPlanViewSet(ModelViewSet):
 class ShoppingListViewSet(ModelViewSet):
     """Tenant-scoped CRUD for shopping lists, generated from a meal plan."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, AINutritionRole, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, AINutritionRole, EntitlementRequired]
     required_permission = "ai_nutrition.view"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = ShoppingListSerializer
-    filter_backends = []
+    filter_backends: ClassVar[list] = []
 
     def get_queryset(self):
         """Return shopping lists scoped to the tenant (optionally by user)."""
@@ -243,12 +245,12 @@ class ShoppingListViewSet(ModelViewSet):
 class MacroLogViewSet(ModelViewSet):
     """Tenant-scoped CRUD for daily macro logs, with weekly/monthly trends."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, AINutritionRole, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, AINutritionRole, EntitlementRequired]
     required_permission = "ai_nutrition.view"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = MacroLogSerializer
-    filter_backends = []
+    filter_backends: ClassVar[list] = []
 
     def get_queryset(self):
         """Return macro logs scoped to the tenant (optionally by user/date)."""

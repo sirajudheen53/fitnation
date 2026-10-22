@@ -5,6 +5,8 @@ via ``TenantModelMixin`` and includes the minimal fields required for the
 corresponding endpoint.
 """
 
+from typing import ClassVar
+
 from django.db import models
 
 from apps.tenants.models import TenantModelMixin
@@ -24,8 +26,8 @@ class RevenueReport(TenantModelMixin):
         """RevenueReport model metadata."""
 
         db_table = "analytics_revenue_report"
-        ordering = ["-period"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-period"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "period"],
                 name="uq_analytics_revenue_tenant_period",
@@ -51,8 +53,8 @@ class AttendanceHeatmap(TenantModelMixin):
         """AttendanceHeatmap model metadata."""
 
         db_table = "analytics_attendance_heatmap"
-        ordering = ["-date"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-date"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "date"],
                 name="uq_analytics_heatmap_tenant_date",
@@ -86,8 +88,8 @@ class MembershipFunnel(TenantModelMixin):
         """MembershipFunnel model metadata."""
 
         db_table = "analytics_membership_funnel"
-        ordering = ["stage"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["stage"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "stage"],
                 name="uq_analytics_funnel_tenant_stage",
@@ -114,8 +116,8 @@ class TopCustomer(TenantModelMixin):
         """TopCustomer model metadata."""
 
         db_table = "analytics_top_customer"
-        ordering = ["-total_spent"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-total_spent"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "customer_id"],
                 name="uq_analytics_topcustomer_tenant_customer",

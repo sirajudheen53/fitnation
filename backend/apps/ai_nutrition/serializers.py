@@ -1,5 +1,7 @@
 """AI Nutrition serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.ai_nutrition.models import (
@@ -17,7 +19,7 @@ class FoodItemBriefSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FoodItem
-        fields = ["id", "name", "serving_size", "calories", "protein", "carbs", "fat"]
+        fields: ClassVar[list[str]] = ["id", "name", "serving_size", "calories", "protein", "carbs", "fat"]
 
 
 class AIMealPlanItemReadSerializer(serializers.ModelSerializer):
@@ -27,7 +29,7 @@ class AIMealPlanItemReadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AIMealPlanItem
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "meal_plan",
             "day_of_week",
@@ -40,7 +42,7 @@ class AIMealPlanItemReadSerializer(serializers.ModelSerializer):
             "fat_g",
             "created_at",
         ]
-        read_only_fields = ["id", "meal_plan", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "meal_plan", "created_at"]
 
 
 class AIMealPlanWriteSerializer(serializers.ModelSerializer):
@@ -55,7 +57,7 @@ class AIMealPlanWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AIMealPlan
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "name",
@@ -72,7 +74,7 @@ class AIMealPlanWriteSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "uuid", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "uuid", "created_at", "updated_at"]
 
     def validate(self, attrs: dict) -> dict:
         """Ensure end_date (if provided) is not before start_date."""
@@ -91,7 +93,7 @@ class AIMealPlanReadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AIMealPlan
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "user",
@@ -120,7 +122,7 @@ class ShoppingListItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ShoppingListItem
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "shopping_list",
             "food_item",
@@ -129,8 +131,8 @@ class ShoppingListItemSerializer(serializers.ModelSerializer):
             "is_purchased",
             "created_at",
         ]
-        read_only_fields = ["id", "shopping_list", "food_item", "quantity", "unit", "created_at"]
-        extra_kwargs = {
+        read_only_fields: ClassVar[list[str]] = ["id", "shopping_list", "food_item", "quantity", "unit", "created_at"]
+        extra_kwargs: ClassVar[dict] = {
             "shopping_list": {"required": False},
             "food_item": {"required": False},
         }
@@ -143,8 +145,8 @@ class ShoppingListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ShoppingList
-        fields = ["id", "user", "meal_plan", "name", "status", "items", "created_at"]
-        read_only_fields = ["id", "user", "meal_plan", "created_at"]
+        fields: ClassVar[list[str]] = ["id", "user", "meal_plan", "name", "status", "items", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "user", "meal_plan", "created_at"]
 
 
 class MacroLogSerializer(serializers.ModelSerializer):
@@ -152,7 +154,7 @@ class MacroLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MacroLog
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "user",
             "date",
@@ -163,4 +165,4 @@ class MacroLogSerializer(serializers.ModelSerializer):
             "water_intake_ml",
             "created_at",
         ]
-        read_only_fields = ["id", "user", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "user", "created_at"]

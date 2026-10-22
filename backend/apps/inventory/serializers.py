@@ -1,5 +1,7 @@
 """Equipment & inventory serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.inventory.models import Equipment, InventoryItem, MaintenanceLog
@@ -12,7 +14,7 @@ class EquipmentSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Equipment
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "name",
@@ -22,7 +24,7 @@ class EquipmentSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "uuid", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "uuid", "created_at", "updated_at"]
 
 
 class InventoryItemSerializer(serializers.ModelSerializer):
@@ -35,7 +37,7 @@ class InventoryItemSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = InventoryItem
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "equipment",
             "equipment_name",
@@ -46,7 +48,7 @@ class InventoryItemSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
     def validate_equipment(self, equipment: Equipment) -> Equipment:
         """Ensure the equipment belongs to the request tenant."""
@@ -68,7 +70,7 @@ class MaintenanceLogSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = MaintenanceLog
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "equipment",
             "equipment_name",
@@ -78,7 +80,7 @@ class MaintenanceLogSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
     def validate_equipment(self, equipment: Equipment) -> Equipment:
         """Ensure the equipment belongs to the request tenant."""

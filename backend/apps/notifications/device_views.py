@@ -32,7 +32,7 @@ class DeviceTokenViewSet(ModelViewSet):
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
     permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember]
     serializer_class = DeviceTokenSerializer
-    http_method_names = ["get", "post", "delete", "head", "options"]
+    http_method_names: ClassVar[list[str]] = ["get", "post", "delete", "head", "options"]
     lookup_field = "pk"
 
     def _customer(self) -> Customer | None:

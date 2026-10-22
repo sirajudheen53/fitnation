@@ -5,6 +5,7 @@ All tenant-scoped data inherits ``TenantModelMixin`` for multi-tenant isolation.
 """
 
 import uuid
+from typing import ClassVar
 
 from django.db import models
 from django.utils import timezone
@@ -59,7 +60,7 @@ class AIMealPlan(TenantModelMixin):
         """AIMealPlan model metadata."""
 
         db_table = "ai_meal_plans"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return a human-readable meal plan label."""
@@ -122,7 +123,7 @@ class AIMealPlanItem(TenantModelMixin):
         """AIMealPlanItem model metadata."""
 
         db_table = "ai_meal_plan_items"
-        ordering = ["meal_plan", "day_of_week", "meal_type", "id"]
+        ordering: ClassVar[list[str]] = ["meal_plan", "day_of_week", "meal_type", "id"]
 
     def __str__(self) -> str:
         """Return a human-readable meal item label."""
@@ -167,7 +168,7 @@ class ShoppingList(TenantModelMixin):
 
     class Meta:
         db_table = "ai_shopping_lists"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return a human-readable shopping list label."""
@@ -194,7 +195,7 @@ class ShoppingListItem(TenantModelMixin):
 
     class Meta:
         db_table = "ai_shopping_list_items"
-        ordering = ["shopping_list", "id"]
+        ordering: ClassVar[list[str]] = ["shopping_list", "id"]
 
     def __str__(self) -> str:
         """Return a human-readable shopping list item label."""
@@ -219,8 +220,8 @@ class MacroLog(TenantModelMixin):
 
     class Meta:
         db_table = "ai_macro_logs"
-        ordering = ["-date", "-created_at"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-date", "-created_at"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "user", "date"],
                 name="uq_ai_macro_log_tenant_user_date",

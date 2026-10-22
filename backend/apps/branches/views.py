@@ -1,5 +1,7 @@
 """Branch API views."""
 
+from typing import ClassVar
+
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -16,10 +18,10 @@ from apps.users.authentication import TenantTokenAuthentication
 class BranchListCreateView(APIView):
     """List or create branches for the current tenant."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "branches.view_branch"
-    method_permissions = {
+    method_permissions: ClassVar[dict] = {
         "GET": "branches.view_branch",
         "POST": "branches.create_branch",
     }
@@ -41,10 +43,10 @@ class BranchListCreateView(APIView):
 class BranchRetrieveUpdateView(APIView):
     """Retrieve or update a tenant branch."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "branches.view_branch"
-    method_permissions = {
+    method_permissions: ClassVar[dict] = {
         "GET": "branches.view_branch",
         "PATCH": "branches.edit_branch",
         "PUT": "branches.edit_branch",

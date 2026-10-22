@@ -1,6 +1,6 @@
 """Tenant API views."""
 
-from typing import Any
+from typing import Any, ClassVar
 
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -28,12 +28,12 @@ def _client_ip(request: Any) -> str | None:
 class TenantDetailView(APIView):
     """Retrieve current tenant details / update its WhatsApp config (owner/admin)."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "tenants.view_tenant"
     # Only gym owners / platform admins may change tenant settings; every other
     # role lacks "tenants.change_tenant" in RolePermission's matrix → 403.
-    method_permissions = {"PATCH": "tenants.change_tenant"}
+    method_permissions: ClassVar[dict] = {"PATCH": "tenants.change_tenant"}
 
     def get(self, request: Any) -> Response:
         """Return the tenant associated with the current request.
@@ -75,8 +75,8 @@ class WhatsappTestSendView(APIView):
     a human-readable detail (the attempt is recorded in ``NotificationLog``).
     """
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     # Owner/platform-admin only (same gate as config changes).
     required_permission = "tenants.change_tenant"
 
@@ -102,8 +102,8 @@ class WhatsappTestSendView(APIView):
 class WhatsappStatusView(APIView):
     """Today's WhatsApp usage counters for the settings page (FBOS-011 §6)."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "tenants.view_tenant"
 
     def get(self, request: Any) -> Response:
@@ -127,8 +127,8 @@ class TenantLookupView(APIView):
     same generic 404 so the endpoint cannot be used to enumerate gyms.
     """
 
-    authentication_classes: list[str] = []
-    permission_classes = [AllowAny]
+    authentication_classes: ClassVar[list[str]] = []
+    permission_classes: ClassVar[list] = [AllowAny]
 
     def get(self, request: Any) -> Response:
         """Handle a code lookup.

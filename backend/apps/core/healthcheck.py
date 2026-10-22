@@ -7,6 +7,7 @@ component reports a degraded 503 — it can never crash the endpoint.
 """
 
 import logging
+from typing import ClassVar
 
 from django.core.cache import cache
 from django.db import connection
@@ -25,8 +26,8 @@ class HealthCheckView(APIView):
     Component failures never crash the endpoint.
     """
 
-    authentication_classes = []
-    permission_classes = []
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = []
 
     def get(self, request: Request) -> Response:
         """Run health checks and return the aggregated status.

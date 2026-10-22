@@ -1,5 +1,7 @@
 """Trainer management serializers (FBOS-007)."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.trainers.models import TrainerAssignment, TrainerPerformance
@@ -19,7 +21,7 @@ class TrainerSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Trainer
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "user_id",
             "email",
@@ -37,7 +39,7 @@ class TrainerSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at", "rating"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at", "rating"]
 
 
 class TrainerAssignmentSerializer(serializers.ModelSerializer):
@@ -51,7 +53,7 @@ class TrainerAssignmentSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = TrainerAssignment
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "trainer",
             "customer",
@@ -63,7 +65,7 @@ class TrainerAssignmentSerializer(serializers.ModelSerializer):
             "customer_name",
             "branch_name",
         ]
-        read_only_fields = ["id", "assigned_at", "unassigned_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "assigned_at", "unassigned_at"]
 
 
 class TrainerPerformanceSerializer(serializers.ModelSerializer):
@@ -75,7 +77,7 @@ class TrainerPerformanceSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = TrainerPerformance
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "trainer",
             "month",
@@ -87,7 +89,7 @@ class TrainerPerformanceSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
 
 class TrainerScheduleSerializer(serializers.ModelSerializer):
@@ -97,7 +99,7 @@ class TrainerScheduleSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = TrainerSchedule
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "trainer",
             "day_of_week",
@@ -107,4 +109,4 @@ class TrainerScheduleSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]

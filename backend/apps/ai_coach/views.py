@@ -1,5 +1,7 @@
 """AI Coach views — FBOS-017."""
 
+from typing import ClassVar
+
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -22,8 +24,8 @@ from .services.ai_service import generate_response
 
 
 class AIConversationViewSet(ModelViewSet):
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, EntitlementRequired]
     serializer_class = AIConversationSerializer
 
     def get_queryset(self):
@@ -34,8 +36,8 @@ class AIConversationViewSet(ModelViewSet):
 
 
 class ChatView(APIView):
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "ai_coach.use_ai_coach"
 
     def post(self, request):
@@ -75,8 +77,8 @@ class ChatView(APIView):
 
 
 class ConversationMessagesView(APIView):
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, EntitlementRequired]
 
     def get(self, request, conversation_id):
         conversation = AIConversation.objects.filter(id=conversation_id, user=request.user).first()
@@ -87,10 +89,10 @@ class ConversationMessagesView(APIView):
 
 
 class AIRecommendationViewSet(ModelViewSet):
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, EntitlementRequired]
     serializer_class = AIRecommendationSerializer
-    http_method_names = ["get", "patch"]
+    http_method_names: ClassVar[list[str]] = ["get", "patch"]
 
     def get_queryset(self):
         return AIRecommendation.objects.filter(tenant_id=self.request.user.tenant_id, user=self.request.user)

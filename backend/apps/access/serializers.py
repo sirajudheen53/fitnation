@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.access.models import (
@@ -21,7 +23,7 @@ class BiometricDeviceSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = BiometricDevice
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "branch",
             "vendor",
@@ -36,7 +38,7 @@ class BiometricDeviceSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at", "last_sync_at", "last_seen_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at", "last_sync_at", "last_seen_at"]
 
 
 class BiometricCredentialEnrollSerializer(serializers.Serializer):
@@ -94,7 +96,7 @@ class BiometricCredentialSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = BiometricCredential
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "device",
@@ -103,7 +105,7 @@ class BiometricCredentialSerializer(serializers.ModelSerializer):
             "enrolled_at",
             "is_active",
         ]
-        read_only_fields = ["id", "enrolled_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "enrolled_at"]
 
 
 class BiometricCredentialEnrollResultSerializer(serializers.Serializer):
@@ -120,7 +122,7 @@ class AccessOverrideSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = AccessOverride
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "customer",
             "device",
@@ -130,7 +132,7 @@ class AccessOverrideSerializer(serializers.ModelSerializer):
             "expires_at",
             "created_by",
         ]
-        read_only_fields = ["id", "created_by"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_by"]
 
 
 class AccessLogSerializer(serializers.ModelSerializer):
@@ -140,7 +142,7 @@ class AccessLogSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = AccessLog
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "device",
             "customer",
@@ -150,4 +152,4 @@ class AccessLogSerializer(serializers.ModelSerializer):
             "event_timestamp",
             "raw_payload",
         ]
-        read_only_fields = ["id"]
+        read_only_fields: ClassVar[list[str]] = ["id"]

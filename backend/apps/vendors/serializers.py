@@ -1,5 +1,7 @@
 """Vendor onboarding serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.users.models import User
@@ -104,7 +106,7 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = SubscriptionPlan
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "code",
             "name",

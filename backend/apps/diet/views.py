@@ -1,5 +1,7 @@
 """Diet Plan management API views."""
 
+from typing import ClassVar
+
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
@@ -124,14 +126,14 @@ class DietRolePermission(RolePermission):
 class FoodItemViewSet(ModelViewSet):
     """CRUD for the global food catalog with search and filters."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes: ClassVar[list] = [IsAuthenticated]
     required_permission = "diets.view_diet"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = FoodItemSerializer
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ["name"]
-    ordering_fields = ["name", "calories", "protein", "carbs", "fat"]
-    ordering = ["name"]
+    filter_backends: ClassVar[list] = [SearchFilter, OrderingFilter]
+    search_fields: ClassVar[list[str]] = ["name"]
+    ordering_fields: ClassVar[list[str]] = ["name", "calories", "protein", "carbs", "fat"]
+    ordering: ClassVar[list[str]] = ["name"]
     queryset = FoodItem.objects.all()
 
     def get_queryset(self) -> FoodItem:
@@ -188,15 +190,15 @@ class FoodItemViewSet(ModelViewSet):
 class DietPlanViewSet(ModelViewSet):
     """Tenant-scoped CRUD for diet plans with nested days/meals."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
     required_permission = "diets.view_diet"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = DietPlanSerializer
-    filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ["name", "description"]
-    ordering_fields = ["name", "goal", "daily_calories", "created_at"]
-    ordering = ["-created_at"]
+    filter_backends: ClassVar[list] = [SearchFilter, OrderingFilter]
+    search_fields: ClassVar[list[str]] = ["name", "description"]
+    ordering_fields: ClassVar[list[str]] = ["name", "goal", "daily_calories", "created_at"]
+    ordering: ClassVar[list[str]] = ["-created_at"]
 
     def get_queryset(self) -> DietPlan:
         """Return diet plans scoped to the request tenant with goal filter."""
@@ -338,8 +340,8 @@ class DietPlanViewSet(ModelViewSet):
 class DietDayViewSet(ModelViewSet):
     """Tenant-scoped CRUD for diet days (nested under a plan)."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
     required_permission = "diets.view_diet"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = DietDayWriteSerializer
@@ -382,8 +384,8 @@ class DietDayViewSet(ModelViewSet):
 class DietMealViewSet(ModelViewSet):
     """Tenant-scoped CRUD for diet meals."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
     required_permission = "diets.view_diet"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = DietMealNestedSerializer
@@ -438,14 +440,14 @@ class DietMealViewSet(ModelViewSet):
 class DietAssignmentViewSet(ModelViewSet):
     """Tenant-scoped CRUD for diet assignments to customers."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, DietRolePermission, EntitlementRequired]
     required_permission = "diets.view_diet"
     method_permissions = _METHOD_PERMISSIONS
     serializer_class = DietAssignmentSerializer
-    filter_backends = [OrderingFilter]
-    ordering_fields = ["created_at", "start_date"]
-    ordering = ["-created_at"]
+    filter_backends: ClassVar[list] = [OrderingFilter]
+    ordering_fields: ClassVar[list[str]] = ["created_at", "start_date"]
+    ordering: ClassVar[list[str]] = ["-created_at"]
 
     def get_queryset(self) -> DietAssignment:
         """Return diet assignments scoped to the tenant with customer filter."""

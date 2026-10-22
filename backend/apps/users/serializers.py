@@ -1,5 +1,7 @@
 """User serializers."""
 
+from typing import ClassVar
+
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
@@ -16,7 +18,7 @@ class UserSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = User
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "email",
             "first_name",
@@ -32,7 +34,7 @@ class UserSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
@@ -50,7 +52,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = User
-        fields = [
+        fields: ClassVar[list[str]] = [
             "email",
             "first_name",
             "last_name",
@@ -88,7 +90,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = User
-        fields = ["first_name", "last_name", "phone", "role", "is_active"]
+        fields: ClassVar[list[str]] = ["first_name", "last_name", "phone", "role", "is_active"]
 
     def validate_role(self, value: str) -> str:
         """Validate role updates do not escalate privileges.
@@ -160,7 +162,7 @@ class TrainerScheduleSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = TrainerSchedule
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "trainer",
             "day_of_week",
@@ -170,7 +172,7 @@ class TrainerScheduleSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at", "trainer"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at", "trainer"]
 
     def to_internal_value(self, data: dict) -> dict:
         """Ensure is_available defaults to True when not provided."""
@@ -194,7 +196,7 @@ class TrainerSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Trainer
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "user_id",
             "email",
@@ -213,7 +215,7 @@ class TrainerSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at", "rating"]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at", "rating"]
 
 
 class TrainerCreateSerializer(serializers.Serializer):
@@ -257,7 +259,7 @@ class TrainerUpdateSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Trainer
-        fields = [
+        fields: ClassVar[list[str]] = [
             "specialization",
             "bio",
             "is_active",
@@ -279,7 +281,7 @@ class TrainerCustomerAssignmentSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = TrainerCustomerAssignment
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "trainer",
             "customer",
@@ -292,7 +294,7 @@ class TrainerCustomerAssignmentSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = [
+        read_only_fields: ClassVar[list[str]] = [
             "id",
             "assigned_at",
             "unassigned_at",

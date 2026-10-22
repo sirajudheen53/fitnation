@@ -58,8 +58,16 @@ class DeviceTokenSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = DeviceToken
-        fields = ["id", "token", "device_id", "platform", "device_type", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        fields: ClassVar[list[str]] = [
+            "id",
+            "token",
+            "device_id",
+            "platform",
+            "device_type",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
         # Registration is an upsert keyed on the token string (FBOS-011 §7.4):
         # the view's ``update_or_create`` owns uniqueness, so DRF's auto
         # ``UniqueValidator`` must not pre-empt it with a 400 on re-register

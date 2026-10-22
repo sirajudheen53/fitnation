@@ -1,5 +1,7 @@
 """Exercise library models."""
 
+from typing import ClassVar
+
 from django.db import models
 
 from apps.tenants.models import TenantModelMixin
@@ -18,8 +20,8 @@ class ExerciseCategory(TenantModelMixin):
         """ExerciseCategory model metadata."""
 
         db_table = "exercise_categories"
-        ordering = ["name"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["name"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "slug"],
                 name="uq_exercise_category_tenant_slug",
@@ -66,7 +68,7 @@ class Exercise(TenantModelMixin):
         """Exercise model metadata."""
 
         db_table = "exercises"
-        ordering = ["name"]
+        ordering: ClassVar[list[str]] = ["name"]
 
     def __str__(self) -> str:
         """Return exercise label."""

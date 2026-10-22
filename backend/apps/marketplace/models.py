@@ -1,6 +1,7 @@
 """Product marketplace models."""
 
 import uuid as uuid_lib
+from typing import ClassVar
 
 from django.db import models
 
@@ -21,8 +22,8 @@ class ProductCategory(TenantModelMixin):
         """ProductCategory model metadata."""
 
         db_table = "product_categories"
-        ordering = ["name"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["name"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "slug"],
                 name="uq_product_category_tenant_slug",
@@ -81,8 +82,8 @@ class Product(TenantModelMixin):
         """Product model metadata."""
 
         db_table = "products"
-        ordering = ["-created_at"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "slug"],
                 name="uq_product_tenant_slug",
@@ -123,7 +124,7 @@ class ProductImage(TenantModelMixin):
         """ProductImage model metadata."""
 
         db_table = "product_images"
-        ordering = ["sort_order", "created_at"]
+        ordering: ClassVar[list[str]] = ["sort_order", "created_at"]
 
     def __str__(self) -> str:
         """Return image label."""
@@ -181,7 +182,7 @@ class Cart(TenantModelMixin):
         """Cart model metadata."""
 
         db_table = "carts"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return cart label."""
@@ -217,7 +218,7 @@ class CartItem(TenantModelMixin):
         """CartItem model metadata."""
 
         db_table = "cart_items"
-        ordering = ["created_at"]
+        ordering: ClassVar[list[str]] = ["created_at"]
 
     def __str__(self) -> str:
         """Return cart item label."""
@@ -285,7 +286,7 @@ class Order(TenantModelMixin):
         """Order model metadata."""
 
         db_table = "orders"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return order label."""
@@ -314,7 +315,7 @@ class OrderItem(TenantModelMixin):
         """OrderItem model metadata."""
 
         db_table = "order_items"
-        ordering = ["created_at"]
+        ordering: ClassVar[list[str]] = ["created_at"]
 
     def __str__(self) -> str:
         """Return order item label."""

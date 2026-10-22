@@ -5,6 +5,8 @@ let owners/trainers respond, while also supporting structured surveys with
 multiple questions. All entities are tenant-scoped via ``TenantModelMixin``.
 """
 
+from typing import ClassVar
+
 from django.db import models
 
 from apps.customers.models import Customer
@@ -55,8 +57,8 @@ class Feedback(TenantModelMixin):
         """Feedback model metadata."""
 
         db_table = "feedback"
-        ordering = ["-created_at"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        constraints: ClassVar[list] = [
             models.CheckConstraint(
                 condition=models.Q(rating__gte=1, rating__lte=5),
                 name="ck_feedback_rating_range",
@@ -93,7 +95,7 @@ class FeedbackSurvey(TenantModelMixin):
         """FeedbackSurvey model metadata."""
 
         db_table = "feedback_surveys"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return a human-readable survey label."""
@@ -120,7 +122,7 @@ class FeedbackResponse(TenantModelMixin):
         """FeedbackResponse model metadata."""
 
         db_table = "feedback_responses"
-        ordering = ["-submitted_at"]
+        ordering: ClassVar[list[str]] = ["-submitted_at"]
 
     def __str__(self) -> str:
         """Return a human-readable response label."""

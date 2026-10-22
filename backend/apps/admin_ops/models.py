@@ -1,5 +1,7 @@
 """Admin ops models — platform-level audit records (issue #45)."""
 
+from typing import ClassVar
+
 from django.conf import settings
 from django.db import models
 
@@ -38,7 +40,7 @@ class ImpersonationLog(models.Model):
         """ImpersonationLog model metadata."""
 
         db_table = "impersonation_logs"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return human-readable log label."""

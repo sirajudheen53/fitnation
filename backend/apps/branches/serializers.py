@@ -1,5 +1,7 @@
 """Branch serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.branches.models import Branch
@@ -12,7 +14,7 @@ class BranchSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Branch
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "uuid",
             "name",
@@ -36,4 +38,4 @@ class BranchSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "uuid", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "uuid", "created_at", "updated_at"]

@@ -1,7 +1,7 @@
 """Tenant isolation foundation models."""
 
 import uuid
-from typing import Any
+from typing import Any, ClassVar
 
 from django.db import models
 
@@ -70,7 +70,7 @@ class Tenant(models.Model):
         """Tenant model metadata."""
 
         db_table = "tenants"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return human-readable tenant label."""

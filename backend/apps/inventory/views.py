@@ -1,5 +1,7 @@
 """Equipment & inventory API views."""
 
+from typing import ClassVar
+
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -21,8 +23,8 @@ from apps.users.authentication import TenantTokenAuthentication
 class EquipmentViewSet(ModelViewSet):
     """Tenant-scoped equipment CRUD viewset."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "inventory.view_equipment"
     serializer_class = EquipmentSerializer
 
@@ -60,8 +62,8 @@ class EquipmentViewSet(ModelViewSet):
 class InventoryItemViewSet(ModelViewSet):
     """Tenant-scoped inventory item CRUD viewset."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "inventory.view_inventory"
     serializer_class = InventoryItemSerializer
 
@@ -116,8 +118,8 @@ class InventoryItemViewSet(ModelViewSet):
 class MaintenanceLogViewSet(ModelViewSet):
     """Tenant-scoped maintenance log CRUD viewset."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "inventory.view_equipment"
     serializer_class = MaintenanceLogSerializer
 

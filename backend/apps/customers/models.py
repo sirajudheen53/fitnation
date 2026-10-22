@@ -1,6 +1,7 @@
 """Customer management models."""
 
 from decimal import Decimal
+from typing import ClassVar
 
 from django.db import models
 
@@ -77,8 +78,8 @@ class Customer(TenantModelMixin):
         """Customer model metadata."""
 
         db_table = "customers"
-        ordering = ["-created_at"]
-        constraints = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        constraints: ClassVar[list] = [
             models.UniqueConstraint(
                 fields=["tenant", "email"],
                 name="uq_customer_tenant_email",
@@ -218,8 +219,8 @@ class FitnessGoal(TenantModelMixin):
         """FitnessGoal model metadata."""
 
         db_table = "fitness_goals"
-        ordering = ["-created_at"]
-        indexes = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        indexes: ClassVar[list] = [
             models.Index(fields=["tenant", "status"], name="idx_fitnessgoal_status"),
         ]
 
@@ -328,7 +329,7 @@ class BodyMeasurement(TenantModelMixin):
         """BodyMeasurement model metadata."""
 
         db_table = "body_measurements"
-        ordering = ["-date_logged", "-created_at"]
+        ordering: ClassVar[list[str]] = ["-date_logged", "-created_at"]
 
     def __str__(self) -> str:
         """Return measurement label."""
@@ -382,7 +383,7 @@ class ProgressPhoto(TenantModelMixin):
         """ProgressPhoto model metadata."""
 
         db_table = "progress_photos"
-        ordering = ["-taken_at", "-created_at"]
+        ordering: ClassVar[list[str]] = ["-taken_at", "-created_at"]
 
     def __str__(self) -> str:
         """Return progress photo label."""

@@ -4,7 +4,7 @@ Tracks customer check-ins and trainer attendance at gym branches.
 All models are tenant-scoped via ``TenantModelMixin``.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 from django.db import models
 from django.utils import timezone
@@ -63,8 +63,8 @@ class AttendanceRecord(TenantModelMixin):
         """AttendanceRecord model metadata."""
 
         db_table = "attendance_records"
-        ordering = ["-check_in_time", "-created_at"]
-        indexes = [
+        ordering: ClassVar[list[str]] = ["-check_in_time", "-created_at"]
+        indexes: ClassVar[list] = [
             models.Index(
                 fields=["tenant", "customer", "date"],
                 name="idx_att_customer_date",
@@ -124,8 +124,8 @@ class TrainerAttendance(TenantModelMixin):
         """TrainerAttendance model metadata."""
 
         db_table = "trainer_attendance"
-        ordering = ["-created_at"]
-        indexes = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        indexes: ClassVar[list] = [
             models.Index(
                 fields=["tenant", "trainer", "date"],
                 name="idx_trainer_date",
@@ -178,8 +178,8 @@ class StaffAttendance(TenantModelMixin):
         """StaffAttendance model metadata."""
 
         db_table = "staff_attendance"
-        ordering = ["-created_at"]
-        indexes = [
+        ordering: ClassVar[list[str]] = ["-created_at"]
+        indexes: ClassVar[list] = [
             models.Index(
                 fields=["tenant", "user", "date"],
                 name="idx_staff_att_date",

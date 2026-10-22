@@ -1,5 +1,7 @@
 """Exercise library serializers."""
 
+from typing import ClassVar
+
 from rest_framework import serializers
 
 from apps.exercises.models import Exercise, ExerciseCategory
@@ -14,7 +16,7 @@ class ExerciseCategorySerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = ExerciseCategory
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "name",
             "description",
@@ -23,7 +25,7 @@ class ExerciseCategorySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "exercise_count", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "exercise_count", "created_at", "updated_at"]
 
 
 class ExerciseSerializer(serializers.ModelSerializer):
@@ -38,7 +40,7 @@ class ExerciseSerializer(serializers.ModelSerializer):
         """Serializer metadata."""
 
         model = Exercise
-        fields = [
+        fields: ClassVar[list[str]] = [
             "id",
             "name",
             "description",
@@ -54,7 +56,7 @@ class ExerciseSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "category_name", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "category_name", "created_at", "updated_at"]
 
     def validate_category(self, value: ExerciseCategory) -> ExerciseCategory:
         """Ensure the category belongs to the request tenant."""

@@ -1,6 +1,7 @@
 """Vendor onboarding and subscription plan models."""
 
 import uuid
+from typing import ClassVar
 
 from django.db import models
 
@@ -50,7 +51,7 @@ class VendorRegistration(models.Model):
         """VendorRegistration model metadata."""
 
         db_table = "vendor_registrations"
-        ordering = ["-created_at"]
+        ordering: ClassVar[list[str]] = ["-created_at"]
 
     def __str__(self) -> str:
         """Return registration label."""
@@ -84,7 +85,7 @@ class SubscriptionPlan(models.Model):
         """SubscriptionPlan model metadata."""
 
         db_table = "subscription_plans"
-        ordering = ["sort_order"]
+        ordering: ClassVar[list[str]] = ["sort_order"]
 
     def __str__(self) -> str:
         """Return plan label."""

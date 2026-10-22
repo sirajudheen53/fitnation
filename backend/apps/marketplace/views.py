@@ -1,5 +1,7 @@
 """Product marketplace API views."""
 
+from typing import ClassVar
+
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from rest_framework import filters, status
@@ -39,10 +41,10 @@ from apps.users.authentication import TenantTokenAuthentication
 class ProductCategoryViewSet(ModelViewSet):
     """Tenant-scoped CRUD for product categories."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "marketplace.view_product"
-    method_permissions = {
+    method_permissions: ClassVar[dict] = {
         "GET": "marketplace.view_product",
         "POST": "marketplace.edit_product",
         "PUT": "marketplace.edit_product",
@@ -50,10 +52,10 @@ class ProductCategoryViewSet(ModelViewSet):
         "DELETE": "marketplace.delete_product",
     }
     serializer_class = ProductCategorySerializer
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["name", "description", "slug"]
-    ordering_fields = ["name", "created_at"]
-    ordering = ["name"]
+    filter_backends: ClassVar[list] = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields: ClassVar[list[str]] = ["name", "description", "slug"]
+    ordering_fields: ClassVar[list[str]] = ["name", "created_at"]
+    ordering: ClassVar[list[str]] = ["name"]
 
     def get_queryset(self) -> ProductCategory:
         """Return categories scoped to the tenant with product counts."""
@@ -69,20 +71,20 @@ class ProductCategoryViewSet(ModelViewSet):
 class ProductViewSet(ModelViewSet):
     """Tenant-scoped CRUD for products with search and filtering."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "marketplace.view_product"
-    method_permissions = {
+    method_permissions: ClassVar[dict] = {
         "GET": "marketplace.view_product",
         "POST": "marketplace.edit_product",
         "PUT": "marketplace.edit_product",
         "PATCH": "marketplace.edit_product",
         "DELETE": "marketplace.delete_product",
     }
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["name", "description", "brand", "sku"]
-    ordering_fields = ["name", "price", "created_at"]
-    ordering = ["-created_at"]
+    filter_backends: ClassVar[list] = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields: ClassVar[list[str]] = ["name", "description", "brand", "sku"]
+    ordering_fields: ClassVar[list[str]] = ["name", "price", "created_at"]
+    ordering: ClassVar[list[str]] = ["-created_at"]
 
     def get_queryset(self) -> Product:
         """Return products scoped to the tenant with optional filters."""
@@ -115,8 +117,8 @@ class ProductViewSet(ModelViewSet):
 class CartView(APIView):
     """Retrieve, add-to, or clear the current user's active cart."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "marketplace.view_cart"
 
     def get(self, request: Request) -> Response:
@@ -170,8 +172,8 @@ class CartView(APIView):
 class CartItemView(APIView):
     """Update quantity or remove a specific cart line item."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "marketplace.view_cart"
 
     def get_object(self, request: Request, item_id: int) -> CartItem:
@@ -210,20 +212,20 @@ class CartItemView(APIView):
 class OrderViewSet(ModelViewSet):
     """Tenant-scoped CRUD for orders."""
 
-    authentication_classes = [TenantTokenAuthentication]
-    permission_classes = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
+    authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
+    permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission, EntitlementRequired]
     required_permission = "marketplace.view_order"
-    method_permissions = {
+    method_permissions: ClassVar[dict] = {
         "GET": "marketplace.view_order",
         "POST": "marketplace.create_order",
         "PUT": "marketplace.edit_order",
         "PATCH": "marketplace.edit_order",
         "DELETE": "marketplace.delete_order",
     }
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["uuid", "status", "payment_status"]
-    ordering_fields = ["created_at", "total_amount"]
-    ordering = ["-created_at"]
+    filter_backends: ClassVar[list] = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields: ClassVar[list[str]] = ["uuid", "status", "payment_status"]
+    ordering_fields: ClassVar[list[str]] = ["created_at", "total_amount"]
+    ordering: ClassVar[list[str]] = ["-created_at"]
 
     def get_queryset(self) -> Order:
         """Return orders scoped to the tenant, optionally filtered by user."""
