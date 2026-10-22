@@ -125,6 +125,16 @@ def cdata(request: HttpRequest) -> HttpResponse:
     ]
     if rows:
         PunchLogRaw.objects.bulk_create(rows)
+        if table == "ATTLOG":
+            # Phase-2 pairing is best-effort by contract: the device must
+            # always get its plain-text OK, even if pairing blows up —
+            # the raw rows are already stored for replay.
+            try:
+                from apps.access.services import ingest_attlog_rows
+
+                ingest_attlog_rows(device=device, rows=rows)
+            except Exception:  # noqa: BLE001
+                logger.exception("ATTLOG pairing failed for device %s; raw rows kept.", device.pk)
     return _plain("OK")
 
 

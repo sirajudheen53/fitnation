@@ -55,7 +55,7 @@
   <h2>Raw punch lines <span class="muted">(latest {{ row_limit }}, newest first)</span></h2>
   <table>
     <thead>
-      <tr><th>Received at</th><th>Device SN</th><th>Tenant</th><th>Table</th><th>Raw line (first {{ preview_chars }} chars)</th></tr>
+      <tr><th>Received at</th><th>Device SN</th><th>Tenant</th><th>Table</th><th>Flags</th><th>Raw line (first {{ preview_chars }} chars)</th></tr>
     </thead>
     <tbody>
       {% for punch in punches %}
@@ -64,10 +64,11 @@
         <td><a href="?sn={{ punch.device.serial_number|urlencode }}">{{ punch.device.serial_number }}</a></td>
         <td>{{ punch.device.tenant.name }}</td>
         <td>{{ punch.table_name }}</td>
+        <td>{% if punch.is_orphan %}<span class="bad">orphan</span>{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
         <td><code>{{ punch.raw_line|truncatechars:preview_chars }}</code></td>
       </tr>
       {% empty %}
-      <tr><td colspan="5" class="muted">No raw punch rows yet{% if sn %} for sn={{ sn }}{% endif %}.</td></tr>
+      <tr><td colspan="6" class="muted">No raw punch rows yet{% if sn %} for sn={{ sn }}{% endif %}.</td></tr>
       {% endfor %}
     </tbody>
   </table>

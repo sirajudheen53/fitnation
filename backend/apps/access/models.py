@@ -244,6 +244,10 @@ class PunchLogRaw(TenantModelMixin):
         help_text="ADMS table the row belongs to: ATTLOG / OPERLOG / ATTPHOTO / UNKNOWN",
     )
     raw_line = models.TextField(help_text="The line exactly as received (tabs preserved).")
+    is_orphan = models.BooleanField(
+        default=False,
+        help_text="ATTLOG punch whose device_user_id is not linked to any customer.",
+    )
     received_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

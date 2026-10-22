@@ -18,6 +18,7 @@ from apps.access.models import (
     BiometricDevice,
     ConnectionType,
     CredentialType,
+    PunchLogRaw,
 )
 from apps.access.selectors import get_device_allow_list
 
@@ -278,6 +279,85 @@ def _resolve_event_customer(*, device: BiometricDevice, device_user_id: str) -> 
         .first()
     )
     return credential.customer if credential else None
+
+
+def resolve_punch_customer(*, device: BiometricDevice, device_user_id: str) -> Customer | None:
+    """Resolve the puncher: exact (device, id) first, then tenant-wide.
+
+    Phase-2 canonical ids are shared across devices, so a punch on
+    device B may belong to a credential enrolled on device A — the
+    tenant-wide same-id fallback resolves it.
+    """
+    if not device_user_id:
+        return None
+    exact = (
+        BiometricCredential.objects.for_tenant(device.tenant)
+        .filter(device=device, device_user_id=device_user_id, is_active=True)
+        .select_related("customer")
+        .first()
+    )
+    if exact is not None:
+        return exact.customer
+    fallback = (
+        BiometricCredential.objects.for_tenant(device.tenant)
+        .filter(device_user_id=device_user_id, is_active=True)
+        .select_related("customer")
+        .first()
+    )
+    return fallback.customer if fallback else None
+
+
+def _parse_attlog_punch(raw_line: str) -> tuple[str, datetime | None]:
+    """Parse an ATTLOG row: ``<tab>PIN\\tYYYY-MM-DD HH:MM:SS\\t...``.
+
+    The device pushes gym-local wall time (handshake ``TimeZone=5.5``),
+    so the naive stamp is made aware in the project timezone (IST) —
+    its local date then matches what the gym sees.
+    """
+    fields = raw_line.split("\t")
+    while fields and not fields[0].strip():
+        fields.pop(0)
+    if len(fields) < 2:
+        return "", None
+    pin = fields[0].strip()
+    try:
+        stamp = datetime.strptime(fields[1].strip(), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        logger.warning("Unparseable ATTLOG timestamp in row %r.", raw_line[:80])
+        return pin, None
+    return pin, timezone.make_aware(stamp)
+
+
+def ingest_attlog_rows(*, device: BiometricDevice, rows: list) -> dict:
+    """Resolve and pair ATTLOG rows pushed to ``/iclock/cdata``.
+
+    Runs right after the raw bulk_create. Contract with the device-facing
+    endpoint: this is best-effort — callers swallow exceptions so the
+    plain-text OK response never breaks. Punches whose device_user_id is
+    not linked to any active credential are flagged ``is_orphan`` for the
+    debug dashboard and excluded from attendance pairing.
+
+    Returns:
+        ``{"paired": int, "orphaned": int}``.
+    """
+    from apps.attendance.services import pair_punch
+
+    paired = 0
+    orphan_pks = []
+    for row in rows:
+        pin, punch_ts = _parse_attlog_punch(row.raw_line)
+        if punch_ts is None:
+            punch_ts = row.received_at
+        customer = resolve_punch_customer(device=device, device_user_id=pin)
+        if customer is None:
+            if row.pk is not None:
+                orphan_pks.append(row.pk)
+            continue
+        pair_punch(tenant=device.tenant, customer=customer, branch=device.branch, punch_ts=punch_ts)
+        paired += 1
+    if orphan_pks:
+        PunchLogRaw.objects.filter(pk__in=orphan_pks).update(is_orphan=True)
+    return {"paired": paired, "orphaned": len(orphan_pks)}
 
 
 def fetch_device_events(*, device: BiometricDevice, since: datetime | None = None) -> dict:

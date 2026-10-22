@@ -21,6 +21,7 @@ class AttendanceRecord(TenantModelMixin):
         QR = "qr", "QR Code"
         MOBILE = "mobile", "Mobile"
         MANUAL = "manual", "Manual"
+        BIOMETRIC = "biometric", "Biometric Device"
 
     class Status(models.TextChoices):
         """Attendance status for the record."""

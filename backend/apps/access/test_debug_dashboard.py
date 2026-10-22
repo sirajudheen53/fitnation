@@ -154,6 +154,21 @@ class BiometricsDebugRenderTest(BiometricsDebugDashboardTestBase):
         punches = list(response.context["punches"])
         assert punches[0].pk == self.punch.pk
 
+    def test_orphan_punches_flagged_red(self) -> None:
+        """Orphan punches show an 'orphan' badge; resolved rows show none."""
+        self.punch.is_orphan = True
+        self.punch.save(update_fields=["is_orphan"])
+        response = self.client.get("/debug/biometrics/")
+        content = response.content.decode()
+        assert "orphan" in content
+        # Only the flagged row carries the badge — a clean punch shows the
+        # muted dash instead (one badge per orphan in the punches section).
+        self.punch.is_orphan = False
+        self.punch.save(update_fields=["is_orphan"])
+        response = self.client.get("/debug/biometrics/")
+        punches_section = response.content.decode().split("Raw punch lines")[1].split("ADMS requests")[0]
+        assert "orphan" not in punches_section
+
     def test_request_section_marks_registered_and_unknown(self) -> None:
         """Registered SNs are labelled; unknown SNs flagged as 403."""
         response = self.client.get("/debug/biometrics/")
