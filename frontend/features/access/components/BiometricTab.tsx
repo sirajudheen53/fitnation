@@ -31,23 +31,32 @@ const ATTENDANCE_LIMIT = 10;
 const selectClass =
   "block w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500";
 
+/** ADMS devices record punches in IST — render this tab's clocks in Asia/Calcutta
+ * regardless of where the browser (or the CI runner) sits. */
+const ATTENDANCE_TIME_ZONE = "Asia/Calcutta";
+
 /** "2026-10-22" → "22 Oct 2026"; returns the input when unparseable. */
 export function formatAttendanceDate(date: string): string {
-  const parsed = new Date(`${date}T00:00:00`);
+  const parsed = new Date(`${date}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return date;
   return parsed.toLocaleDateString("en-IN", {
     day: "numeric",
     month: "short",
     year: "numeric",
+    timeZone: ATTENDANCE_TIME_ZONE,
   });
 }
 
-/** ISO timestamp → "9:05 am"; "—" for null/punches that never closed. */
+/** ISO timestamp → "9:05 am" (IST); "—" for null/punches that never closed. */
 export function formatAttendanceTime(value: string | null | undefined): string {
   if (!value) return "—";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+  return parsed.toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: ATTENDANCE_TIME_ZONE,
+  });
 }
 
 /** Newest first, capped for the front-desk view. */

@@ -303,9 +303,11 @@ describe("BiometricTab attendance history", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveAttribute("data-testid", "attendance-row-501");
 
-    expect(within(rows[0]).getByText(/2026/)).toBeInTheDocument();
-    expect(within(rows[0]).getByText(/9:05/)).toBeInTheDocument();
-    expect(within(rows[0]).getByText(/10:35/)).toBeInTheDocument();
+    expect(within(rows[0]).getByText("22 Oct 2026")).toBeInTheDocument();
+    // Exact IST renderings — 03:35Z/05:05Z pinned via timeZone in the component,
+    // so these hold under any runner clock (CI runs TZ=UTC).
+    expect(within(rows[0]).getByText("9:05 am")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("10:35 am")).toBeInTheDocument();
     // Open session (no check-out yet) renders an em dash.
     expect(within(rows[1]).getByText("—")).toBeInTheDocument();
   });
@@ -332,13 +334,13 @@ describe("BiometricTab attendance history", () => {
 });
 
 describe("attendance formatting helpers", () => {
-  it("formats dates as day-month-year", () => {
-    expect(formatAttendanceDate("2026-10-22")).toContain("2026");
+  it("formats dates as day-month-year in IST", () => {
+    expect(formatAttendanceDate("2026-10-22")).toBe("22 Oct 2026");
     expect(formatAttendanceDate("not-a-date")).toBe("not-a-date");
   });
 
-  it("formats times and falls back to an em dash", () => {
-    expect(formatAttendanceTime("2026-10-22T03:35:00Z")).toMatch(/9:05/);
+  it("formats times in IST and falls back to an em dash", () => {
+    expect(formatAttendanceTime("2026-10-22T03:35:00Z")).toBe("9:05 am");
     expect(formatAttendanceTime(null)).toBe("—");
     expect(formatAttendanceTime(undefined)).toBe("—");
   });
