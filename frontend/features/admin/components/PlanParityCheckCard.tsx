@@ -44,16 +44,23 @@ export function PlanParityCheckCard({ plans }: PlanParityCheckCardProps) {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
 
-  const runCheck = useCallback(() => {
-    setChecking(true);
-    setFetchError(null);
+  const loadPublicCodes = useCallback(() => {
     getPlans()
       .then((res) => setPublicCodes(res.plans.map((p) => p.code)))
       .catch((err: unknown) => setFetchError(errorMessage(err)))
       .finally(() => setChecking(false));
   }, []);
 
-  useEffect(() => runCheck(), [runCheck]);
+  useEffect(() => {
+    void loadPublicCodes();
+  }, [loadPublicCodes]);
+
+  /** Recheck button handler — state resets here, not in the mount effect. */
+  const runCheck = useCallback(() => {
+    setChecking(true);
+    setFetchError(null);
+    void loadPublicCodes();
+  }, [loadPublicCodes]);
 
   const activeCount = plans.filter((p) => p.is_active).length;
   let body;
