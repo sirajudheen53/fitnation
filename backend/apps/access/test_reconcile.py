@@ -8,8 +8,8 @@ double-queue against the realtime propagation (shared dedupe).
 from __future__ import annotations
 
 from datetime import timedelta
-from io import StringIO
 from decimal import Decimal
+from io import StringIO
 
 from django.core.management import call_command
 from django.test import TestCase

@@ -23,6 +23,7 @@ from apps.access.models import (
     BiometricCredential,
     BiometricDevice,
 )
+from apps.access.propagation import propagate_enrollment
 from apps.access.selectors import get_customer_access_state
 from apps.access.serializers import (
     AccessLogSerializer,
@@ -42,7 +43,6 @@ from apps.access.services import (
     ingest_event,
     sync_device,
 )
-from apps.access.propagation import propagate_enrollment
 from apps.customers.models import Customer
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
