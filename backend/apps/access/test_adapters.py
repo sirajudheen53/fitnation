@@ -8,7 +8,7 @@ does not duplicate its registry/API coverage.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
 from django.utils import timezone
@@ -19,7 +19,7 @@ from apps.access.adapters.base import AdapterError, AdapterNotRegisteredError, B
 from apps.access.adapters.generic_http import GenericHTTPAdapter
 from apps.access.adapters.registry import get_adapter, get_adapter_class, registered_vendors
 from apps.access.adapters.zkteco import ZKTecoADMSAdapter
-from apps.access.models import BiometricCredential, DeviceCommandQueue
+from apps.access.models import BiometricCredential, BiometricDevice, DeviceCommandQueue
 from apps.access.tests import AccessTestBase
 
 
@@ -108,6 +108,56 @@ class ZKTecoADMSAdapterTest(AccessTestBase):
         assert reply == "OK"
         self.device.refresh_from_db()
         assert self.device.last_seen_at is not None
+
+
+class ADMSCommandFormatTest(AccessTestBase):
+    """Phase-2 ADMS user-command wire format (ZKTeco/eSSL family)."""
+
+    def _adms_device(self) -> BiometricDevice:
+        """A zkteco-protocol device for registry lookups."""
+        return BiometricDevice.objects.create(
+            tenant=self.tenant,
+            branch=self.branch,
+            vendor="zkteco",
+            model="BioFace C1",
+            serial_number="ADMS-FMT-1",
+            name="Format Gate",
+            connection_type="webhook",
+        )
+
+    def test_userinfo_update_exact_wire_format(self) -> None:
+        """Tab-separated ADMS fields, guide spelling, ISO Valid date."""
+        text = ZKTecoADMSAdapter().userinfo_update(
+            pin="12",
+            name="Ana",
+            privilege=0,
+            valid_date=date(2026, 11, 30),
+        )
+        assert text == "DATA UPDATE USERINFO\tPIN=12\tName=Ana\tPrivilege=0\tPasswd=\tCard=\tValid=2026-11-30"
+
+    def test_userinfo_update_without_valid_date(self) -> None:
+        """An absent valid_date leaves the Valid field empty."""
+        text = ZKTecoADMSAdapter().userinfo_update(pin="7", name="Bob", privilege=0, valid_date=None)
+        assert text == "DATA UPDATE USERINFO\tPIN=7\tName=Bob\tPrivilege=0\tPasswd=\tCard=\tValid="
+
+    def test_userinfo_delete_exact_wire_format(self) -> None:
+        """Delete is a single command + PIN pair."""
+        assert ZKTecoADMSAdapter().userinfo_delete(pin="12") == "DATA DELETE USERINFO PIN=12"
+
+    def test_registry_adapter_exposes_command_formatters(self) -> None:
+        """get_adapter(zkteco device) carries the phase-2 formatters."""
+        adapter = get_adapter(self._adms_device())
+        assert hasattr(adapter, "userinfo_update")
+        assert hasattr(adapter, "userinfo_delete")
+
+    def test_essl_adapter_shares_zkteco_formatting(self) -> None:
+        """eSSL runs ZKTeco firmware — identical wire format."""
+        from apps.access.adapters.essl import EsslAdapter
+
+        assert EsslAdapter().userinfo_update(pin="1", name="X", privilege=0, valid_date=None) == (
+            "DATA UPDATE USERINFO\tPIN=1\tName=X\tPrivilege=0\tPasswd=\tCard=\tValid="
+        )
+        assert EsslAdapter().userinfo_delete(pin="1") == "DATA DELETE USERINFO PIN=1"
 
 
 class GenericHTTPBridgeTest(AccessTestBase):

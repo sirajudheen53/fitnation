@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from django.utils import timezone
 
+from apps.access.adapters import get_adapter
 from apps.access.models import BiometricCredential, BiometricDevice, DeviceCommandQueue
 
 if TYPE_CHECKING:
@@ -72,15 +73,37 @@ def is_membership_in_cool_off(membership: Membership | None, tenant: Tenant, tod
     return day <= biometric_access_valid_until(membership, tenant)
 
 
-def userinfo_update_text(*, pin: str, name: str, privilege: int, valid_date: date | None) -> str:
-    """The ADMS wire line for a user upsert (tab-separated fields)."""
-    valid = valid_date.isoformat() if valid_date is not None else ""
-    return f"{UPDATE_COMMAND}\tPIN={pin}\tName={name}\tPrivilege={privilege}\tPasswd=\tCard=\tValid={valid}"
+def _format_command_text(
+    device: BiometricDevice,
+    *,
+    action: str,
+    pin: str,
+    name: str = "",
+    privilege: int = 0,
+    valid_date: date | None = None,
+) -> str | None:
+    """Format the ADMS wire line via the device's vendor adapter.
 
-
-def userinfo_delete_text(*, pin: str) -> str:
-    """The ADMS wire line for a user delete."""
-    return f"{DELETE_COMMAND} PIN={pin}"
+    Returns ``None`` for vendors without ADMS user-command support —
+    those devices never poll the ADMS endpoints, so there is nothing to
+    queue for (the ZKTeco/eSSL family is the supported set).
+    """
+    adapter = get_adapter(device)
+    if action == "update":
+        formatter = getattr(adapter, "userinfo_update", None)
+        if formatter is not None:
+            return formatter(pin=pin, name=name, privilege=privilege, valid_date=valid_date)
+    else:
+        formatter = getattr(adapter, "userinfo_delete", None)
+        if formatter is not None:
+            return formatter(pin=pin)
+    logger.warning(
+        "Vendor '%s' has no ADMS user-command support; skipping %s for device %s.",
+        device.vendor,
+        action,
+        device.pk,
+    )
+    return None
 
 
 def enqueue_device_command(
@@ -164,15 +187,32 @@ def propagate_customer_biometric_state(*, customer: "Customer") -> list[dict]:
     for credential in credentials:
         device = credential.device
         if action == "update":
+            text = _format_command_text(
+                device,
+                action="update",
+                pin=credential.device_user_id,
+                name=customer.name,
+                privilege=0,
+                valid_date=valid_until,
+            )
+        else:
+            text = _format_command_text(device, action="delete", pin=credential.device_user_id)
+        if text is None:
+            results.append(
+                {
+                    "device_id": device.pk,
+                    "device_user_id": credential.device_user_id,
+                    "action": action,
+                    "enqueued": False,
+                    "queue_id": None,
+                }
+            )
+            continue
+        if action == "update":
             row = enqueue_device_command(
                 device=device,
                 command=UPDATE_COMMAND,
-                text=userinfo_update_text(
-                    pin=credential.device_user_id,
-                    name=customer.name,
-                    privilege=0,
-                    valid_date=valid_until,
-                ),
+                text=text,
                 payload={
                     "pin": credential.device_user_id,
                     "name": customer.name,
@@ -184,7 +224,7 @@ def propagate_customer_biometric_state(*, customer: "Customer") -> list[dict]:
             row = enqueue_device_command(
                 device=device,
                 command=DELETE_COMMAND,
-                text=userinfo_delete_text(pin=credential.device_user_id),
+                text=text,
                 payload={"pin": credential.device_user_id},
             )
         results.append(
@@ -224,15 +264,20 @@ def propagate_enrollment(credential: BiometricCredential) -> DeviceCommandQueue 
         )
         return None
     valid_until = biometric_access_valid_until(membership, tenant)
+    text = _format_command_text(
+        credential.device,
+        action="update",
+        pin=credential.device_user_id,
+        name=credential.customer.name,
+        privilege=0,
+        valid_date=valid_until,
+    )
+    if text is None:
+        return None
     return enqueue_device_command(
         device=credential.device,
         command=UPDATE_COMMAND,
-        text=userinfo_update_text(
-            pin=credential.device_user_id,
-            name=credential.customer.name,
-            privilege=0,
-            valid_date=valid_until,
-        ),
+        text=text,
         payload={
             "pin": credential.device_user_id,
             "name": credential.customer.name,

@@ -20,8 +20,6 @@ from apps.access.propagation import (
     DELETE_COMMAND,
     UPDATE_COMMAND,
     propagate_customer_biometric_state,
-    userinfo_delete_text,
-    userinfo_update_text,
 )
 from apps.branches.models import Branch
 from apps.customers.models import Customer
@@ -274,17 +272,19 @@ class PropagationDedupeTest(PropagationTestBase):
         assert DeviceCommandQueue.objects.count() == 2
 
 
-class WireTextHelperTest(PropagationTestBase):
-    """The ADMS command-line builders (shared with the adapter in B-C)."""
+class UnsupportedVendorTest(PropagationTestBase):
+    """Vendors without ADMS user-command support are skipped, not crashed."""
 
-    def test_update_text_exact_format(self) -> None:
-        """Tab-separated ADMS fields with empty Passwd/Card."""
-        assert userinfo_update_text(pin="12", name="Ana", privilege=0, valid_date=None) == (
-            "DATA UPDATE USERINFO\tPIN=12\tName=Ana\tPrivilege=0\tPasswd=\tCard=\tValid="
-        )
-
-    def test_delete_text_exact_format(self) -> None:
-        assert userinfo_delete_text(pin="12") == "DATA DELETE USERINFO PIN=12"
+    def test_non_adms_vendor_skips_enqueue(self) -> None:
+        """A hikvision device (no userinfo_* adapter methods) gets no rows."""
+        self.device.vendor = "hikvision"
+        self.device.save(update_fields=["vendor", "updated_at"])
+        self._membership()
+        results = propagate_customer_biometric_state(customer=self.customer)
+        assert results[0]["action"] == "update"
+        assert results[0]["enqueued"] is False
+        assert results[0]["queue_id"] is None
+        assert DeviceCommandQueue.objects.count() == 0
 
 
 class MembershipTouchpointPropagationTest(APITestCase):

@@ -15,6 +15,12 @@ from apps.access.models import (
     DeviceCommandQueue,
     PunchLogRaw,
 )
+from apps.access.propagation import (
+    DELETE_COMMAND,
+    UPDATE_COMMAND,
+    enqueue_device_command,
+    propagate_customer_biometric_state,
+)
 from apps.branches.models import Branch
 from apps.customers.models import Customer
 from apps.tenants.services import provision_tenant
@@ -227,6 +233,73 @@ class GetRequestTest(AdmsEndpointTestBase):
         response = self.client.get("/iclock/getrequest?SN=NOT-REGISTERED")
         assert response.status_code != 200
         assert response["Content-Type"].startswith("text/plain")
+
+
+class Phase2CommandDeliveryTest(AdmsEndpointTestBase):
+    """Phase-2 adapter-formatted commands (payload['text']) reach the device verbatim."""
+
+    def _queue_update(self) -> DeviceCommandQueue:
+        """Queue one phase-2 USERINFO update the way propagation does."""
+        return enqueue_device_command(
+            device=self.device,
+            command=UPDATE_COMMAND,
+            text="DATA UPDATE USERINFO\tPIN=1001\tName=John Doe\tPrivilege=0\tPasswd=\tCard=\tValid=2026-11-30",
+            payload={"pin": "1001", "name": "John Doe", "privilege": 0, "valid_date": "2026-11-30"},
+        )
+
+    def _queue_delete(self) -> DeviceCommandQueue:
+        """Queue one phase-2 USERINFO delete the way propagation does."""
+        return enqueue_device_command(
+            device=self.device,
+            command=DELETE_COMMAND,
+            text="DATA DELETE USERINFO PIN=1001",
+            payload={"pin": "1001"},
+        )
+
+    def test_update_reaches_device_verbatim(self) -> None:
+        """The queued text is delivered byte-for-byte, C:<id>-prefixed."""
+        row = self._queue_update()
+        response = self.client.get(f"/iclock/getrequest?SN={SN}")
+        assert response.status_code == 200
+        assert response.content.decode() == (
+            f"C:{row.pk}:DATA UPDATE USERINFO\tPIN=1001\tName=John Doe\tPrivilege=0\tPasswd=\tCard=\tValid=2026-11-30"
+        )
+        row.refresh_from_db()
+        assert row.executed_at is not None
+
+    def test_delete_reaches_device_verbatim(self) -> None:
+        """Deletes keep their single-line format through the queue."""
+        row = self._queue_delete()
+        response = self.client.get(f"/iclock/getrequest?SN={SN}")
+        assert response.content.decode() == f"C:{row.pk}:DATA DELETE USERINFO PIN=1001"
+        row.refresh_from_db()
+        assert row.executed_at is not None
+
+    def test_delivered_command_ack_keeps_delivery_stamp(self) -> None:
+        """The devicecmd ack after delivery never re-stamps executed_at."""
+        row = self._queue_update()
+        self.client.get(f"/iclock/getrequest?SN={SN}")
+        delivered_at = DeviceCommandQueue.objects.get(pk=row.pk).executed_at
+        response = self.client.post(
+            f"/iclock/devicecmd?SN={SN}",
+            data=f"ID={row.pk}&Return=0",
+            content_type="application/x-www-form-urlencoded",
+        )
+        assert response.content == b"OK"
+        row.refresh_from_db()
+        assert row.executed_at == delivered_at
+
+    def test_propagation_to_wire_end_to_end(self) -> None:
+        """propagate → queue → getrequest serves the adapter-formatted line.
+
+        The fixture customer has no membership, so propagation resolves a
+        DELETE — exactly what the device should see.
+        """
+        results = propagate_customer_biometric_state(customer=self.customer)
+        assert results[0]["action"] == "delete"
+        response = self.client.get(f"/iclock/getrequest?SN={SN}")
+        row = DeviceCommandQueue.objects.get()
+        assert response.content.decode() == f"C:{row.pk}:DATA DELETE USERINFO PIN=1001"
 
 
 class DeviceCmdTest(AdmsEndpointTestBase):

@@ -145,19 +145,26 @@ def _command_identity(queued: DeviceCommandQueue) -> tuple[str, str]:
 def _render_and_stamp(queued: DeviceCommandQueue) -> str:
     """Render the queue row into guide wire format and stamp delivery.
 
-    User upsert:   ``C:<id>:DATA UPDATE USERINFO PIN=<pin>\\tName=<name>\\tPri=0\\tGrp=1``
-    User delete:   ``C:<id>:DATA DELETE USERINFO PIN=<pin>``
+    Phase-2 rows (apps/access/propagation) carry the adapter-formatted
+    command in ``payload["text"]`` and are delivered verbatim, prefixed
+    ``C:<id>:`` so the devicecmd ack can reference the row. Legacy phase-1
+    rows (payload without text) keep the guide rendering:
+    ``C:<id>:DATA UPDATE USERINFO PIN=<pin>\\tName=<name>\\tPri=0\\tGrp=1``
     """
-    pin, name = _command_identity(queued)
-    if "DELETE" in queued.command.upper():
-        text = f"C:{queued.pk}:DATA DELETE USERINFO PIN={pin}"
+    text = (queued.payload or {}).get("text")
+    if text:
+        rendered = f"C:{queued.pk}:{text}"
     else:
-        text = f"C:{queued.pk}:DATA UPDATE USERINFO PIN={pin}\tName={name}\tPri=0\tGrp=1"
+        pin, name = _command_identity(queued)
+        if "DELETE" in queued.command.upper():
+            rendered = f"C:{queued.pk}:DATA DELETE USERINFO PIN={pin}"
+        else:
+            rendered = f"C:{queued.pk}:DATA UPDATE USERINFO PIN={pin}\tName={name}\tPri=0\tGrp=1"
     # Per the model docstring: commands are held until the device's next
     # poll delivers them — executed_at is stamped on delivery.
     queued.executed_at = timezone.now()
     queued.save(update_fields=["executed_at"])
-    return text
+    return rendered
 
 
 @csrf_exempt

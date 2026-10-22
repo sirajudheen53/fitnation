@@ -1,4 +1,4 @@
-"""ZKTeco ADMS adapter (Sprint 9, issue #28)."""
+"""ZKTeco ADMS adapter (Sprint 9, issue #28; phase-2 command format)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from django.utils import timezone
 from apps.access.adapters.base import BiometricAdapter
 
 if TYPE_CHECKING:
-    from datetime import datetime
+    from datetime import date, datetime
 
     from apps.access.models import BiometricDevice
 
@@ -32,7 +32,13 @@ class ZKTecoADMSAdapter(BiometricAdapter):
         device: BiometricDevice,
         credentials: Any,
     ) -> dict:
-        """Push the allow-list via ADMS command queue (device polls us)."""
+        """Push the allow-list via ADMS command queue (device polls us).
+
+        Bulk TEMPLATE sync is intentionally left as a stub: fingerprint
+        templates are device-local binary blobs, so enrollment happens on
+        the device (front-desk side) and is never pushed from the server.
+        Only user metadata — pin / name / privilege / card — is queued.
+        """
         from apps.access.models import DeviceCommandQueue
 
         queued = 0
@@ -56,6 +62,22 @@ class ZKTecoADMSAdapter(BiometricAdapter):
             "detail": f"Queued {queued} user updates for next ADMS poll",
             "protocol": self.protocol,
         }
+
+    def userinfo_update(self, pin: str, name: str, privilege: int = 0, valid_date: date | None = None) -> str:
+        """Format the ADMS ``DATA UPDATE USERINFO`` wire line (phase 2).
+
+        Tab-separated fields per the guide:
+        ``DATA UPDATE USERINFO\\tPIN=12\\tName=Ana\\tPrivilege=0\\tPasswd=\\tCard=\\tValid=2026-11-30``.
+        An absent ``valid_date`` leaves ``Valid=`` empty (no device-side
+        expiry). Queued via :mod:`apps.access.propagation`; the device
+        receives it verbatim on its next getrequest poll.
+        """
+        valid = valid_date.isoformat() if valid_date is not None else ""
+        return f"DATA UPDATE USERINFO\tPIN={pin}\tName={name}\tPrivilege={privilege}\tPasswd=\tCard=\tValid={valid}"
+
+    def userinfo_delete(self, pin: str) -> str:
+        """Format the ADMS ``DATA DELETE USERINFO`` wire line (phase 2)."""
+        return f"DATA DELETE USERINFO PIN={pin}"
 
     def fetch_events(
         self,
