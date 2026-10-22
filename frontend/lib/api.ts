@@ -2117,7 +2117,9 @@ export function respondToReview(
 import {
   AdminOnboardGymFormData,
   AdminOnboardGymResult,
+  AdminPlanFormData,
   AdminRotateCredentialsResult,
+  AdminSubscriptionPlan,
   AdminTenant,
   AdminTenantUpdateFormData,
   AdminTenantSwitchStatus,
@@ -2194,6 +2196,53 @@ export function impersonateTenant(
 ): Promise<ImpersonateTenantResult> {
   return request<ImpersonateTenantResult>(`/admin/tenants/${id}/impersonate/`, {
     method: "POST",
+    token,
+  });
+}
+
+/* ── Platform admin: subscription plans (issue #44) ────────────── */
+
+/** Every plan including inactive ones (catalog order). */
+export function fetchAdminPlans(token: string): Promise<AdminSubscriptionPlan[]> {
+  return request<AdminSubscriptionPlan[] | { results?: AdminSubscriptionPlan[] }>(
+    "/admin/plans/",
+    { token },
+  ).then(unwrapList);
+}
+
+export function createAdminPlan(
+  data: AdminPlanFormData,
+  token: string,
+): Promise<AdminSubscriptionPlan> {
+  return request<AdminSubscriptionPlan>("/admin/plans/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+export function updateAdminPlan(
+  id: number | string,
+  data: Partial<AdminPlanFormData>,
+  token: string,
+): Promise<AdminSubscriptionPlan> {
+  return request<AdminSubscriptionPlan>(`/admin/plans/${id}/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/**
+ * Deactivate a plan (soft delete — the row stays so historical tenants
+ * keep a resolvable plan code). Returns the plan with is_active=false.
+ */
+export function deactivateAdminPlan(
+  id: number | string,
+  token: string,
+): Promise<AdminSubscriptionPlan> {
+  return request<AdminSubscriptionPlan>(`/admin/plans/${id}/`, {
+    method: "DELETE",
     token,
   });
 }

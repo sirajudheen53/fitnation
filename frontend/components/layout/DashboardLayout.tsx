@@ -67,6 +67,7 @@ export function DashboardLayout({ children, title, actions }: DashboardLayoutPro
     user?.role === "platform_admin"
       ? [
           { href: "/admin", label: "Gyms", icon: Building2 },
+          { href: "/admin/plans", label: "Plans", icon: CreditCard },
           { href: "/admin/onboard", label: "Onboard Gym", icon: UserPlus },
         ]
       : NAV_ITEMS;

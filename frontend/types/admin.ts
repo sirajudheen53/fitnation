@@ -1,5 +1,5 @@
 /**
- * Platform admin type definitions — Sprint 10 (issues #39, #41, #42, #45).
+ * Platform admin type definitions — Sprint 10 (issues #39–#45).
  *
  * Field sets mirror the backend `apps/admin_ops` serializers exactly:
  * tenants are cross-tenant rows with computed member/branch counts.
@@ -54,6 +54,44 @@ export interface AdminOnboardGymResult {
   owner_password: string;
   branch_name: string;
   plan_code: string;
+}
+
+// ── Subscription plan admin CRUD (issue #44) ────────────────────
+
+/**
+ * A platform subscription plan row (GET /api/v1/admin/plans/).
+ * This is the tier gyms pay FitNation for — not a gym-level membership plan.
+ */
+export interface AdminSubscriptionPlan {
+  id: number;
+  /** Catalog key — the model restricts codes to starter/professional/enterprise. */
+  code: string;
+  name: string;
+  /** Decimal strings as returned by DRF ("999.00"). */
+  price_monthly: string;
+  price_yearly: string;
+  max_branches: number;
+  max_customers: number;
+  max_trainers: number;
+  features: Record<string, unknown>;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Body for POST/PATCH /api/v1/admin/plans/{id}/. */
+export interface AdminPlanFormData {
+  code: string;
+  name: string;
+  price_monthly: string;
+  price_yearly: string;
+  max_branches: number;
+  max_customers: number;
+  max_trainers: number;
+  features: Record<string, unknown>;
+  is_active: boolean;
+  sort_order: number;
 }
 
 // ── Support impersonation (issue #45) ───────────────────────────
