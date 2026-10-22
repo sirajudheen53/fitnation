@@ -40,6 +40,18 @@ class MembershipPlan(TenantModelMixin):
         default=True,
         help_text="Memberships sold on this plan include access to the customer mobile app.",
     )
+    # Issue #52: PT session packs. A "pt" plan grants this many personal-training
+    # sessions per membership (null = unlimited); each completed/no-show session
+    # redeems one. The knob is inert for non-PT plans — the entitlement engine
+    # only consults it for plan_type="pt".
+    sessions_allowed = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Personal-training sessions granted per membership on a 'pt' plan "
+            "(null = unlimited). Inert for non-PT plans."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -312,8 +312,8 @@ class TrainerAPITests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["day_of_week"], "monday")
 
-    def test_manager_cannot_edit_trainers(self) -> None:
-        """Managers lack the trainers.edit_trainer permission (edit denied)."""
+    def test_manager_can_manage_assignments(self) -> None:
+        """Managers hold trainers.edit_trainer (issue #52 role-matrix wiring)."""
         manager = create_user(
             tenant=self.tenant,
             email="manager@local.test",
@@ -330,4 +330,4 @@ class TrainerAPITests(APITestCase):
             "/api/v1/trainer-assignments/",
             {"trainer": trainer.id, "customer": customer.id},
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 201)

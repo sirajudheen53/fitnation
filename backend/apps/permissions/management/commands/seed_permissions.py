@@ -77,6 +77,10 @@ class Command(BaseCommand):
             ("marketplace", "create", "order", "Place orders"),
             ("marketplace", "edit", "order", "Edit orders"),
             ("marketplace", "delete", "order", "Delete orders"),
+            ("trainers", "view", "trainer", "View trainers"),
+            ("trainers", "edit", "trainer", "Edit trainer assignments"),
+            ("trainers", "view", "session", "View trainer sessions"),
+            ("trainers", "edit", "session", "Book and manage trainer sessions"),
         ]
 
         for app_label, action, resource, name in permission_registry:
@@ -122,6 +126,10 @@ class Command(BaseCommand):
                 "marketplace.create_order",
                 "marketplace.edit_order",
                 "marketplace.delete_order",
+                "trainers.view_trainer",
+                "trainers.edit_trainer",
+                "trainers.view_session",
+                "trainers.edit_session",
             ],
             "trainer": [
                 "customers.view_customer",
@@ -132,6 +140,9 @@ class Command(BaseCommand):
                 "workouts.create_workout",
                 "workouts.edit_workout",
                 "dashboard.view_dashboard",
+                "trainers.view_trainer",
+                "trainers.view_session",
+                "trainers.edit_session",
             ],
             "dietitian": [
                 "customers.view_customer",

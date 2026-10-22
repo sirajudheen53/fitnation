@@ -23,6 +23,7 @@ class MembershipPlanSerializer(serializers.ModelSerializer):
             "description",
             "is_active",
             "includes_app_access",
+            "sessions_allowed",
             "created_at",
             "updated_at",
         ]

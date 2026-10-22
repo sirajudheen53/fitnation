@@ -28,6 +28,7 @@ from apps.customers.serializers import (
 from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
+from apps.trainers.selectors import get_pt_entitlement
 from apps.users.authentication import TenantTokenAuthentication
 
 
@@ -50,6 +51,9 @@ class CustomerViewSet(ModelViewSet):
         "progress_summary",
         "fitness_goals",
         "measurements",
+        # Issue #52: pack state explains *why* booking is blocked — visible in
+        # every entitlement state.
+        "pt_remaining",
     }
     required_permission = "customers.view_customer"
     serializer_class = CustomerSerializer
@@ -274,6 +278,19 @@ class CustomerViewSet(ModelViewSet):
                 "progress_photo_count": customer.progress_photos.count(),
             }
         )
+
+    @action(detail=True, methods=["get"], url_path="pt-remaining")
+    def pt_remaining(self, request: Request, pk: int) -> Response:
+        """Return the customer's PT session-pack state (issue #52).
+
+        Derived from the active PT membership: pack size, redeemed
+        (completed + no-show) sessions and remaining credits, plus a
+        machine-readable ``reason`` when booking is blocked. Members may check
+        their own pack (``get_object`` enforces the self-filter).
+        """
+        customer = self.get_object()
+        pack = get_pt_entitlement(customer)
+        return Response({"customer_id": customer.id, **pack.as_payload()})
 
 
 class HealthProfileViewSet(ModelViewSet):

@@ -1,10 +1,12 @@
-"""Trainer management models (FBOS-007)."""
+"""Trainer management models (FBOS-007, issue #52)."""
 
 from typing import ClassVar
 
 from django.db import models
 
 from apps.tenants.models import TenantModelMixin
+
+MAX_SESSION_DURATION_MINUTES = 480
 
 
 class TrainerAssignment(TenantModelMixin):
@@ -106,3 +108,89 @@ class TrainerPerformance(TenantModelMixin):
     def __str__(self) -> str:
         """Return performance label."""
         return f"{self.trainer} — {self.month}"
+
+
+class TrainerSession(TenantModelMixin):
+    """A scheduled personal-training session between a trainer and a customer.
+
+    Session lifecycle (issue #52): a session is created ``booked`` and moves to
+    ``completed``, ``no_show`` or ``cancelled``. Completed and no-show sessions
+    redeem one session from the customer's active PT membership pack (derived
+    count, never stored — cancelling such a session restores the credit).
+    """
+
+    class Status(models.TextChoices):
+        """Lifecycle status of a training session."""
+
+        BOOKED = "booked", "Booked"
+        COMPLETED = "completed", "Completed"
+        CANCELLED = "cancelled", "Cancelled"
+        NO_SHOW = "no_show", "No-show"
+
+    #: Statuses that redeem one session from the customer's PT pack.
+    REDEEM_STATUSES: ClassVar[tuple[str, ...]] = (Status.COMPLETED, Status.NO_SHOW)
+
+    trainer = models.ForeignKey(
+        "users.Trainer",
+        on_delete=models.CASCADE,
+        related_name="sessions",
+    )
+    customer = models.ForeignKey(
+        "customers.Customer",
+        on_delete=models.CASCADE,
+        related_name="trainer_sessions",
+    )
+    branch = models.ForeignKey(
+        "branches.Branch",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="trainer_sessions",
+    )
+    scheduled_at = models.DateTimeField(help_text="Session start (timezone-aware).")
+    duration_minutes = models.PositiveIntegerField(
+        default=60,
+        help_text="Slot length in minutes; the session occupies [scheduled_at, scheduled_at + duration).",
+    )
+    notes = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.BOOKED,
+        db_index=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        """TrainerSession model metadata."""
+
+        db_table = "trainer_sessions"
+        ordering: ClassVar[list[str]] = ["-scheduled_at"]
+        indexes: ClassVar[list] = [
+            models.Index(fields=["tenant", "trainer", "scheduled_at"], name="idx_sess_tenant_trainer_sched"),
+            models.Index(fields=["tenant", "customer", "status"], name="idx_sess_tenant_cust_status"),
+        ]
+        constraints: ClassVar[list] = [
+            models.CheckConstraint(
+                condition=models.Q(duration_minutes__gte=1)
+                & models.Q(duration_minutes__lte=MAX_SESSION_DURATION_MINUTES),
+                name="ck_trainer_session_duration_range",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        """Return session label."""
+        return f"{self.trainer} × {self.customer} @ {self.scheduled_at:%Y-%m-%d %H:%M} ({self.status})"
+
+    @property
+    def ends_at(self):
+        """Return the slot end (scheduled_at + duration)."""
+        from datetime import timedelta
+
+        return self.scheduled_at + timedelta(minutes=self.duration_minutes)
+
+    @property
+    def is_redeemed(self) -> bool:
+        """Whether this session currently redeems a pack credit."""
+        return self.status in self.REDEEM_STATUSES

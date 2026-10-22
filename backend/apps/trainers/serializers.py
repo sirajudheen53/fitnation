@@ -1,10 +1,10 @@
-"""Trainer management serializers (FBOS-007)."""
+"""Trainer management serializers (FBOS-007, issue #52)."""
 
 from typing import ClassVar
 
 from rest_framework import serializers
 
-from apps.trainers.models import TrainerAssignment, TrainerPerformance
+from apps.trainers.models import TrainerAssignment, TrainerPerformance, TrainerSession
 from apps.users.models import Trainer, TrainerSchedule
 
 
@@ -110,3 +110,59 @@ class TrainerScheduleSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
+
+
+class TrainerSessionSerializer(serializers.ModelSerializer):
+    """Serializer for PT sessions.
+
+    ``status`` is read-only — lifecycle moves happen through the
+    ``complete`` / ``no-show`` / ``cancel`` actions. Entitlement and overlap
+    gates run in ``apps.trainers.services`` (409 with a machine-readable
+    ``reason``), not here.
+    """
+
+    trainer_email = serializers.CharField(source="trainer.user.email", read_only=True)
+    customer_name = serializers.CharField(source="customer.name", read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+
+    class Meta:
+        """Serializer metadata."""
+
+        model = TrainerSession
+        fields: ClassVar[list[str]] = [
+            "id",
+            "trainer",
+            "customer",
+            "branch",
+            "scheduled_at",
+            "duration_minutes",
+            "status",
+            "notes",
+            "trainer_email",
+            "customer_name",
+            "branch_name",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields: ClassVar[list[str]] = ["id", "status", "created_at", "updated_at"]
+
+    def validate_trainer(self, value: Trainer) -> Trainer:
+        """Ensure the trainer belongs to the request's tenant."""
+        tenant = self.context["request"].tenant
+        if value.user.tenant_id != tenant.id:
+            raise serializers.ValidationError("Trainer does not belong to this tenant.")
+        return value
+
+    def validate_customer(self, value) -> object:
+        """Ensure the customer belongs to the request's tenant."""
+        tenant = self.context["request"].tenant
+        if value.tenant_id != tenant.id:
+            raise serializers.ValidationError("Customer does not belong to this tenant.")
+        return value
+
+    def validate_branch(self, value) -> object:
+        """Ensure the branch belongs to the request's tenant."""
+        tenant = self.context["request"].tenant
+        if value is not None and value.tenant_id != tenant.id:
+            raise serializers.ValidationError("Branch does not belong to this tenant.")
+        return value

@@ -74,6 +74,11 @@ class RolePermission(BasePermission):
             "inventory.delete_inventory",
             "reviews.view_review",
             "reviews.edit_review",
+            # Issue #52: managers run the PT floor — assignments + sessions.
+            "trainers.view_trainer",
+            "trainers.edit_trainer",
+            "trainers.view_session",
+            "trainers.edit_session",
         },
         "trainer": {
             "customers.view_customer",
@@ -91,6 +96,11 @@ class RolePermission(BasePermission):
             "exercises.delete_exercise",
             "reviews.view_review",
             "reviews.edit_review",
+            # Issue #52: trainers see their calendar and run their own sessions,
+            # but assignments stay an owner/manager task.
+            "trainers.view_trainer",
+            "trainers.view_session",
+            "trainers.edit_session",
         },
         "dietitian": {
             "customers.view_customer",
