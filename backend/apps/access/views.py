@@ -42,6 +42,7 @@ from apps.access.services import (
     ingest_event,
     sync_device,
 )
+from apps.access.propagation import propagate_enrollment
 from apps.customers.models import Customer
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
@@ -126,7 +127,15 @@ class BiometricDeviceViewSet(ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="enroll")
     def enroll(self, request: Request) -> Response:
-        """Enroll a credential on a device and immediately sync that device."""
+        """Enroll a credential on a device and immediately sync that device.
+
+        Idempotent per (customer, device) — re-enrolling refreshes the row.
+        ``device_user_id`` may be omitted: the customer's canonical
+        tenant-wide id is then allocated server-side and returned in the
+        payload so the front desk can type it on the device. When the
+        member is active-or-in-cool-off, the user-metadata push is queued
+        for the device as well (phase 2).
+        """
         serializer = BiometricCredentialEnrollSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         device = serializer.validated_data["device"]
@@ -135,9 +144,10 @@ class BiometricDeviceViewSet(ModelViewSet):
             device=device,
             customer=serializer.validated_data["customer"],
             credential_type=serializer.validated_data["credential_type"],
-            device_user_id=serializer.validated_data["device_user_id"],
+            device_user_id=serializer.validated_data.get("device_user_id"),
         )
         sync_result = sync_device(device)
+        propagate_enrollment(credential)
         return Response(
             BiometricCredentialEnrollResultSerializer({"credential": credential, "sync": sync_result}).data,
             status=status.HTTP_201_CREATED,
@@ -177,6 +187,18 @@ class BiometricCredentialViewSet(ModelViewSet):
     filter_backends = [SearchFilter, OrderingFilter]
     ordering = ["-enrolled_at"]
 
+    ACTION_PERMISSIONS = {
+        # Front-desk lifecycle action, same gate as enrollment.
+        "deactivate": "customers.edit_customer",
+    }
+
+    def get_permissions(self) -> list:
+        """Apply action-specific permission strings before checks run."""
+        required = self.ACTION_PERMISSIONS.get(self.action)
+        if required is not None:
+            self.required_permission = required
+        return super().get_permissions()
+
     def get_queryset(self) -> Any:
         """Return credentials scoped to the request tenant."""
         queryset = BiometricCredential.objects.for_tenant(self.request.tenant)
@@ -198,6 +220,14 @@ class BiometricCredentialViewSet(ModelViewSet):
             BiometricCredentialSerializer(credential).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=True, methods=["post"])
+    def deactivate(self, request: Request, pk: int | None = None) -> Response:  # noqa: ARG002
+        """Deactivate a credential — the customer stops resolving on punches."""
+        credential = self.get_object()
+        credential.is_active = False
+        credential.save(update_fields=["is_active", "updated_at"])
+        return Response(BiometricCredentialSerializer(credential).data, status=status.HTTP_200_OK)
 
 
 class AccessOverrideViewSet(ModelViewSet):

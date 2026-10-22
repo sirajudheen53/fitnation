@@ -40,15 +40,20 @@ class BiometricDeviceSerializer(serializers.ModelSerializer):
 
 
 class BiometricCredentialEnrollSerializer(serializers.Serializer):
-    """Input serializer for enrolling a credential and syncing its device."""
+    """Input serializer for enrolling a credential and syncing its device.
+
+    ``device_user_id`` is optional: when omitted, the customer's canonical
+    tenant-wide id is allocated/reused server-side (phase 2) and returned
+    so the front desk can type it on the device.
+    """
 
     customer = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.all())
     device = serializers.PrimaryKeyRelatedField(queryset=BiometricDevice.objects.all())
     credential_type = serializers.ChoiceField(choices=CredentialType.choices)
-    device_user_id = serializers.CharField(max_length=64)
+    device_user_id = serializers.CharField(max_length=64, required=False, allow_null=True)
 
     def validate(self, attrs: dict) -> dict:
-        """Keep enrollment inside the request tenant and per-device unique."""
+        """Keep enrollment inside the request tenant."""
         request = self.context.get("request")
         tenant = getattr(request, "tenant", None)
         if tenant is None:
@@ -56,8 +61,6 @@ class BiometricCredentialEnrollSerializer(serializers.Serializer):
         for key in ("customer", "device"):
             if attrs[key].tenant_id != tenant.id:
                 raise serializers.ValidationError(f"{key.capitalize()} must belong to the current tenant.")
-        if BiometricCredential.objects.filter(device=attrs["device"], device_user_id=attrs["device_user_id"]).exists():
-            raise serializers.ValidationError({"device_user_id": "Already enrolled on this device."})
         return attrs
 
 

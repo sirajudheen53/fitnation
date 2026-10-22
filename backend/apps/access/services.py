@@ -6,7 +6,9 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from django.db import transaction
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
 from apps.access.adapters import AdapterError, get_adapter
 from apps.access.models import (
@@ -57,22 +59,94 @@ def create_device(
     )
 
 
+def resolve_device_user_id(*, tenant: Tenant, customer: Customer) -> str:
+    """Return the customer's canonical device_user_id within the tenant.
+
+    Owner decision 2026-10-22: one canonical id per customer per tenant,
+    reused on every device the customer enrolls on. The id of the
+    customer's oldest active credential wins; new customers get the next
+    integer id — max(existing tenant-wide integer ids) + 1. Gaps are
+    deliberately never reused: monotonic allocation cannot collide with
+    an id a device still holds for a deactivated credential.
+    """
+    existing = (
+        BiometricCredential.objects.for_tenant(tenant)
+        .filter(customer=customer, is_active=True)
+        .order_by("enrolled_at", "pk")
+        .values_list("device_user_id", flat=True)
+        .first()
+    )
+    if existing:
+        return existing
+    max_id = 0
+    for value in BiometricCredential.objects.for_tenant(tenant).values_list("device_user_id", flat=True).distinct():
+        try:
+            max_id = max(max_id, int(value))
+        except (TypeError, ValueError):
+            continue  # legacy non-integer ids don't participate in allocation
+    return str(max_id + 1)
+
+
+def _assert_device_slot_free(*, device: BiometricDevice, device_user_id: str, exclude_pk: int | None = None) -> None:
+    """Raise unless (device, device_user_id) is free or held by the same row."""
+    conflict = BiometricCredential.objects.filter(device=device, device_user_id=device_user_id).first()
+    if conflict is not None and conflict.pk != exclude_pk:
+        raise ValidationError(
+            {"device_user_id": f"User id '{device_user_id}' is already enrolled on this device for another customer."},
+            code="device_user_id_taken",
+        )
+
+
 def enroll_credential(
     *,
     tenant: Tenant,
     device: BiometricDevice,
     customer: Customer,
     credential_type: str = CredentialType.FINGERPRINT,
-    device_user_id: str,
+    device_user_id: str | None = None,
 ) -> BiometricCredential:
-    """Enroll a customer credential on a device."""
-    return BiometricCredential.objects.create(
-        tenant=tenant,
-        customer=customer,
-        device=device,
-        credential_type=credential_type,
-        device_user_id=device_user_id,
-    )
+    """Enroll a customer credential on a device (idempotent).
+
+    Re-enrolling an existing (customer, device) pair refreshes the row —
+    credential type, active flag, canonical id — instead of erroring.
+    ``device_user_id`` defaults to the customer's canonical tenant-wide
+    id (owner decision 2026-10-22); an explicit id is honored verbatim.
+
+    Raises:
+        ValidationError: If the credential type is unknown, or the
+            requested id is held by a different customer on the device.
+    """
+    if credential_type not in _CREDENTIAL_TYPES:
+        raise ValidationError({"credential_type": f"Unsupported credential type '{credential_type}'."})
+    if device_user_id is None:
+        device_user_id = resolve_device_user_id(tenant=tenant, customer=customer)
+    canonical_id = device_user_id
+
+    with transaction.atomic():
+        credential = (
+            BiometricCredential.objects.for_tenant(tenant)
+            .filter(customer=customer, device=device)
+            .order_by("enrolled_at", "pk")
+            .first()
+        )
+        if credential is None:
+            _assert_device_slot_free(device=device, device_user_id=canonical_id)
+            return BiometricCredential.objects.create(
+                tenant=tenant,
+                customer=customer,
+                device=device,
+                credential_type=credential_type,
+                device_user_id=canonical_id,
+            )
+
+        # Idempotent re-enroll: refresh the row in place.
+        if credential.device_user_id != canonical_id:
+            _assert_device_slot_free(device=device, device_user_id=canonical_id, exclude_pk=credential.pk)
+            credential.device_user_id = canonical_id
+        credential.credential_type = credential_type
+        credential.is_active = True
+        credential.save(update_fields=["device_user_id", "credential_type", "is_active", "updated_at"])
+        return credential
 
 
 def create_override(
