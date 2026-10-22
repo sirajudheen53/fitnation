@@ -112,7 +112,12 @@ export interface EnrollCredentialData {
   customer: number;
   device: number;
   credential_type: AccessCredentialType;
-  device_user_id: string;
+  /**
+   * Phase 2: omit to let the backend allocate/reuse the customer's
+   * canonical tenant-wide device_user_id (returned in the response so
+   * the front desk can type it on the device).
+   */
+  device_user_id?: string | null;
 }
 
 /** Response for the enroll action (credential + immediate device sync). */

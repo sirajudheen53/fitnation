@@ -649,6 +649,17 @@ export function fetchAttendance(token: string): Promise<AttendanceListResponse> 
   return request<AttendanceListResponse>("/attendance/attendance/", { token });
 }
 
+/** List one customer's attendance records (backend ?customer= filter). */
+export function fetchCustomerAttendance(
+  customerId: number | string,
+  token: string,
+): Promise<AttendanceListResponse> {
+  return request<AttendanceListResponse>(
+    `/attendance/attendance/?customer=${encodeURIComponent(String(customerId))}`,
+    { token },
+  );
+}
+
 export function fetchTrainerAttendance(token: string): Promise<AttendanceListResponse> {
   return request<AttendanceListResponse>("/attendance/trainer-attendance/", { token });
 }
@@ -1899,6 +1910,20 @@ export function fetchAccessCredentials(
     `/access/credentials/${buildAccessQuery(params)}`,
     { token },
   ).then(unwrapList);
+}
+
+/**
+ * Deactivate a credential (POST /access/credentials/{id}/deactivate/) —
+ * the customer stops resolving on punches for that device.
+ */
+export function deactivateBiometricCredential(
+  id: number | string,
+  token: string,
+): Promise<AccessCredential> {
+  return request<AccessCredential>(`/access/credentials/${id}/deactivate/`, {
+    method: "POST",
+    token,
+  });
 }
 
 /* Owner overrides */
