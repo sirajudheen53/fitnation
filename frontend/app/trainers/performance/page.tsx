@@ -55,14 +55,10 @@ export default function TrainerPerformancePage() {
 
     async function load() {
       try {
-        const [perfRes, trainerRes] = await Promise.all([
+        const [perfRes, trainers] = await Promise.all([
           fetchTrainerPerformance(authToken),
           fetchTrainers(authToken),
         ]);
-
-        const trainers: Trainer[] = Array.isArray(trainerRes)
-          ? trainerRes
-          : trainerRes.results ?? [];
 
         // Latest snapshot per trainer, keyed by trainer id.
         const latestByTrainer = new Map<number, (typeof perfRes)[number]>();
@@ -78,10 +74,10 @@ export default function TrainerPerformancePage() {
             name: `${t.first_name} ${t.last_name}`.trim() || t.email,
             specialization: t.specialization,
             rating: latest && latest.rating_avg !== null ? Number(latest.rating_avg) : null,
-            assigned_customers: latest?.customer_count ?? t.active_clients ?? 0,
+            assigned_customers: latest?.customer_count ?? 0,
             active_plans: 0,
             attendance_rate: null,
-            revenue: latest ? Number(latest.revenue) || 0 : Number(t.revenue) || 0,
+            revenue: latest ? Number(latest.revenue) || 0 : 0,
             sessions_completed: latest?.sessions_completed ?? 0,
           };
         });

@@ -704,26 +704,43 @@ export function checkOut(id: number | string, token: string): Promise<Attendance
 /* ── Trainers ─────────────────────────────────────────────────── */
 
 import {
-  AssignmentFormData,
-  AssignmentListResponse,
-  ScheduleListResponse,
-  ScheduleSlot,
+  BranchAssignmentCreatePayload,
+  BranchTrainerAssignment,
   Trainer,
-  TrainerAssignment,
-  TrainerFormData,
-  TrainerListResponse,
+  TrainerCreatePayload,
+  TrainerListParams,
+  TrainerScheduleSlot,
+  TrainerUpdatePayload,
 } from "@/types/trainer";
 
-export function fetchTrainers(token: string): Promise<TrainerListResponse> {
-  return request<TrainerListResponse>("/trainers/", { token });
+/**
+ * List trainers (users app — full management surface).
+ * Supports the backend's is_active / specialization / search filters.
+ */
+export function fetchTrainers(
+  token: string,
+  params?: TrainerListParams,
+): Promise<Trainer[]> {
+  const query = new URLSearchParams();
+  if (params?.is_active !== undefined) query.set("is_active", String(params.is_active));
+  if (params?.specialization) query.set("specialization", params.specialization);
+  if (params?.search) query.set("search", params.search);
+  const qs = query.toString();
+  return request<Trainer[] | { results?: Trainer[] }>(
+    `/users/trainers/${qs ? `?${qs}` : ""}`,
+    { token },
+  ).then(unwrapList);
 }
 
 export function fetchTrainer(id: number | string, token: string): Promise<Trainer> {
-  return request<Trainer>(`/trainers/${id}/`, { token });
+  return request<Trainer>(`/users/trainers/${id}/`, { token });
 }
 
-export function createTrainer(data: TrainerFormData, token: string): Promise<Trainer> {
-  return request<Trainer>("/trainers/", {
+export function createTrainer(
+  data: TrainerCreatePayload,
+  token: string,
+): Promise<Trainer> {
+  return request<Trainer>("/users/trainers/", {
     method: "POST",
     body: data,
     token,
@@ -732,55 +749,49 @@ export function createTrainer(data: TrainerFormData, token: string): Promise<Tra
 
 export function updateTrainer(
   id: number | string,
-  data: TrainerFormData,
+  data: TrainerUpdatePayload,
   token: string,
 ): Promise<Trainer> {
-  return request<Trainer>(`/trainers/${id}/`, {
-    method: "PUT",
+  return request<Trainer>(`/users/trainers/${id}/`, {
+    method: "PATCH",
     body: data,
     token,
   });
 }
 
-export function deleteTrainer(id: number | string, token: string): Promise<void> {
-  return request<void>(`/trainers/${id}/`, {
-    method: "DELETE",
-    token,
-  });
-}
-
-/* Assignments */
-
-export function fetchAssignments(token: string): Promise<AssignmentListResponse> {
-  return request<AssignmentListResponse>("/trainer-assignments/", { token });
-}
-
-export function assignTrainer(
-  data: AssignmentFormData,
+/**
+ * List branch-scoped trainer↔customer assignments (trainers app).
+ * The endpoint has no query filters — filter by trainer/customer client-side.
+ */
+export function fetchTrainerAssignments(
   token: string,
-): Promise<TrainerAssignment> {
-  return request<TrainerAssignment>("/trainer-assignments/", {
+): Promise<BranchTrainerAssignment[]> {
+  return request<BranchTrainerAssignment[] | { results?: BranchTrainerAssignment[] }>(
+    "/trainer-assignments/",
+    { token },
+  ).then(unwrapList);
+}
+
+export function createTrainerAssignment(
+  data: BranchAssignmentCreatePayload,
+  token: string,
+): Promise<BranchTrainerAssignment> {
+  return request<BranchTrainerAssignment>("/trainer-assignments/", {
     method: "POST",
     body: data,
     token,
   });
 }
 
-/* Schedule */
-
-export function fetchSchedule(token: string): Promise<ScheduleListResponse> {
-  return request<ScheduleListResponse>("/trainer-schedules/", { token });
-}
-
-export function createScheduleSlot(
-  data: Omit<ScheduleSlot, "id" | "trainer_name">,
+/** Weekly availability rows for one trainer, Monday→Sunday ordered. */
+export function fetchTrainerSchedule(
+  trainerId: number | string,
   token: string,
-): Promise<ScheduleSlot> {
-  return request<ScheduleSlot>("/trainer-schedules/", {
-    method: "POST",
-    body: data,
-    token,
-  });
+): Promise<TrainerScheduleSlot[]> {
+  return request<TrainerScheduleSlot[] | { results?: TrainerScheduleSlot[] }>(
+    `/trainer-schedules/?trainer=${encodeURIComponent(String(trainerId))}`,
+    { token },
+  ).then(unwrapList);
 }
 
 /* ── Dashboard ────────────────────────────────────────────────── */

@@ -46,6 +46,11 @@ export const ROLE_PERMISSIONS: Record<string, Set<string>> = {
     "reviews.view_review",
     "feedback.view_feedback",
     "feedback.create_feedback",
+    // Sprint 12 (issues #53–#55): managers run the trainers pages and the PT floor.
+    "trainers.view_trainer",
+    "trainers.edit_trainer",
+    "trainers.view_session",
+    "trainers.edit_session",
   ]),
   trainer: new Set([
     "customers.view_customer",
@@ -64,6 +69,10 @@ export const ROLE_PERMISSIONS: Record<string, Set<string>> = {
     "exercises.view_exercise",
     "exercises.edit_exercise",
     "exercises.delete_exercise",
+    // Sprint 12: trainers see the roster and run their own PT sessions.
+    "trainers.view_trainer",
+    "trainers.view_session",
+    "trainers.edit_session",
   ]),
   dietitian: new Set([
     "customers.view_customer",
@@ -128,6 +137,8 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   "/workouts/log": ["workouts.view_workout"],
   "/exercises": ["exercises.view_exercise"],
   "/exercises/new": ["exercises.edit_exercise"],
+  // Sprint 12 (issue #53): trainer management is owner/manager (users.view_user).
+  "/trainers": ["users.view_user"],
   "/diets": ["diets.view_diet"],
   "/diet": ["diets.view_diet"],
   "/diet/food-items": ["diets.view_diet"],
