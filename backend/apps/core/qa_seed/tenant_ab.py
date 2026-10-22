@@ -154,7 +154,7 @@ def seed(reset_passwords: bool = True, echo=print) -> dict:
             payment_method=Payment.PaymentMethod.ONLINE,
             status=Payment.Status.COMPLETED,
             transaction_id=f"txn_fitgyma_{uuid.uuid4().hex[:8]}",
-            paid_at=timezone.make_aware(datetime(2026, 1, 1, 10, 0)),
+            paid_at=timezone.make_aware(datetime(2026, 1, 1, 10, 0)),  # noqa: DTZ001 — make_aware needs naive
         )
     _backfill_paid_at(payment_a, fallback_date=date(2026, 1, 1))
 
@@ -175,7 +175,7 @@ def seed(reset_passwords: bool = True, echo=print) -> dict:
         BodyMeasurement.objects.create(
             tenant=tenant_a,
             customer=customer_profile_a,
-            date_logged=datetime.now().date(),
+            date_logged=datetime.now().date(),  # noqa: DTZ005 — seed anchors to local date
             weight_kg=75.0,
             height_cm=165.0,
             body_fat_percentage=28.0,
@@ -244,7 +244,7 @@ def seed(reset_passwords: bool = True, echo=print) -> dict:
             payment_method=Payment.PaymentMethod.UPI,
             status=Payment.Status.COMPLETED,
             transaction_id=f"txn_fitgymb_{uuid.uuid4().hex[:8]}",
-            paid_at=timezone.make_aware(datetime(2026, 6, 1, 10, 0)),
+            paid_at=timezone.make_aware(datetime(2026, 6, 1, 10, 0)),  # noqa: DTZ001 — make_aware needs naive
         )
     else:
         payment_b = Payment.objects.filter(customer=customer_profile_b).first()

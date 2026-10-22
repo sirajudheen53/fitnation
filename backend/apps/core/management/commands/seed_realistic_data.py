@@ -320,7 +320,7 @@ class Command(BaseCommand):
 
     # ─── 1. Tenant settings ────────────────────────────────────────────────
     def _seed_tenant_settings(self, tenant):
-        settings, created = TenantSettings.objects.get_or_create(
+        _settings, created = TenantSettings.objects.get_or_create(
             tenant=tenant,
             defaults={
                 "max_branches": 5,
@@ -590,7 +590,7 @@ class Command(BaseCommand):
                 if day == off_day:
                     continue
                 slot = slots[idx % len(slots)]
-                schedule, created = TrainerSchedule.objects.get_or_create(
+                _schedule, created = TrainerSchedule.objects.get_or_create(
                     tenant=tenant,
                     trainer=trainer,
                     day_of_week=day,
@@ -646,7 +646,7 @@ class Command(BaseCommand):
                 weight = RNG.uniform(48, 80)
             height = round(height, 2)
             weight = round(weight, 2)
-            health, created = HealthProfile.objects.get_or_create(
+            _health, created = HealthProfile.objects.get_or_create(
                 tenant=tenant,
                 customer=profile,
                 defaults={
@@ -672,7 +672,7 @@ class Command(BaseCommand):
             for goal_type in chosen:
                 lo, hi, unit = _GOAL_TARGETS[goal_type]
                 target_val = round(RNG.uniform(lo, hi), 1)
-                goal, created = FitnessGoal.objects.get_or_create(
+                _goal, created = FitnessGoal.objects.get_or_create(
                     tenant=tenant,
                     customer=profile,
                     goal_type=goal_type,
@@ -788,7 +788,7 @@ class Command(BaseCommand):
         for i, membership in enumerate(memberships):
             profile = membership.customer
             # Completed payment for the membership amount.
-            payment, created = Payment.objects.get_or_create(
+            _payment, created = Payment.objects.get_or_create(
                 tenant=tenant,
                 customer=profile,
                 membership=membership,
@@ -1214,7 +1214,7 @@ class Command(BaseCommand):
             rating = RNG.randint(3, 5)
             category = categories[i % len(categories)]
             comment = _FEEDBACK_COMMENTS[i % len(_FEEDBACK_COMMENTS)]
-            feedback, created = Feedback.objects.get_or_create(
+            _feedback, created = Feedback.objects.get_or_create(
                 tenant=tenant,
                 customer=profile,
                 category=category,

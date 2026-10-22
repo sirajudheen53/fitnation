@@ -64,7 +64,7 @@ class FoodItemModelTests(TestCase):
     def test_food_item_name_unique(self) -> None:
         """Food item names are globally unique."""
         _make_food()
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             _make_food()
 
 
@@ -200,7 +200,7 @@ class DietAssignmentModelTests(TestCase):
             diet_plan=self.plan,
         )
         self.assertTrue(assignment.is_active)
-        self.assertEqual(assignment.start_date, date.today())
+        self.assertEqual(assignment.start_date, date.today())  # noqa: DTZ011 — naive local test date
         self.assertIsNone(assignment.assigned_by)
 
 
@@ -586,7 +586,7 @@ class DietAssignmentAPITests(DietAPIBase):
             customer=self.customer,
             diet_plan=self.plan,
             assigned_by=self.owner,
-            start_date=date.today(),
+            start_date=date.today(),  # noqa: DTZ011 — naive local test date
         )
 
     def test_assign_diet_to_customer(self) -> None:
@@ -596,8 +596,8 @@ class DietAssignmentAPITests(DietAPIBase):
             {
                 "customer": self.customer.id,
                 "diet_plan": self.plan.id,
-                "start_date": str(date.today()),
-                "end_date": str(date.today() + timedelta(days=30)),
+                "start_date": str(date.today()),  # noqa: DTZ011 — naive local test date
+                "end_date": str(date.today() + timedelta(days=30)),  # noqa: DTZ011 — naive local test date
                 "is_active": True,
                 "notes": "Follow closely",
             },

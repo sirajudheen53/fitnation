@@ -176,7 +176,7 @@ class WatiOtpSender(OtpSender):
         from django.core.cache import cache
 
         cap = int(getattr(settings, "TENANT_WATI_OTP_DAILY_CAP", 200))
-        key = f"wati-otp:{self.tenant.pk}:{date.today().isoformat()}"
+        key = f"wati-otp:{self.tenant.pk}:{date.today().isoformat()}"  # noqa: DTZ011 — local-date OTP windows
         try:
             return (cache.get(key) or 0) < cap
         except Exception:  # noqa: BLE001 - fail open to the next channel
@@ -186,7 +186,7 @@ class WatiOtpSender(OtpSender):
         """Increment today's per-tenant WATI OTP counter (best-effort)."""
         from django.core.cache import cache
 
-        key = f"wati-otp:{self.tenant.pk}:{date.today().isoformat()}"
+        key = f"wati-otp:{self.tenant.pk}:{date.today().isoformat()}"  # noqa: DTZ011 — local-date OTP windows
         try:
             cache.set(key, (cache.get(key) or 0) + 1, timeout=172800)
         except Exception:  # noqa: BLE001 - accounting must never block delivery
@@ -215,7 +215,7 @@ class WatiOtpSender(OtpSender):
                 [code, _tenant_gym_name(self.tenant), "10"],
                 poster=self.poster,
             )
-        except Exception as exc:  # noqa: BLE001 - normalize transport failures
+        except Exception as exc:
             raise OtpDeliveryError(f"WATI delivery failed: {exc}") from exc
         self._count_sent()
 
@@ -277,7 +277,7 @@ class Msg91OtpSender(OtpSender):
                 settings.MSG91_TEMPLATE_ID,
                 poster=self.poster,
             )
-        except Exception as exc:  # noqa: BLE001 - normalize transport failures
+        except Exception as exc:
             raise OtpDeliveryError(f"SMS delivery failed: {exc}") from exc
 
 

@@ -1,5 +1,6 @@
 """Tenant-scoped DRF permission classes."""
 
+import contextlib
 from typing import Any
 
 from rest_framework import permissions
@@ -31,17 +32,13 @@ class IsTenantMember(BasePermission):
             if auth is not None and hasattr(auth, "tenant_id"):
                 from apps.tenants.models import Tenant
 
-                try:
+                with contextlib.suppress(Tenant.DoesNotExist):
                     request.tenant = Tenant.objects.get(id=auth.tenant_id)
-                except Tenant.DoesNotExist:
-                    pass
             elif request.user.tenant_id:
                 from apps.tenants.models import Tenant
 
-                try:
+                with contextlib.suppress(Tenant.DoesNotExist):
                     request.tenant = Tenant.objects.get(id=request.user.tenant_id)
-                except Tenant.DoesNotExist:
-                    pass
             return True
 
         tenant = getattr(request, "tenant", None)

@@ -25,7 +25,6 @@ from apps.customers.models import Customer
 from apps.memberships.models import Membership, MembershipPlan
 from apps.tenants.services import provision_tenant
 from apps.users.models import AuthToken, User
-
 from tests.test_app_access_e2e import _ok_poster
 
 JOURNEY_PHONE = "9876500001"

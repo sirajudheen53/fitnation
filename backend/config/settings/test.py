@@ -1,6 +1,6 @@
 """FBOS Test Settings — SQLite in-memory for fast tests."""
 
-from .base import *  # noqa: F401, F403
+from .base import *  # noqa: F403
 
 DEBUG = True  # the OTP request view exposes the code (DEBUG + stub gate)
 OTP_SENDER = "stub"  # the stub sender carries .code for tests

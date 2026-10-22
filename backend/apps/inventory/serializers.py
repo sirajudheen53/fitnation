@@ -53,11 +53,10 @@ class InventoryItemSerializer(serializers.ModelSerializer):
     def validate_equipment(self, equipment: Equipment) -> Equipment:
         """Ensure the equipment belongs to the request tenant."""
         request = self.context.get("request")
-        if request is not None and request.tenant is not None:
-            if equipment.tenant_id != request.tenant.id:
-                raise serializers.ValidationError(
-                    "Equipment does not belong to this tenant.",
-                )
+        if request is not None and request.tenant is not None and equipment.tenant_id != request.tenant.id:
+            raise serializers.ValidationError(
+                "Equipment does not belong to this tenant.",
+            )
         return equipment
 
 
@@ -85,9 +84,8 @@ class MaintenanceLogSerializer(serializers.ModelSerializer):
     def validate_equipment(self, equipment: Equipment) -> Equipment:
         """Ensure the equipment belongs to the request tenant."""
         request = self.context.get("request")
-        if request is not None and request.tenant is not None:
-            if equipment.tenant_id != request.tenant.id:
-                raise serializers.ValidationError(
-                    "Equipment does not belong to this tenant.",
-                )
+        if request is not None and request.tenant is not None and equipment.tenant_id != request.tenant.id:
+            raise serializers.ValidationError(
+                "Equipment does not belong to this tenant.",
+            )
         return equipment

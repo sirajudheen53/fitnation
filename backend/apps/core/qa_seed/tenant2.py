@@ -369,14 +369,17 @@ def _seed_customers(tenant: Tenant, branches: list[Branch]) -> list[Customer]:
             status="active",
             target_value=random.choice([5, 10, 15]),
             target_unit=random.choice(["kg", "%", "min", ""]),
-            target_date=dt.date.today() + dt.timedelta(days=random.randint(60, 180)),
+            target_date=(
+                dt.date.today()  # noqa: DTZ011 — seed anchors to local date
+                + dt.timedelta(days=random.randint(60, 180))
+            ),
             current_value=0,
             notes="",
         )
         BodyMeasurement.objects.create(
             tenant=tenant,
             customer=customer,
-            date_logged=dt.date.today(),
+            date_logged=dt.date.today(),  # noqa: DTZ011 — seed data anchors to the local calendar date by design
             weight_kg=wgt,
             height_cm=hgt,
             bmi=round(wgt / (hgt / 100) ** 2, 1),
@@ -415,8 +418,8 @@ def _seed_memberships(tenant: Tenant, customers: list[Customer]) -> None:
             discount_percent=20,
             max_uses=50,
             used_count=3,
-            valid_from=dt.date.today() - dt.timedelta(days=15),
-            valid_to=dt.date.today() + dt.timedelta(days=45),
+            valid_from=dt.date.today() - dt.timedelta(days=15),  # noqa: DTZ011 — seed anchors to local date
+            valid_to=dt.date.today() + dt.timedelta(days=45),  # noqa: DTZ011 — seed anchors to local date
             is_active=True,
         ),
     )
@@ -424,7 +427,7 @@ def _seed_memberships(tenant: Tenant, customers: list[Customer]) -> None:
         if Membership.objects.filter(customer=customer).exists():
             continue
         plan = random.choice(plans)
-        start = dt.date.today() - dt.timedelta(days=random.randint(3, 180))
+        start = dt.date.today() - dt.timedelta(days=random.randint(3, 180))  # noqa: DTZ011 — seed local date
         end = start + dt.timedelta(days=plan.duration_days)
         membership = Membership.objects.create(
             tenant=tenant,
@@ -432,7 +435,7 @@ def _seed_memberships(tenant: Tenant, customers: list[Customer]) -> None:
             plan=plan,
             start_date=start,
             end_date=end,
-            status="active" if end >= dt.date.today() else "expired",
+            status="active" if end >= dt.date.today() else "expired",  # noqa: DTZ011 — seed anchors to local date
             auto_renew=random.random() > 0.5,
         )
         is_pending = random.random() < 0.1
@@ -517,7 +520,7 @@ def _seed_diet(tenant: Tenant, customers: list[Customer], echo) -> None:
                 tenant=tenant,
                 customer=customer,
                 diet_plan=plan,
-                start_date=dt.date.today() - dt.timedelta(days=10),
+                start_date=dt.date.today() - dt.timedelta(days=10),  # noqa: DTZ011 — seed anchors to local date
                 is_active=True,
                 notes="",
             )
@@ -571,8 +574,8 @@ def _seed_workouts(tenant: Tenant, customers: list[Customer], echo) -> None:
                 tenant=tenant,
                 customer=customer,
                 workout_plan=plan,
-                start_date=dt.date.today() - dt.timedelta(days=12),
-                end_date=dt.date.today() + dt.timedelta(days=45),
+                start_date=dt.date.today() - dt.timedelta(days=12),  # noqa: DTZ011 — seed anchors to local date
+                end_date=dt.date.today() + dt.timedelta(days=45),  # noqa: DTZ011 — seed anchors to local date
                 is_active=True,
             )
 
@@ -591,7 +594,9 @@ def _seed_operations(tenant: Tenant, customers: list[Customer], trainers: list) 
             )
     for trainer in trainers:
         for m in range(3):
-            month = (dt.date.today().replace(day=1) - dt.timedelta(days=m * 31)).replace(day=1)
+            month = (
+                dt.date.today().replace(day=1) - dt.timedelta(days=m * 31)  # noqa: DTZ011 — seed anchors to local date
+            ).replace(day=1)
             if not TrainerPerformance.objects.filter(trainer=trainer, month=month).exists():
                 TrainerPerformance.objects.create(
                     tenant=tenant,
@@ -604,7 +609,7 @@ def _seed_operations(tenant: Tenant, customers: list[Customer], trainers: list) 
                 )
     for customer in random.sample(customers, min(10, len(customers))):
         for d in range(0, 14, 2):
-            date = dt.date.today() - dt.timedelta(days=d)
+            date = dt.date.today() - dt.timedelta(days=d)  # noqa: DTZ011 — seed anchors to local date
             if AttendanceRecord.objects.filter(customer=customer, date=date).exists():
                 continue
             check_in = timezone.make_aware(

@@ -156,7 +156,7 @@ def seed():
         measurement = BodyMeasurement.objects.create(
             customer=customer_profile,
             tenant=tenant_a,
-            date_logged=datetime.now().date(),
+            date_logged=datetime.now().date(),  # noqa: DTZ005 — seed anchors to local date
             weight_kg=75.0,
             height_cm=165.0,
             body_fat_percentage=28.0,

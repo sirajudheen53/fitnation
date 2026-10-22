@@ -86,7 +86,7 @@ def _app_access_flag_enabled(tenant) -> bool:
     return bool((tenant.features or {}).get("app_access"))
 
 
-def get_latest_membership(customer: "Customer"):
+def get_latest_membership(customer: Customer):
     """Return the member's live membership: the non-cancelled row with the max ``end_date``.
 
     Renewals extend ``end_date`` on the same row, so in practice there is one
@@ -102,7 +102,7 @@ def get_latest_membership(customer: "Customer"):
     return customer.memberships.exclude(status="cancelled").select_related("plan").order_by("-end_date", "-id").first()
 
 
-def get_app_entitlement(customer: "Customer | None", *, tenant: "Tenant", on: date | None = None) -> AppEntitlement:
+def get_app_entitlement(customer: Customer | None, *, tenant: Tenant, on: date | None = None) -> AppEntitlement:
     """Compute the member's app-access state (single source of truth).
 
     Rules, in order (FBOS-011 §1.3):

@@ -208,14 +208,17 @@ def _seed_customers(tenant, branch) -> list[Customer]:
             status="active",
             target_value=val,
             target_unit=unit,
-            target_date=dt.date.today() + dt.timedelta(days=random.randint(60, 180)),
+            target_date=(
+                dt.date.today()  # noqa: DTZ011 — seed data anchors to the local calendar date by design
+                + dt.timedelta(days=random.randint(60, 180))
+            ),
             current_value=0,
             notes="",
         )
         BodyMeasurement.objects.create(
             tenant=tenant,
             customer=customer,
-            date_logged=dt.date.today(),
+            date_logged=dt.date.today(),  # noqa: DTZ011 — seed data anchors to the local calendar date by design
             weight_kg=wgt,
             height_cm=hgt,
             bmi=round(wgt / (hgt / 100) ** 2, 1),
@@ -255,8 +258,8 @@ def _seed_plans(tenant, customers) -> None:
             discount_percent=10,
             max_uses=100,
             used_count=5,
-            valid_from=dt.date.today() - dt.timedelta(days=30),
-            valid_to=dt.date.today() + dt.timedelta(days=60),
+            valid_from=dt.date.today() - dt.timedelta(days=30),  # noqa: DTZ011 — seed anchors to local date
+            valid_to=dt.date.today() + dt.timedelta(days=60),  # noqa: DTZ011 — seed anchors to local date
             is_active=True,
         ),
     )
@@ -265,7 +268,7 @@ def _seed_plans(tenant, customers) -> None:
         if Membership.objects.filter(customer=customer).exists():
             continue
         plan = random.choice(plans)
-        start = dt.date.today() - dt.timedelta(days=random.randint(5, 200))
+        start = dt.date.today() - dt.timedelta(days=random.randint(5, 200))  # noqa: DTZ011 — seed local date
         end = start + dt.timedelta(days=plan.duration_days)
         membership = Membership.objects.create(
             tenant=tenant,
@@ -273,7 +276,7 @@ def _seed_plans(tenant, customers) -> None:
             plan=plan,
             start_date=start,
             end_date=end,
-            status="active" if end >= dt.date.today() else "expired",
+            status="active" if end >= dt.date.today() else "expired",  # noqa: DTZ011 — seed anchors to local date
             auto_renew=random.random() > 0.5,
         )
         # ~1 in 10 payments stay pending → feeds the pending-payments widget.
@@ -412,8 +415,8 @@ def _seed_workouts(tenant, customers, echo) -> None:
             tenant=tenant,
             customer=customer,
             workout_plan=plan,
-            start_date=dt.date.today() - dt.timedelta(days=15),
-            end_date=dt.date.today() + dt.timedelta(days=45),
+            start_date=dt.date.today() - dt.timedelta(days=15),  # noqa: DTZ011 — seed anchors to local date
+            end_date=dt.date.today() + dt.timedelta(days=45),  # noqa: DTZ011 — seed anchors to local date
             is_active=True,
             notes="",
         )
@@ -433,7 +436,9 @@ def _seed_operations(tenant, branch, customers, trainers) -> None:
             )
     for trainer in trainers:
         for m in range(3):
-            month = (dt.date.today().replace(day=1) - dt.timedelta(days=m * 31)).replace(day=1)
+            month = (
+                dt.date.today().replace(day=1) - dt.timedelta(days=m * 31)  # noqa: DTZ011 — seed anchors to local date
+            ).replace(day=1)
             if not TrainerPerformance.objects.filter(trainer=trainer, month=month).exists():
                 TrainerPerformance.objects.create(
                     tenant=tenant,
@@ -446,7 +451,7 @@ def _seed_operations(tenant, branch, customers, trainers) -> None:
                 )
     for customer in random.sample(customers, min(14, len(customers))):
         for d in range(0, 14, 2):
-            date = dt.date.today() - dt.timedelta(days=d)
+            date = dt.date.today() - dt.timedelta(days=d)  # noqa: DTZ011 — seed anchors to local date
             if AttendanceRecord.objects.filter(customer=customer, date=date).exists():
                 continue
             check_in = timezone.make_aware(

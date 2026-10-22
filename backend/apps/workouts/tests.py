@@ -157,7 +157,7 @@ class WorkoutExerciseModelTests(TestCase):
             exercise=self.exercise,
             rpe=11,
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             we.full_clean()
 
 
@@ -191,7 +191,7 @@ class WorkoutAssignmentModelTests(TestCase):
             workout_plan=self.plan,
         )
         self.assertTrue(assignment.is_active)
-        self.assertEqual(assignment.start_date, date.today())
+        self.assertEqual(assignment.start_date, date.today())  # noqa: DTZ011 — naive local test date
 
     def test_assignment_str(self) -> None:
         """The assignment string includes customer and plan."""

@@ -423,9 +423,8 @@ class OtpSenderProductionGuardTests(APITestCase):
 
         from apps.users.otp import resolve_otp_senders
 
-        with override_settings(DEBUG=False, OTP_SENDER="stub"):
-            with self.assertRaises(ImproperlyConfigured):
-                resolve_otp_senders(provision_tenant(name="Stub Gym", contact_email="stub@qa.local"))
+        with override_settings(DEBUG=False, OTP_SENDER="stub"), self.assertRaises(ImproperlyConfigured):
+            resolve_otp_senders(provision_tenant(name="Stub Gym", contact_email="stub@qa.local"))
 
     def test_console_is_ignored_outside_debug(self) -> None:
         """``OTP_SENDER=console`` with ``DEBUG=False`` resolves the real chain."""

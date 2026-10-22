@@ -234,13 +234,15 @@ class OtpDeliveryAuditTests(APITestCase):
             response.json.return_value = {"messageId": "fake"}
             return response
 
-        with override_settings(DEBUG=False, OTP_SENDER="auto"):
-            with mock.patch("apps.notifications.services.channels.requests.post", _capture):
-                issued = self.client.post(
-                    "/api/v1/users/auth/otp/request/",
-                    {"phone": "9876570001", "gym": str(tenant.uuid)},
-                    format="json",
-                )
+        with (
+            override_settings(DEBUG=False, OTP_SENDER="auto"),
+            mock.patch("apps.notifications.services.channels.requests.post", _capture),
+        ):
+            issued = self.client.post(
+                "/api/v1/users/auth/otp/request/",
+                {"phone": "9876570001", "gym": str(tenant.uuid)},
+                format="json",
+            )
         self.assertEqual(issued.status_code, 200, issued.data)
         # The code never appears in the response body in production.
         self.assertNotIn("otp", issued.data)

@@ -108,7 +108,7 @@ class BodyAnalysisModelTests(TestCase):
             height_cm="170.00",
             weight_kg="70.00",
         )
-        other_tenant, other_owner = _make_tenant_and_owner("other@example.com")
+        other_tenant, _other_owner = _make_tenant_and_owner("other@example.com")
         other_user = User.objects.create_user(
             email="otheruser@example.com",
             password="F1tNati0n!",
@@ -283,7 +283,7 @@ class BodyAnalysisAPITests(APITestCase):
             "/api/v1/ai/body-analysis/",
             {
                 "user": self.user.id,
-                "analysis_date": date.today().isoformat(),
+                "analysis_date": date.today().isoformat(),  # noqa: DTZ011 — naive local test date
                 "height_cm": "170.00",
                 "weight_kg": "70.00",
                 "body_fat_pct": "20.00",
@@ -455,7 +455,7 @@ class BodyProgressAPITests(APITestCase):
             "/api/v1/ai/body-progress/",
             {
                 "user": self.user.id,
-                "date": date.today().isoformat(),
+                "date": date.today().isoformat(),  # noqa: DTZ011 — naive local test date
                 "metric_type": "weight",
                 "value": "80.00",
                 "unit": "kg",
@@ -479,7 +479,7 @@ class BodyProgressAPITests(APITestCase):
 
     def test_trend_returns_time_series(self) -> None:
         """The trend endpoint returns chronological data points."""
-        today = date.today()
+        today = date.today()  # noqa: DTZ011 — local naive dates intentional — comparisons target naive model dates
         for i, weight in enumerate(["80.00", "79.00", "78.00"]):
             BodyProgressLog.objects.create(
                 tenant=self.tenant,
@@ -511,7 +511,7 @@ class BodyProgressAPITests(APITestCase):
 
     def test_trend_filters_by_date_range(self) -> None:
         """Trend respects start_date/end_date filters."""
-        today = date.today()
+        today = date.today()  # noqa: DTZ011 — local naive dates intentional — comparisons target naive model dates
         BodyProgressLog.objects.create(
             tenant=self.tenant,
             user=self.user,
@@ -576,7 +576,7 @@ class ServiceTests(TestCase):
 
     def test_build_progress_trend_latest_value_wins_per_date(self) -> None:
         """Duplicate dates keep only the latest value."""
-        today = date.today()
+        today = date.today()  # noqa: DTZ011 — local naive dates intentional — comparisons target naive model dates
         first = BodyProgressLog.objects.create(
             tenant=self.tenant,
             user=self.user,

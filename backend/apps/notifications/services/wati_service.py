@@ -11,7 +11,8 @@ guaranteed by always using the tenant's own Wati configuration.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from django.conf import settings
 

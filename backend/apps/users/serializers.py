@@ -248,7 +248,7 @@ class TrainerCreateSerializer(serializers.Serializer):
                 data = data.copy()
                 data["certifications"] = json.loads(certifications)
             except (json.JSONDecodeError, ValueError):
-                raise serializers.ValidationError({"certifications": "Value must be valid JSON."})
+                raise serializers.ValidationError({"certifications": "Value must be valid JSON."}) from None
         return super().to_internal_value(data)
 
 

@@ -108,20 +108,20 @@ class AIServiceTests(TestCase):
 
     def test_generate_response_workout(self) -> None:
         """A workout message returns a workout recommendation."""
-        response, rec = generate_response("give me a workout plan", self.owner)
+        _response, rec = generate_response("give me a workout plan", self.owner)
         self.assertIsNotNone(rec)
         self.assertEqual(rec["type"], "workout")
         self.assertIn("suggestion", rec["content"])
 
     def test_generate_response_diet(self) -> None:
         """A diet message returns a diet recommendation."""
-        response, rec = generate_response("diet advice please", self.owner)
+        _response, rec = generate_response("diet advice please", self.owner)
         self.assertIsNotNone(rec)
         self.assertEqual(rec["type"], "diet")
 
     def test_generate_response_form(self) -> None:
         """A form/technique message returns exercise tips."""
-        response, rec = generate_response("what about form", self.owner)
+        _response, rec = generate_response("what about form", self.owner)
         self.assertIsNotNone(rec)
         self.assertEqual(rec["type"], "exercise_tips")
 

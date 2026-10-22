@@ -50,5 +50,5 @@ def on_inventory_item_low_stock(
                 f"(threshold: {instance.low_stock_threshold})."
             ),
         )
-    except Exception:  # noqa: BLE001 - notifications must never break the workflow
+    except Exception:
         logger.exception("Failed to record low-stock notification for inventory item %s", instance.pk)

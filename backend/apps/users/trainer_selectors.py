@@ -14,11 +14,11 @@ if TYPE_CHECKING:
 
 
 def trainer_list(
-    tenant: "Tenant",
+    tenant: Tenant,
     is_active: bool | str | None = None,
     specialization: str | None = None,
     search: str | None = None,
-) -> "QuerySet[Trainer]":
+) -> QuerySet[Trainer]:
     """Return a tenant-scoped queryset of trainers with optional filters.
 
     Args:
@@ -50,7 +50,7 @@ def trainer_list(
     return qs.order_by("-created_at")
 
 
-def trainer_get_by_id(tenant: "Tenant", trainer_id: int) -> "Trainer":
+def trainer_get_by_id(tenant: Tenant, trainer_id: int) -> Trainer:
     """Return a tenant-scoped trainer by id.
 
     Args:
@@ -69,9 +69,9 @@ def trainer_get_by_id(tenant: "Tenant", trainer_id: int) -> "Trainer":
 
 
 def trainer_schedule_list(
-    tenant: "Tenant",
+    tenant: Tenant,
     trainer_id: int,
-) -> "QuerySet[TrainerSchedule]":
+) -> QuerySet[TrainerSchedule]:
     """Return schedules for a trainer within a tenant.
 
     Args:
@@ -87,10 +87,10 @@ def trainer_schedule_list(
 
 
 def trainer_assignment_list(
-    tenant: "Tenant",
+    tenant: Tenant,
     trainer_id: int | None = None,
     is_active: bool | None = None,
-) -> "QuerySet[TrainerCustomerAssignment]":
+) -> QuerySet[TrainerCustomerAssignment]:
     """Return customer assignments for a trainer within a tenant.
 
     Args:
@@ -111,7 +111,7 @@ def trainer_assignment_list(
     return qs
 
 
-def trainer_metrics(tenant: "Tenant", trainer_id: int) -> dict:
+def trainer_metrics(tenant: Tenant, trainer_id: int) -> dict:
     """Return performance metrics for a single trainer.
 
     Args:

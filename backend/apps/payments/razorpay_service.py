@@ -101,7 +101,7 @@ def create_order(
                 "payment_capture": 1,
             }
         )
-    except Exception as exc:  # noqa: BLE001 - normalize SDK errors
+    except Exception as exc:
         raise RazorpayError(f"Razorpay order creation failed: {exc}") from exc
     return order
 
@@ -124,7 +124,7 @@ def verify_signature(
         ``True`` if the signature is valid, otherwise ``False``.
     """
     config = get_active_config(tenant)
-    message = f"{razorpay_order_id}|{razorpay_payment_id}".encode("utf-8")
+    message = f"{razorpay_order_id}|{razorpay_payment_id}".encode()
     secret = config.webhook_secret or config.api_secret
     expected = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, razorpay_signature)
@@ -179,7 +179,7 @@ def refund_payment(
                 "notes": {"reason": reason, "payment_id": payment.id},
             },
         )
-    except Exception as exc:  # noqa: BLE001 - normalize SDK errors
+    except Exception as exc:
         refund.status = PaymentRefund.Status.FAILED
         refund.error_message = str(exc)
         refund.save(update_fields=["status", "error_message", "updated_at"])

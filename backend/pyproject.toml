@@ -33,6 +33,14 @@ section-order = ["future", "standard-library", "django", "third-party", "first-p
 [tool.ruff.lint.isort.sections]
 "django" = ["django", "rest_framework"]
 
+[tool.ruff.lint.per-file-ignores]
+# These files carry inline `noqa` directives for flake8 (E402/F401), which ruff itself
+# does not flag there — RUF100 would strip them, breaking flake8. Keep both tools happy.
+"config/asgi.py" = ["RUF100"]
+"config/wsgi.py" = ["RUF100"]
+"config/settings/prod.py" = ["RUF100"]
+"config/settings/qa.py" = ["RUF100"]
+
 [tool.black]
 line-length = 120
 target-version = ["py312"]

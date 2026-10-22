@@ -77,9 +77,11 @@ class SenderResolutionTests(TestCase):
 
     def test_console_prod_guard_resolves_real_chain(self) -> None:
         """The console prod-guard resolves the production chain instead."""
-        with self.assertLogs("apps.users.otp", level="WARNING") as logs:
-            with override_settings(DEBUG=False, OTP_SENDER="console", **SMS_SETTINGS):
-                chain = resolve_otp_senders(self.plain_tenant)
+        with (
+            self.assertLogs("apps.users.otp", level="WARNING") as logs,
+            override_settings(DEBUG=False, OTP_SENDER="console", **SMS_SETTINGS),
+        ):
+            chain = resolve_otp_senders(self.plain_tenant)
         self.assertEqual([s.name for s in chain], ["sms"])
         self.assertTrue(any("ignored" in line for line in logs.output))
 
@@ -239,9 +241,8 @@ class IssueOtpChainTests(TestCase):
         second = MagicMock()
         second.name = "sms"
         second.send_otp.side_effect = OtpDeliveryError("down2")
-        with self.assertLogs("apps.users.otp", level="CRITICAL") as logs:
-            with self.assertRaises(OtpDeliveryError):
-                issue_otp("+919900000005", self.tenant, sender=[first, second])
+        with self.assertLogs("apps.users.otp", level="CRITICAL") as logs, self.assertRaises(OtpDeliveryError):
+            issue_otp("+919900000005", self.tenant, sender=[first, second])
         self.assertTrue(any("all channels" in line for line in logs.output))
 
     def test_empty_chain_raises_loudly(self) -> None:

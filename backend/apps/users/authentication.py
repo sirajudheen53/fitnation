@@ -65,7 +65,7 @@ class TenantTokenAuthentication(BaseAuthentication):
 
         return user, token
 
-    def authenticate_header(self, request: Any) -> str:  # noqa: ARG002
+    def authenticate_header(self, request: Any) -> str:
         """Return the expected authorization keyword for 401 responses.
 
         Args:

@@ -117,8 +117,8 @@ class CustomerSerializer(serializers.ModelSerializer):
             with Image.open(value) as image:
                 fmt = image.format
                 image.verify()
-        except Exception:
-            raise serializers.ValidationError("Profile photo must be a valid JPEG, PNG or WebP image.")
+        except Exception:  # noqa: BLE001 — any parse failure means invalid image
+            raise serializers.ValidationError("Profile photo must be a valid JPEG, PNG or WebP image.") from None
         finally:
             if hasattr(value, "seek"):
                 value.seek(0)
@@ -249,7 +249,7 @@ class CustomerSerializer(serializers.ModelSerializer):
                 user.email = new_email
                 user.save(update_fields=["email", "updated_at"])
         except IntegrityError:
-            raise serializers.ValidationError({"email": "A user with this email already exists."})
+            raise serializers.ValidationError({"email": "A user with this email already exists."}) from None
 
     def _adopt_customer_profile(self, profile: Customer, validated_data: dict) -> Customer:
         """Apply the payload to an existing (OTP-provisioned) customer row."""
@@ -269,9 +269,8 @@ class CustomerSerializer(serializers.ModelSerializer):
         # email — normalize it to the NULL-email shape a direct phone-only
         # create produces (msg 2438: Customer.email stays NULL). Both
         # synthetic schemes (legacy + tenant-scoped) share the domain.
-        if not validated_data.get("email") and profile.email:
-            if profile.email.lower().endswith(SYNTHETIC_EMAIL_DOMAIN):
-                profile.email = None
+        if not validated_data.get("email") and profile.email and profile.email.lower().endswith(SYNTHETIC_EMAIL_DOMAIN):
+            profile.email = None
         if validated_data.get("branch"):
             profile.branch = validated_data["branch"]
         profile.is_active = True
@@ -319,7 +318,7 @@ class CustomerSerializer(serializers.ModelSerializer):
                 user.is_email_verified = True
                 user.save(update_fields=["email", "is_email_verified", "updated_at"])
         except IntegrityError:
-            raise serializers.ValidationError({"email": "A user with this email already exists."})
+            raise serializers.ValidationError({"email": "A user with this email already exists."}) from None
         validated_data["email"] = new_email
 
     def _provision_portal_user(self, validated_data, tenant, first_name: str, last_name: str) -> User:
@@ -353,7 +352,7 @@ class CustomerSerializer(serializers.ModelSerializer):
         except IntegrityError:
             raise serializers.ValidationError(
                 {"email": "A user with this email already exists."},
-            )
+            ) from None
         user.is_email_verified = True
         user.save(update_fields=["is_email_verified"])
         return user

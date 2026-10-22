@@ -23,6 +23,6 @@ class TenantMiddleware(MiddlewareMixin):
                     try:
                         request.tenant = Tenant.objects.get(id=tenant_id)
                     except Tenant.DoesNotExist:
-                        raise PermissionDenied("Invalid tenant_id")
+                        raise PermissionDenied("Invalid tenant_id") from None
             elif request.user.tenant_id:
                 request.tenant = request.user.tenant

@@ -179,9 +179,8 @@ class RolePermission(BasePermission):
         if not request.user.is_authenticated or request.user.is_superuser:
             return True
 
-        if hasattr(obj, "tenant_id") and obj.tenant_id is not None:
-            if obj.tenant_id != request.user.tenant_id:
-                return False
+        if hasattr(obj, "tenant_id") and obj.tenant_id is not None and obj.tenant_id != request.user.tenant_id:
+            return False
 
         if request.user.role == "customer":
             if hasattr(obj, "user_id") and obj.user_id == request.user.id:

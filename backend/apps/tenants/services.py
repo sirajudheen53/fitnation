@@ -150,7 +150,7 @@ def throttle_gym_lookup(ip: str | None) -> None:
         cache.set(key, count, timeout=GYM_LOOKUP_THROTTLE_WINDOW_SECONDS)
     except Throttled:
         raise
-    except Exception:
+    except Exception:  # noqa: BLE001 — throttle best-effort — cache loss must not block
         logger.warning("Gym lookup throttle skipped (cache unavailable)")
         return
     if count > GYM_LOOKUP_THROTTLE_LIMIT:

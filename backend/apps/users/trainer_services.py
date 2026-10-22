@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 def create_trainer(
-    tenant: "Tenant",
+    tenant: Tenant,
     email: str,
     first_name: str,
     last_name: str,
@@ -25,8 +25,8 @@ def create_trainer(
     experience_years: int = 0,
     max_clients: int = 50,
     profile_photo: str = "",
-    actor: object | None = None,  # noqa: ARG001
-) -> "Trainer":
+    actor: object | None = None,
+) -> Trainer:
     """Create a new user with trainer role and trainer profile.
 
     Args:
@@ -78,9 +78,9 @@ def create_trainer(
 
 
 def update_trainer(
-    trainer: "Trainer",
+    trainer: Trainer,
     **fields: object,
-) -> "Trainer":
+) -> Trainer:
     """Update trainer profile fields.
 
     Args:
@@ -98,13 +98,13 @@ def update_trainer(
 
 
 def create_schedule(
-    tenant: "Tenant",
-    trainer: "Trainer",
+    tenant: Tenant,
+    trainer: Trainer,
     day_of_week: str,
     start_time: str,
     end_time: str,
     is_available: bool = True,
-) -> "TrainerSchedule":
+) -> TrainerSchedule:
     """Create a schedule entry for a trainer.
 
     Args:
@@ -131,9 +131,9 @@ def create_schedule(
 
 
 def update_schedule(
-    schedule: "TrainerSchedule",
+    schedule: TrainerSchedule,
     **fields: object,
-) -> "TrainerSchedule":
+) -> TrainerSchedule:
     """Update a schedule entry.
 
     Args:
@@ -151,10 +151,10 @@ def update_schedule(
 
 
 def assign_customer_to_trainer(
-    tenant: "Tenant",
-    trainer: "Trainer",
+    tenant: Tenant,
+    trainer: Trainer,
     customer_id: int,
-) -> "TrainerCustomerAssignment":
+) -> TrainerCustomerAssignment:
     """Assign a customer to a trainer (create or reactivate).
 
     Args:
@@ -185,8 +185,8 @@ def assign_customer_to_trainer(
 
 
 def unassign_customer_from_trainer(
-    assignment: "TrainerCustomerAssignment",
-) -> "TrainerCustomerAssignment":
+    assignment: TrainerCustomerAssignment,
+) -> TrainerCustomerAssignment:
     """Mark a trainer-customer assignment as inactive.
 
     Args:

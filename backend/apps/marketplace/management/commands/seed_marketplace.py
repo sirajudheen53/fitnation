@@ -204,7 +204,7 @@ class Command(BaseCommand):
         )
 
     @transaction.atomic
-    def handle(self, *args, **options):  # noqa: ARG002
+    def handle(self, *args, **options):
         """Run the seed command."""
         tenant_id = options.get("tenant")
         if tenant_id is None:

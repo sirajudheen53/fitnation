@@ -390,9 +390,9 @@ class EntitlementRequiredTests(TestCase):
     def setUp(self) -> None:
         """Flagged-on tenant + a gated-content surface (memberships list is
         NOT gated; workouts IS)."""
-        from rest_framework.test import APIRequestFactory  # noqa: PLC0415
+        from rest_framework.test import APIRequestFactory
 
-        from apps.permissions.entitlements import EntitlementRequired  # noqa: PLC0415
+        from apps.permissions.entitlements import EntitlementRequired
 
         self.factory = APIRequestFactory()
         self.permission = EntitlementRequired()
@@ -435,7 +435,7 @@ class EntitlementRequiredTests(TestCase):
 
     def test_grace_read_allowed_write_denied_with_code(self) -> None:
         """Grace: GET allowed; POST → 403 body carries app_access_read_only."""
-        from rest_framework.exceptions import PermissionDenied  # noqa: PLC0415
+        from rest_framework.exceptions import PermissionDenied
 
         request, view = self._customer_request(method="get", end_offset=-2)
         self.assertTrue(self.permission.has_permission(request, view))
@@ -446,7 +446,7 @@ class EntitlementRequiredTests(TestCase):
 
     def test_expired_read_denied_with_code(self) -> None:
         """Expired: even GET → 403 body carries app_access_required."""
-        from rest_framework.exceptions import PermissionDenied  # noqa: PLC0415
+        from rest_framework.exceptions import PermissionDenied
 
         request, view = self._customer_request(method="get", end_offset=-30)
         with self.assertRaises(PermissionDenied) as ctx:
@@ -500,5 +500,5 @@ class EntitlementRequiredTests(TestCase):
         view = type("V", (), {"action": "health_profile", "entitlement_exempt_actions": {"health_profile"}})()
         self.assertTrue(self.permission.has_permission(request, view))
         view = type("V", (), {"action": "progress_photos", "entitlement_exempt_actions": {"health_profile"}})()
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             self.permission.has_permission(request, view)

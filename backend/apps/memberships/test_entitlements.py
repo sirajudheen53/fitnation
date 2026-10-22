@@ -191,7 +191,7 @@ class MembershipPlanFieldTests(EntitlementTestBase):
 
     def test_serializer_round_trips_flag(self) -> None:
         """The serializer exposes the flag for the ERP plan form toggle."""
-        from apps.memberships.serializers import MembershipPlanSerializer  # noqa: PLC0415
+        from apps.memberships.serializers import MembershipPlanSerializer
 
         plan = MembershipPlan.objects.create(
             tenant=self.tenant,

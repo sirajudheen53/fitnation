@@ -56,7 +56,7 @@ class UserModelTests(TestCase):
             last_name="B",
         )
 
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             User.objects.create_user(
                 email="dup@local.test",
                 password="F1tNati0n!",
@@ -168,7 +168,7 @@ class TokenTests(TestCase):
             (),
             {"META": {"HTTP_AUTHORIZATION": "Token invalid"}},
         )()
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             real_backend.authenticate(request)
 
     def test_expired_token_rejected(self) -> None:
@@ -184,7 +184,7 @@ class TokenTests(TestCase):
             (),
             {"META": {"HTTP_AUTHORIZATION": f"Token {token.key}"}},
         )()
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             real_backend.authenticate(request)
 
 
@@ -413,7 +413,7 @@ class TrainerScheduleTests(TestCase):
             start_time="06:00",
             end_time="12:00",
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             create_schedule(
                 tenant=self.tenant,
                 trainer=self.trainer,
@@ -495,7 +495,7 @@ class TrainerCustomerAssignmentTests(TestCase):
             trainer=self.trainer,
             customer_id=self.customer.id,
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             TrainerCustomerAssignment.objects.create(
                 tenant=self.tenant,
                 trainer=self.trainer,
@@ -1089,7 +1089,7 @@ class OTPAnchorsAndHardeningTests(APITestCase):
         cap_settings = override_settings(OTP_RESEND_COOLDOWN_SECONDS=0, OTP_DAILY_LIMIT_PER_PHONE=3)
         cap_settings.enable()
         self.addCleanup(cap_settings.disable)
-        for i in range(3):
+        for _ in range(3):
             issued = self._request_otp({"phone": "+9199000000009"})
             self.assertEqual(issued.status_code, 200)
         exhausted = self._request_otp({"phone": "+9199000000009"})

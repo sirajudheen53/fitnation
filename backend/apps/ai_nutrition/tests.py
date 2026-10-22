@@ -167,7 +167,7 @@ class MacroLogModelTests(TestCase):
     def test_unique_per_tenant_user_date(self) -> None:
         """Only one macro log per user per day within a tenant."""
         MacroLog.objects.create(tenant=self.tenant, user=self.user, date=date(2026, 1, 1), calories_consumed=100)
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             MacroLog.objects.create(tenant=self.tenant, user=self.user, date=date(2026, 1, 1))
 
     def test_macro_log_str(self) -> None:

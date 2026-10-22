@@ -11,7 +11,7 @@ DJANGO_SETTINGS_MODULE=config.settings.cloudrun
 
 import os
 
-from .base import *  # noqa: F401, F403
+from .base import *  # noqa: F403
 from .base import env
 
 # ── Prod-like hardening ────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ try:
     import storages.backends.gcloud  # noqa: F401
 
     _MEDIA_BACKEND = "storages.backends.gcloud.GoogleCloudStorage"
-except Exception:  # pragma: no cover — dependency missing on a bad deploy
+except Exception:  # pragma: no cover — dependency missing on a bad deploy  # noqa: BLE001 — degraded media fallback
     _MEDIA_BACKEND = "django.core.files.storage.FileSystemStorage"
 
 STORAGES = {
@@ -88,7 +88,7 @@ GS_SA_EMAIL = env(
 GS_EXPIRATION = env.int("GS_EXPIRATION", default=3600)  # ~1h signed-URL TTL
 
 # Whitenoise middleware for serving static files (no nginx/CDN on dev Cloud Run)
-MIDDLEWARE = ["whitenoise.middleware.WhiteNoiseMiddleware"] + MIDDLEWARE  # noqa: F405
+MIDDLEWARE = ["whitenoise.middleware.WhiteNoiseMiddleware", *MIDDLEWARE]  # noqa: F405
 
 # ── Email (SendGrid) ────────────────────────────────────────────────────────────
 EMAIL_BACKEND = "sendgrid_backend.base.EmailBackend"

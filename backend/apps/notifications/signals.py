@@ -6,6 +6,7 @@ never breaks the primary workflow that triggered it.
 
 from __future__ import annotations
 
+import contextlib
 from datetime import timedelta
 from typing import Any
 
@@ -95,8 +96,7 @@ def _try_send(
     context: dict[str, Any],
 ) -> None:
     """Dispatch a notification, swallowing exceptions so the caller is unaffected."""
-    try:
+    # Blind suppression is intentional: the service logs failures itself, and the
+    # signal must stay side-effect free for the workflow that triggered it.
+    with contextlib.suppress(Exception):
         send_notification(tenant, customer, notification_type, context)
-    except Exception:  # noqa: BLE001 - notifications must never break the workflow
-        # The service logs failures itself; keep the signal side-effect free.
-        pass

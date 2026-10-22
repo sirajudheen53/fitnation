@@ -25,7 +25,7 @@ class RoleAndPermissionModelTests(TestCase):
             is_system_role=True,
             is_tenant_custom=False,
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             Role.objects.create(
                 code="platform_admin",
                 name="Duplicate",
@@ -42,7 +42,7 @@ class RoleAndPermissionModelTests(TestCase):
             action="create",
             resource="branch",
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             Permission.objects.create(
                 code="branches.create_branch_2",
                 name="Duplicate permission",
@@ -62,7 +62,7 @@ class RoleAndPermissionModelTests(TestCase):
             resource="branch",
         )
         RolePermission.objects.create(role=role, permission=perm)
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             RolePermission.objects.create(role=role, permission=perm)
 
 

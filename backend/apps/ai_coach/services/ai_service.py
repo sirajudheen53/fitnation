@@ -18,19 +18,19 @@ def build_user_context(user):
         customer = Customer.objects.filter(user=user).first()
         if customer and customer.fitness_goals:
             ctx["goals"] = customer.fitness_goals
-    except Exception:
+    except Exception:  # noqa: BLE001 — best-effort context — must not break response
         pass
     try:
         assignments = WorkoutAssignment.objects.filter(user=user).select_related("plan")[:3]
         ctx["workouts"] = [
             {"name": a.plan.name, "difficulty": a.plan.difficulty} for a in assignments if hasattr(a, "plan")
         ]
-    except Exception:
+    except Exception:  # noqa: BLE001 — best-effort context — must not break response
         pass
     try:
         diet_assignments = DietAssignment.objects.filter(user=user).select_related("plan")[:3]
         ctx["diet_plans"] = [{"name": a.plan.name} for a in diet_assignments if hasattr(a, "plan")]
-    except Exception:
+    except Exception:  # noqa: BLE001 — best-effort context — must not break response
         pass
     return ctx
 

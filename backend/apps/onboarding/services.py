@@ -55,7 +55,7 @@ class OnboardingError(Exception):
         self.status_code = status_code
 
 
-def _validate_plan(tenant: "Tenant", plan_id: int) -> MembershipPlan:
+def _validate_plan(tenant: Tenant, plan_id: int) -> MembershipPlan:
     """Return the tenant's active plan or raise a 400.
 
     Args:
@@ -94,7 +94,7 @@ def _resolve_dates(plan: MembershipPlan, requested: dict) -> tuple:
     return start, end
 
 
-def _create_customer(tenant: "Tenant", customer_payload: dict, request: Any) -> tuple["Customer", bool]:
+def _create_customer(tenant: Tenant, customer_payload: dict, request: Any) -> tuple[Customer, bool]:
     """Create (or converge) the customer via the ADR-002 serializer.
 
     Reusing ``CustomerSerializer.create`` keeps ONE phone-identity behaviour
@@ -122,7 +122,7 @@ def _create_customer(tenant: "Tenant", customer_payload: dict, request: Any) -> 
     return customer, returning
 
 
-def _create_membership(tenant: "Tenant", customer: "Customer", plan: MembershipPlan, dates: tuple) -> Membership:
+def _create_membership(tenant: Tenant, customer: Customer, plan: MembershipPlan, dates: tuple) -> Membership:
     """Create the membership row (mirrors ``MembershipViewSet.create``)."""
     start, end = dates
     membership = Membership.objects.create(
@@ -138,8 +138,8 @@ def _create_membership(tenant: "Tenant", customer: "Customer", plan: MembershipP
 
 
 def _create_payment(
-    tenant: "Tenant",
-    customer: "Customer",
+    tenant: Tenant,
+    customer: Customer,
     membership: Membership | None,
     plan: MembershipPlan,
     payment_payload: dict | None,
@@ -178,7 +178,7 @@ def _create_payment(
     )
 
 
-def _enroll_biometrics(tenant: "Tenant", customer: "Customer", entries: list[dict]) -> list[dict]:
+def _enroll_biometrics(tenant: Tenant, customer: Customer, entries: list[dict]) -> list[dict]:
     """Enroll the desk-captured credentials (registry rows only).
 
     Args:
@@ -222,7 +222,7 @@ def _enroll_biometrics(tenant: "Tenant", customer: "Customer", entries: list[dic
     return results
 
 
-def _notify(tenant: "Tenant", customer: "Customer", membership: Membership | None, send_welcome: bool) -> list[dict]:
+def _notify(tenant: Tenant, customer: Customer, membership: Membership | None, send_welcome: bool) -> list[dict]:
     """Send the welcome (+ payment receipt) WhatsApp messages, best-effort.
 
     Args:
@@ -253,7 +253,7 @@ def _notify(tenant: "Tenant", customer: "Customer", membership: Membership | Non
 def _finalize_response(
     *,
     session: OnboardingSession,
-    customer: "Customer",
+    customer: Customer,
     membership: Membership | None,
     payment: Payment | None,
     invoice: Invoice | None,
@@ -332,7 +332,7 @@ def _finalize_response(
     return result
 
 
-def _send_app_invite(tenant: "Tenant", customer: "Customer", invited_by: "User | None", enabled: bool, poster) -> dict:
+def _send_app_invite(tenant: Tenant, customer: Customer, invited_by: User | None, enabled: bool, poster) -> dict:
     """Fire the app invite (ride-along); failures never raise.
 
     Args:
@@ -367,7 +367,7 @@ def _send_app_invite(tenant: "Tenant", customer: "Customer", invited_by: "User |
     return invite_result_payload(result)
 
 
-def _replay_recent_session(tenant: "Tenant", customer_id: int | None, plan_id: int):
+def _replay_recent_session(tenant: Tenant, customer_id: int | None, plan_id: int):
     """Find a completed session for the same member+plan today (double-click guard).
 
     The ``Idempotency-Key`` is the primary replay mechanism; this safety net
@@ -401,8 +401,8 @@ def _replay_recent_session(tenant: "Tenant", customer_id: int | None, plan_id: i
 
 def create_member_onboarding(
     *,
-    tenant: "Tenant",
-    user: "User",
+    tenant: Tenant,
+    user: User,
     payload: dict,
     request: Any = None,
     idempotency_key: str = "",
@@ -521,8 +521,8 @@ def _snapshot(payload: dict) -> dict:
 
 def _start_razorpay_onboarding(
     *,
-    tenant: "Tenant",
-    user: "User",
+    tenant: Tenant,
+    user: User,
     data: dict,
     payload: dict,
     plan: MembershipPlan,
@@ -611,8 +611,8 @@ def _start_razorpay_onboarding(
 
 def complete_razorpay_onboarding(
     *,
-    tenant: "Tenant",
-    user: "User",
+    tenant: Tenant,
+    user: User,
     session_uuid: str,
     razorpay_order_id: str,
     razorpay_payment_id: str,

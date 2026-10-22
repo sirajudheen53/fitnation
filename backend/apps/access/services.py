@@ -321,7 +321,9 @@ def _parse_attlog_punch(raw_line: str) -> tuple[str, datetime | None]:
         return "", None
     pin = fields[0].strip()
     try:
-        stamp = datetime.strptime(fields[1].strip(), "%Y-%m-%d %H:%M:%S")
+        stamp = datetime.strptime(  # noqa: DTZ007 — device stamps carry no tz; make_aware below
+            fields[1].strip(), "%Y-%m-%d %H:%M:%S"
+        )
     except ValueError:
         logger.warning("Unparseable ATTLOG timestamp in row %r.", raw_line[:80])
         return pin, None

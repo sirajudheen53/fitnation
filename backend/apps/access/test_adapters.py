@@ -11,8 +11,9 @@ from __future__ import annotations
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
-import requests
 from django.utils import timezone
+
+import requests
 
 from apps.access.adapters.base import (
     AdapterError,

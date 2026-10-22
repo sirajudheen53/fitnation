@@ -67,7 +67,7 @@ class HealthCheckView(APIView):
         try:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — probe must never raise — reports detail
             return f"error: {exc}"
         return "ok"
 
@@ -82,7 +82,7 @@ class HealthCheckView(APIView):
             cache.set("health_check", "ok", timeout=5)
             if cache.get("health_check") != "ok":
                 return "error: unexpected cache value"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — probe must never raise — reports detail
             return f"error: {exc}"
         return "ok"
 
@@ -100,7 +100,7 @@ class HealthCheckView(APIView):
             from django.core.files.storage import default_storage
 
             default_storage.exists("health_check_probe")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — probe must never raise — reports detail
             return f"error: {exc}"
         return "ok"
 

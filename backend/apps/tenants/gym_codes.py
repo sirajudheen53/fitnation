@@ -10,7 +10,8 @@ the same value and no code depends on creation order.
 """
 
 import hashlib
-from typing import TYPE_CHECKING, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from apps.tenants.models import Tenant

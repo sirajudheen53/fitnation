@@ -105,8 +105,8 @@ class MembershipModelTests(TestCase):
             tenant=self.tenant,
             customer=self.customer,
             plan=self.plan,
-            start_date=date.today(),
-            end_date=date.today() + timedelta(days=30),
+            start_date=date.today(),  # noqa: DTZ011 — naive local test date
+            end_date=date.today() + timedelta(days=30),  # noqa: DTZ011 — naive local test date
         )
         self.assertEqual(membership.status, Membership.Status.ACTIVE)
 
@@ -116,8 +116,8 @@ class MembershipModelTests(TestCase):
             tenant=self.tenant,
             customer=self.customer,
             plan=self.plan,
-            start_date=date.today() - timedelta(days=60),
-            end_date=date.today() - timedelta(days=30),
+            start_date=date.today() - timedelta(days=60),  # noqa: DTZ011 — naive local test date
+            end_date=date.today() - timedelta(days=30),  # noqa: DTZ011 — naive local test date
             status=Membership.Status.ACTIVE,
         )
         membership.save()
@@ -130,8 +130,8 @@ class MembershipModelTests(TestCase):
             tenant=self.tenant,
             customer=self.customer,
             plan=self.plan,
-            start_date=date.today() - timedelta(days=60),
-            end_date=date.today() - timedelta(days=30),
+            start_date=date.today() - timedelta(days=60),  # noqa: DTZ011 — naive local test date
+            end_date=date.today() - timedelta(days=30),  # noqa: DTZ011 — naive local test date
             status=Membership.Status.CANCELLED,
         )
         membership.save()
@@ -144,8 +144,8 @@ class MembershipModelTests(TestCase):
             tenant=self.tenant,
             customer=self.customer,
             plan=self.plan,
-            start_date=date.today(),
-            end_date=date.today() + timedelta(days=30),
+            start_date=date.today(),  # noqa: DTZ011 — naive local test date
+            end_date=date.today() + timedelta(days=30),  # noqa: DTZ011 — naive local test date
         )
         other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
         self.assertEqual(
@@ -267,8 +267,8 @@ class MembershipAPITests(APITestCase):
             {
                 "customer": self.customer.id,
                 "plan": self.plan.id,
-                "start_date": date.today().isoformat(),
-                "end_date": (date.today() + timedelta(days=30)).isoformat(),
+                "start_date": date.today().isoformat(),  # noqa: DTZ011 — naive local test date
+                "end_date": (date.today() + timedelta(days=30)).isoformat(),  # noqa: DTZ011 — naive local test date
                 "auto_renew": True,
             },
             format="json",
@@ -284,8 +284,8 @@ class MembershipAPITests(APITestCase):
             {
                 "customer": self.customer.id,
                 "plan": self.plan.id,
-                "start_date": date.today().isoformat(),
-                "end_date": date.today().isoformat(),
+                "start_date": date.today().isoformat(),  # noqa: DTZ011 — naive local test date
+                "end_date": date.today().isoformat(),  # noqa: DTZ011 — naive local test date
             },
             format="json",
         )
@@ -297,8 +297,8 @@ class MembershipAPITests(APITestCase):
             tenant=self.tenant,
             customer=self.customer,
             plan=self.plan,
-            start_date=date.today(),
-            end_date=date.today() + timedelta(days=30),
+            start_date=date.today(),  # noqa: DTZ011 — naive local test date
+            end_date=date.today() + timedelta(days=30),  # noqa: DTZ011 — naive local test date
         )
         response = self.client.get("/api/v1/memberships/memberships/")
         self.assertEqual(response.status_code, 200)
@@ -310,8 +310,8 @@ class MembershipAPITests(APITestCase):
             tenant=self.tenant,
             customer=self.customer,
             plan=self.plan,
-            start_date=date.today() - timedelta(days=40),
-            end_date=date.today() - timedelta(days=10),
+            start_date=date.today() - timedelta(days=40),  # noqa: DTZ011 — naive local test date
+            end_date=date.today() - timedelta(days=10),  # noqa: DTZ011 — naive local test date
             status=Membership.Status.ACTIVE,
         )
         original_end = membership.end_date
@@ -333,8 +333,8 @@ class MembershipAPITests(APITestCase):
             tenant=self.tenant,
             customer=self.customer,
             plan=self.plan,
-            start_date=date.today() - timedelta(days=40),
-            end_date=date.today() - timedelta(days=10),
+            start_date=date.today() - timedelta(days=40),  # noqa: DTZ011 — naive local test date
+            end_date=date.today() - timedelta(days=10),  # noqa: DTZ011 — naive local test date
             status=Membership.Status.ACTIVE,
         )
         original_end = membership.end_date
@@ -413,8 +413,8 @@ class MembershipAPITests(APITestCase):
             tenant=other_tenant,
             customer=other_customer,
             plan=other_plan,
-            start_date=date.today(),
-            end_date=date.today() + timedelta(days=30),
+            start_date=date.today(),  # noqa: DTZ011 — naive local test date
+            end_date=date.today() + timedelta(days=30),  # noqa: DTZ011 — naive local test date
         )
         response = self.client.get(f"/api/v1/memberships/memberships/{other_membership.id}/")
         self.assertEqual(response.status_code, 404)

@@ -101,7 +101,7 @@ class BiometricDeviceViewSet(ModelViewSet):
         return super().get_permissions()
 
     @action(detail=True, methods=["post"], url_path="test-connection")
-    def test_connection(self, request: Request, pk: int | None = None) -> Response:  # noqa: ARG002
+    def test_connection(self, request: Request, pk: int | None = None) -> Response:
         """Run the vendor adapter connection test against this device."""
         device = self.get_object()
         try:
@@ -222,7 +222,7 @@ class BiometricCredentialViewSet(ModelViewSet):
         )
 
     @action(detail=True, methods=["post"])
-    def deactivate(self, request: Request, pk: int | None = None) -> Response:  # noqa: ARG002
+    def deactivate(self, request: Request, pk: int | None = None) -> Response:
         """Deactivate a credential — the customer stops resolving on punches."""
         credential = self.get_object()
         credential.is_active = False

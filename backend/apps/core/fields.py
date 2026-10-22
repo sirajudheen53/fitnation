@@ -22,7 +22,7 @@ def _fernet_key() -> bytes:
         A URL-safe base64 Fernet key (32 url-safe bytes).
     """
     salt = os.environ.get("ENCRYPTION_SALT", "") or os.environ.get("SECRET_KEY", "fitnation-insecure-default")
-    digest = hashlib.sha256(f"fitnation:{salt}".encode("utf-8")).digest()
+    digest = hashlib.sha256(f"fitnation:{salt}".encode()).digest()
     return base64.urlsafe_b64encode(digest)
 
 
@@ -51,7 +51,7 @@ class EncryptedCharField(models.CharField):
             return ""
         try:
             return self._cipher().decrypt(value.encode("utf-8")).decode("utf-8")
-        except Exception:  # pragma: no cover - defensive against bad data
+        except Exception:  # pragma: no cover - defensive against bad data  # noqa: BLE001 — any failure returns empty
             return ""
 
     def get_db_prep_value(self, value, connection, prepared: bool = False):

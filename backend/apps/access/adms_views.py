@@ -75,7 +75,7 @@ def _log_request(request: HttpRequest, *, sn: str, device: BiometricDevice | Non
             sn=sn,
             remote_addr=request.META.get("REMOTE_ADDR") or "",
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Failed to write AdmsRequestLog for sn=%s", sn)
 
 
@@ -133,7 +133,7 @@ def cdata(request: HttpRequest) -> HttpResponse:
                 from apps.access.services import ingest_attlog_rows
 
                 ingest_attlog_rows(device=device, rows=rows)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("ATTLOG pairing failed for device %s; raw rows kept.", device.pk)
     return _plain("OK")
 

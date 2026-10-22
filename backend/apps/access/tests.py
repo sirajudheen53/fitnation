@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from io import StringIO
 from typing import ClassVar
@@ -140,7 +140,7 @@ class DeviceRegistryTest(AccessTestBase):
 
     def test_device_unique_serial_per_branch(self) -> None:
         """Enforce unique serial per branch."""
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             BiometricDevice.objects.create(
                 tenant=self.tenant,
                 branch=self.branch,
@@ -184,7 +184,7 @@ class AccessOverrideTest(AccessTestBase):
 
     def test_expired_override_ignored(self) -> None:
         """Expired overrides are not applied."""
-        past = datetime.now(timezone.utc) - timedelta(days=1)
+        past = datetime.now(UTC) - timedelta(days=1)
         AccessOverride.objects.create(
             tenant=self.tenant,
             customer=self.customer,
@@ -210,7 +210,7 @@ class AccessLogTest(AccessTestBase):
             device_user_id="D001",
             credential_type="fingerprint",
             event_type="entry",
-            event_timestamp=datetime.now(timezone.utc),
+            event_timestamp=datetime.now(UTC),
         )
         assert log.pk is not None
         assert log.tenant == self.tenant
@@ -304,9 +304,11 @@ class GenericHTTPAdapterTest(AccessTestBase):
     def test_allow_list_push_missing_endpoint_raises(self) -> None:
         """A device without api_endpoint cannot push its allow-list."""
         self.http_device.api_endpoint = ""
-        with mock.patch("apps.access.adapters.generic_http.requests.post") as post:
-            with self.assertRaises(AdapterError):
-                GenericHTTPAdapter().sync_allow_list(self.http_device, self.credentials)
+        with (
+            mock.patch("apps.access.adapters.generic_http.requests.post") as post,
+            self.assertRaises(AdapterError),
+        ):
+            GenericHTTPAdapter().sync_allow_list(self.http_device, self.credentials)
         post.assert_not_called()
 
     def test_fetch_events_returns_event_list(self) -> None:
@@ -322,7 +324,7 @@ class GenericHTTPAdapterTest(AccessTestBase):
 
     def test_fetch_events_passes_since_param(self) -> None:
         """The since timestamp is sent as an ISO-8601 query param."""
-        since = datetime.now(timezone.utc) - timedelta(hours=1)
+        since = datetime.now(UTC) - timedelta(hours=1)
         with mock.patch("apps.access.adapters.generic_http.requests.get") as get:
             get.return_value = _mock_response(200, [])
             GenericHTTPAdapter().fetch_events(self.http_device, since=since)
@@ -1030,7 +1032,7 @@ class DeviceSyncEnrollFetchAPITests(APITestCase):
 
     def test_fetch_events_records_access_logs(self) -> None:
         """POST fetch-events records each fetched event as an AccessLog."""
-        now_iso = datetime.now(timezone.utc).isoformat()
+        now_iso = datetime.now(UTC).isoformat()
         RecordingAdapter.events = [
             {
                 "device_user_id": "S001",

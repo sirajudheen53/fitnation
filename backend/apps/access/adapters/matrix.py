@@ -108,5 +108,5 @@ class MatrixAdapter(BiometricAdapter):
             }
         except requests.exceptions.ConnectionError:
             return {"online": False, "detail": "Device unreachable", "protocol": self.protocol}
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — status probe must never raise
             return {"online": False, "detail": str(exc), "protocol": self.protocol}

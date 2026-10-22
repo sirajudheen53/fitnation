@@ -32,7 +32,7 @@ class SubscriptionPlanTests(TestCase):
             max_customers=100,
             max_trainers=5,
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(Exception):  # noqa: B017 — broad by design — keeps test semantics
             SubscriptionPlan.objects.create(
                 code="starter",
                 name="Duplicate",

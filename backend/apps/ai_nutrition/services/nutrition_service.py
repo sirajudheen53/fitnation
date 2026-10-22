@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import random
 from collections import OrderedDict
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from apps.diet.models import FoodItem
 from apps.tenants.models import Tenant
@@ -193,7 +194,7 @@ def generate_shopping_list(
     Returns:
         List of ``{food_item_id, quantity, unit}`` dicts aggregated by food item.
     """
-    aggregated: "OrderedDict[int, dict[str, Any]]" = OrderedDict()
+    aggregated: OrderedDict[int, dict[str, Any]] = OrderedDict()
     for item in meal_plan_items:
         food_id = item.food_item_id
         if food_id in aggregated:

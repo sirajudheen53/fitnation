@@ -49,7 +49,7 @@ def send_email(
         email.content_subtype = "html"
         email.send(fail_silently=False)
         return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Failed to send email to %s", to_email)
         return False
 

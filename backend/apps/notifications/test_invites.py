@@ -312,7 +312,7 @@ class LinkBuilderTests(TestCase):
 
     def test_payload_shape(self) -> None:
         """invite_result_payload renders the documented API block."""
-        from apps.notifications.services.invite_service import AppInviteResult  # noqa: PLC0415
+        from apps.notifications.services.invite_service import AppInviteResult
 
         when = timezone.now()
         payload = invite_result_payload(
@@ -410,11 +410,13 @@ class AppInviteEndpointTests(APITestCase):
 
     def test_resend_true_forces_new_send(self) -> None:
         """resend: true → a new send (201 again)."""
-        with override_settings(**SMS_INVITE_SETTINGS):
-            with mock.patch.object(invite_module, "post_msg91_flow") as sms:
-                sms.return_value = MagicMock(status_code=200)
-                self.post_invite()
-                forced = self.post_invite(resend=True)
+        with (
+            override_settings(**SMS_INVITE_SETTINGS),
+            mock.patch.object(invite_module, "post_msg91_flow") as sms,
+        ):
+            sms.return_value = MagicMock(status_code=200)
+            self.post_invite()
+            forced = self.post_invite(resend=True)
         self.assertEqual(forced.status_code, 201)
         self.assertEqual(forced.data["status"], "sent")
 
@@ -474,13 +476,13 @@ class CustomerInviteStatusTests(TestCase):
 
     def test_none_when_never_invited(self) -> None:
         """No invite history → null."""
-        from apps.customers.serializers import CustomerSerializer  # noqa: PLC0415
+        from apps.customers.serializers import CustomerSerializer
 
         self.assertIsNone(CustomerSerializer(self.customer).data["app_invite_status"])
 
     def test_latest_log_summarized(self) -> None:
         """The most recent invite log renders {status, channel, sent_at…}."""
-        from apps.customers.serializers import CustomerSerializer  # noqa: PLC0415
+        from apps.customers.serializers import CustomerSerializer
 
         NotificationLog.objects.create(
             tenant=self.tenant,

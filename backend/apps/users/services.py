@@ -171,7 +171,7 @@ def create_user(
     phone: str = "",
     password: str = "",
     branch_id: int | None = None,
-    actor: User | None = None,  # noqa: ARG001
+    actor: User | None = None,
 ) -> User:
     """Create a new user within a tenant.
 
@@ -434,7 +434,7 @@ def _throttle_lookup(phone: str, ip: str | None) -> None:
         cache.set(key, count, timeout=600)
         if count > 10:
             raise TenantResolutionError({"detail": "Too many requests. Try again later."}, status_code=429)
-    except Exception:
+    except Exception:  # noqa: BLE001 — throttle best-effort — cache loss must not block
         logger.warning("OTP anchor throttle skipped (cache unavailable)")
 
 
@@ -459,7 +459,7 @@ def resolve_tenant_for_otp(phone: str, gym_anchor: str | None, ip: str | None = 
         try:
             return Tenant.objects.get(uuid=gym_anchor), None
         except (Tenant.DoesNotExist, ValueError, TypeError):
-            raise TenantResolutionError({"gym": "Unknown gym."}, status_code=400)
+            raise TenantResolutionError({"gym": "Unknown gym."}, status_code=400) from None
 
     _throttle_lookup(phone, ip)
     users = list(User.objects.filter(role=User.Role.CUSTOMER, phone=phone).select_related("tenant"))

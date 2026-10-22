@@ -5,7 +5,7 @@ Used for quick local development without PostgreSQL/Docker.
 DJANGO_SETTINGS_MODULE=config.settings.local
 """
 
-from .base import *  # noqa: F401, F403
+from .base import *  # noqa: F403
 
 DEBUG = True
 ALLOWED_HOSTS = ["*"]

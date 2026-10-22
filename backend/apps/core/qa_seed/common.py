@@ -122,7 +122,7 @@ def ensure_active(tenant) -> None:
 
 def _month_start(months_back: int) -> date:
     """First day of the month ``months_back`` months before today."""
-    today = date.today()
+    today = date.today()  # noqa: DTZ011 — seed data anchors to the local calendar date by design
     month = today.month - months_back
     year = today.year
     while month <= 0:
@@ -140,7 +140,9 @@ def ensure_demo_payments(tenant, customers) -> None:
     bank-transfer payment. Invoice numbers are left to the Invoice model's
     auto-generator (INV-YYYYMMDD-NNNN) per ADR-001.
     """
-    start_of_today = timezone.make_aware(datetime.combine(date.today(), time.min))
+    start_of_today = timezone.make_aware(
+        datetime.combine(date.today(), time.min)  # noqa: DTZ011 — seed anchors to local date
+    )
     now = timezone.now()
 
     def _membership_for(customer):
@@ -268,7 +270,9 @@ def ensure_demo_payments(tenant, customers) -> None:
                 amount=membership.plan.price,
                 payment_method=Payment.PaymentMethod.BANK_TRANSFER,
                 status=Payment.Status.COMPLETED,
-                paid_at=timezone.make_aware(datetime.combine(date.today(), time(11, 0))),
+                paid_at=timezone.make_aware(
+                    datetime.combine(date.today(), time(11, 0))  # noqa: DTZ011 — seed anchors to local date
+                ),
                 transaction_id=f"DEMO-BANK-{customer.id:05d}",
                 notes="Demo bank transfer",
             )

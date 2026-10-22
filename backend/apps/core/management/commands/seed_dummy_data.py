@@ -19,8 +19,7 @@ Creates:
 """
 
 import random
-from datetime import date, datetime, timedelta
-from datetime import timezone as dt_tz
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
@@ -533,7 +532,7 @@ class Command(BaseCommand):
     def _seed_membership_plans(self, tenant):
         plans = []
         for data in _MEMBERSHIP_PLANS:
-            plan, created = MembershipPlan.objects.get_or_create(
+            plan, _created = MembershipPlan.objects.get_or_create(
                 tenant=tenant,
                 name=data["name"],
                 defaults={
@@ -549,7 +548,7 @@ class Command(BaseCommand):
 
     def _seed_customers(self, tenant, branch):
         customers = []
-        today = date.today()
+        today = date.today()  # noqa: DTZ011 — seed data anchors to the local calendar date by design
         for i, data in enumerate(_CUSTOMERS):
             name = f"{data['first_name']} {data['last_name']}"
             user, user_created = User.objects.get_or_create(
@@ -638,7 +637,7 @@ class Command(BaseCommand):
         return customers
 
     def _seed_memberships(self, tenant, customers, plans):
-        today = date.today()
+        today = date.today()  # noqa: DTZ011 — seed data anchors to the local calendar date by design
         plan_by_name = {p.name: p for p in plans}
         for customer in customers:
             # Give each customer an active membership
@@ -663,13 +662,13 @@ class Command(BaseCommand):
         self.stdout.write(f"  ✅ Seeded memberships for {len(customers)} customers")
 
     def _seed_payments(self, tenant, customers):
-        today = date.today()
+        today = date.today()  # noqa: DTZ011 — seed data anchors to the local calendar date by design
         methods = _PAYMENT_METHODS
         for customer in customers:
             membership = customer.memberships.order_by("-id").first()
             for p in range(random.randint(1, 3)):
                 p_date = today - timedelta(days=random.randint(0, 30))
-                p_date_tz = datetime(p_date.year, p_date.month, p_date.day, 10 + p, 0, 0, tzinfo=dt_tz.utc)
+                p_date_tz = datetime(p_date.year, p_date.month, p_date.day, 10 + p, 0, 0, tzinfo=UTC)
                 method = random.choice(methods)
                 Payment.objects.get_or_create(
                     tenant=tenant,
@@ -687,7 +686,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  ✅ Seeded payments for {len(customers)} customers")
 
     def _seed_attendance(self, tenant, customers, branch):
-        today = date.today()
+        today = date.today()  # noqa: DTZ011 — seed data anchors to the local calendar date by design
         for customer in customers:
             for days_ago in range(1, _ATTENDANCE_DAYS + 1):
                 if random.random() < 0.7:  # 70% attendance rate
@@ -765,7 +764,7 @@ class Command(BaseCommand):
         return plans
 
     def _seed_workout_assignments(self, tenant, customers, workout_plans, owner):
-        today = date.today()
+        today = date.today()  # noqa: DTZ011 — seed data anchors to the local calendar date by design
         from apps.workouts.models import WorkoutAssignment
 
         for customer in customers:
@@ -833,7 +832,7 @@ class Command(BaseCommand):
         return plans
 
     def _seed_diet_assignments(self, tenant, customers, diet_plans, dietitian):
-        today = date.today()
+        today = date.today()  # noqa: DTZ011 — seed data anchors to the local calendar date by design
         for customer in customers:
             if random.random() < 0.8:
                 plan = random.choice(diet_plans)

@@ -9,9 +9,10 @@ onboarding flow or a front-desk resend can always complete.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Callable
+from typing import Any
 
 from django.conf import settings
 from django.utils import timezone
