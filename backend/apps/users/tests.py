@@ -1,6 +1,7 @@
 """Tests for the users app."""
 
 from datetime import timedelta
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -12,6 +13,7 @@ from apps.customers.models import Customer
 from apps.permissions.models import UserRoleAssignment
 from apps.tenants.services import provision_tenant
 from apps.users.models import Trainer, TrainerCustomerAssignment, TrainerSchedule
+from apps.users.otp import OtpDeliveryError
 from apps.users.services import (
     create_owner_user,
     create_user,
@@ -1127,3 +1129,81 @@ class OTPAnchorsAndHardeningTests(APITestCase):
         response = self.client.post("/api/v1/users/auth/otp/verify/", {"otp": "123456"}, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("phone", response.data)
+
+
+class OtpDeliveryUnavailableViewTests(APITestCase):
+    """The prod 503 body is loud AND diagnosable (issue #59).
+
+    The member-facing copy stays generic; the body additionally carries a
+    stable ``code`` plus per-channel machine reasons (``not_configured``,
+    ``http_<status>``…) so the mobile app and the operator can see WHY —
+    with no secrets and no provider payload.
+    """
+
+    def setUp(self) -> None:
+        """A tenant with no delivery channel at all, in prod-like settings."""
+        self.tenant = provision_tenant(name="Diag Gym", contact_email="diag@local.test")
+        self.user = User.objects.create_user(
+            email="member@diag.local",
+            password="x",
+            first_name="Mem",
+            last_name="Ber",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+            phone="+9199000000100",
+        )
+        overrides = override_settings(
+            DEBUG=False,
+            OTP_SENDER="auto",
+            SMS_PROVIDER="none",
+            MSG91_AUTH_KEY="",
+            MSG91_TEMPLATE_ID="",
+            CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+        )
+        overrides.enable()
+        self.addCleanup(overrides.disable)
+
+    def test_unconfigured_chain_returns_diagnosable_503(self) -> None:
+        """Empty chain → 503 with code + both channels not_configured."""
+        response = self.client.post("/api/v1/users/auth/otp/request/", {"phone": "+9199000000100"}, format="json")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["code"], "otp_delivery_unavailable")
+        self.assertEqual(
+            response.data["channels"],
+            [
+                {"channel": "wati", "reason": "not_configured"},
+                {"channel": "sms", "reason": "not_configured"},
+            ],
+        )
+        # Member-facing copy stays generic; nothing secret or code-like leaks.
+        self.assertEqual(
+            response.data["detail"],
+            "OTP delivery is temporarily unavailable — please contact the gym.",
+        )
+        self.assertNotIn("otp", response.data)
+
+    def test_channel_failure_reasons_reach_the_503_body(self) -> None:
+        """A configured-but-failing chain surfaces per-leg reasons."""
+        wati = MagicMock()
+        wati.name = "wati"
+        wati.send_otp.side_effect = OtpDeliveryError("WATI delivery failed: 500", reason="http_500")
+        sms = MagicMock()
+        sms.name = "sms"
+        sms.send_otp.side_effect = OtpDeliveryError("SMS delivery failed: down", reason="transport_error")
+        with patch("apps.users.views.resolve_otp_senders", return_value=[wati, sms]):
+            response = self.client.post(
+                "/api/v1/users/auth/otp/request/",
+                {"phone": "+9199000000100"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["code"], "otp_delivery_unavailable")
+        self.assertEqual(
+            response.data["channels"],
+            [
+                {"channel": "wati", "reason": "http_500"},
+                {"channel": "sms", "reason": "transport_error"},
+            ],
+        )
+        self.assertNotIn("otp", response.data)

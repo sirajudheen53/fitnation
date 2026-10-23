@@ -53,7 +53,26 @@ class OtpDeliveryError(Exception):
     """Every configured delivery channel failed (or none is configured).
 
     Surfaced as a loud 503 with generic copy — never a silent log-file drop.
+    ``reason`` is a short machine-readable code (``not_configured``,
+    ``daily_cap_reached``, ``http_<status>``, ``transport_error``) and
+    ``channels`` the per-leg failure map — both flow into the 503 body so the
+    mobile app / operator can see WHY delivery is down. Never carries secrets
+    or provider credentials.
     """
+
+    def __init__(self, message: str, *, reason: str = "error", channels: list[dict] | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.channels = channels if channels is not None else []
+
+
+def _http_failure_reason(exc: Exception) -> str:
+    """Classify a transport exception without leaking provider detail."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    if isinstance(status, int) and not isinstance(status, bool):
+        return f"http_{status}"
+    return "transport_error"
 
 
 def _hash_code(phone: str, code: str) -> str:
@@ -202,9 +221,9 @@ class WatiOtpSender(OtpSender):
         """
         del tenant
         if not self.is_configured_for(self.tenant):
-            raise OtpDeliveryError("WATI is not configured for this tenant")
+            raise OtpDeliveryError("WATI is not configured for this tenant", reason="not_configured")
         if not self._under_daily_budget():
-            raise OtpDeliveryError("Tenant WATI OTP daily cap reached")
+            raise OtpDeliveryError("Tenant WATI OTP daily cap reached", reason="daily_cap_reached")
 
         to = normalize_msisdn(phone, getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91"))
         try:
@@ -216,7 +235,7 @@ class WatiOtpSender(OtpSender):
                 poster=self.poster,
             )
         except Exception as exc:
-            raise OtpDeliveryError(f"WATI delivery failed: {exc}") from exc
+            raise OtpDeliveryError(f"WATI delivery failed: {exc}", reason=_http_failure_reason(exc)) from exc
         self._count_sent()
 
 
@@ -265,7 +284,7 @@ class Msg91OtpSender(OtpSender):
             tenant: Issuing tenant (gym name for the ``GYM`` variable).
         """
         if not self.is_configured():
-            raise OtpDeliveryError("SMS delivery is not configured")
+            raise OtpDeliveryError("SMS delivery is not configured", reason="not_configured")
         recipient = {
             "mobiles": normalize_msisdn(phone, getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91")),
             "OTP": code,
@@ -278,7 +297,7 @@ class Msg91OtpSender(OtpSender):
                 poster=self.poster,
             )
         except Exception as exc:
-            raise OtpDeliveryError(f"SMS delivery failed: {exc}") from exc
+            raise OtpDeliveryError(f"SMS delivery failed: {exc}", reason=_http_failure_reason(exc)) from exc
 
 
 def resolve_otp_senders(tenant) -> list[OtpSender]:
@@ -330,6 +349,28 @@ def resolve_otp_senders(tenant) -> list[OtpSender]:
     if Msg91OtpSender.is_configured():
         chain.append(Msg91OtpSender())
     return chain
+
+
+def channel_diagnostics(tenant) -> list[dict]:
+    """Per-leg configuration status for delivery-failure reporting (no secrets).
+
+    Args:
+        tenant: The issuing tenant (selects the WATI leg).
+
+    Returns:
+        One ``{"channel", "reason"}`` dict per real leg — ``configured`` or
+        ``not_configured`` — in chain order (WATI, then SMS).
+    """
+    return [
+        {
+            "channel": "wati",
+            "reason": "configured" if WatiOtpSender.is_configured_for(tenant) else "not_configured",
+        },
+        {
+            "channel": "sms",
+            "reason": "configured" if Msg91OtpSender.is_configured() else "not_configured",
+        },
+    ]
 
 
 def get_otp_sender():
@@ -450,14 +491,20 @@ def issue_otp(
     if not senders:
         logger.critical("OTP delivery misconfigured: no channel available for tenant %s", getattr(tenant, "pk", None))
         _log_otp_delivery(tenant, "none", False, "no delivery channel configured")
-        raise OtpDeliveryError("No OTP delivery channel is configured.")
+        raise OtpDeliveryError(
+            "No OTP delivery channel is configured.",
+            reason="not_configured",
+            channels=channel_diagnostics(tenant),
+        )
 
     last_error: Exception | None = None
+    failures: list[dict] = []
     for chain_sender in senders:
         try:
             chain_sender.send_otp(phone, code, tenant=tenant)
         except OtpDeliveryError as exc:
             last_error = exc
+            failures.append({"channel": chain_sender.name, "reason": exc.reason})
             logger.warning("OTP delivery via %s failed: %s", chain_sender.name, exc)
             continue
         _log_otp_delivery(tenant, chain_sender.name, True, "")
@@ -470,7 +517,11 @@ def issue_otp(
         last_error,
     )
     _log_otp_delivery(tenant, senders[-1].name, False, str(last_error or ""))
-    raise OtpDeliveryError(str(last_error) if last_error else "OTP delivery failed.")
+    raise OtpDeliveryError(
+        str(last_error) if last_error else "OTP delivery failed.",
+        reason="all_channels_failed",
+        channels=failures,
+    )
 
 
 def verify_otp(phone: str, code: str, tenant=None) -> OtpCode:

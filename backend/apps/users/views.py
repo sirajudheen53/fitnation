@@ -264,10 +264,21 @@ class OTPRequestView(APIView):
             return Response({"detail": str(exc)}, status=429)
         except OtpError as exc:
             return Response({"detail": str(exc)}, status=400)
-        except OtpDeliveryError:
-            logger.critical("OTP delivery unavailable (tenant=%s) — 503 returned", tenant.pk)
+        except OtpDeliveryError as exc:
+            logger.critical(
+                "OTP delivery unavailable (tenant=%s, channels=%s) — 503 returned",
+                tenant.pk,
+                exc.channels,
+            )
             return Response(
-                {"detail": "OTP delivery is temporarily unavailable — please contact the gym."},
+                {
+                    "detail": "OTP delivery is temporarily unavailable — please contact the gym.",
+                    "code": "otp_delivery_unavailable",
+                    # Machine-readable per-leg reasons (not_configured /
+                    # http_<status>/…) so the app + operator can see WHY.
+                    # No secrets, no provider detail beyond the reason codes.
+                    "channels": exc.channels,
+                },
                 status=503,
             )
 

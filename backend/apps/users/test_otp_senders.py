@@ -1,8 +1,10 @@
 """OTP delivery chain tests (FBOS-011 §4): per-tenant sender resolution,
-WATI/MSG91 contracts, prod-safety blocks, caps and audit logging."""
+WATI/MSG91 contracts, prod-safety blocks, caps, audit logging, and the
+machine-readable failure diagnostics (issue #59)."""
 
 from unittest.mock import MagicMock
 
+import requests
 from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase, override_settings
 
@@ -61,6 +63,20 @@ class SenderResolutionTests(TestCase):
         """No channels anywhere → empty chain → issue_otp raises (503 path)."""
         with override_settings(DEBUG=False, OTP_SENDER="auto", SMS_PROVIDER="none", MSG91_AUTH_KEY=""):
             self.assertEqual(resolve_otp_senders(self.plain_tenant), [])
+
+    def test_empty_chain_error_carries_channel_diagnostics(self) -> None:
+        """The empty-chain raise names both legs as not_configured (#59)."""
+        with override_settings(DEBUG=False, OTP_SENDER="auto", SMS_PROVIDER="none", MSG91_AUTH_KEY=""):
+            with self.assertRaises(OtpDeliveryError) as caught:
+                issue_otp("+919900000007", self.plain_tenant, sender=resolve_otp_senders(self.plain_tenant))
+        self.assertEqual(caught.exception.reason, "not_configured")
+        self.assertEqual(
+            caught.exception.channels,
+            [
+                {"channel": "wati", "reason": "not_configured"},
+                {"channel": "sms", "reason": "not_configured"},
+            ],
+        )
 
     def test_stub_hard_blocked_in_prod(self) -> None:
         """stub + DEBUG=False → ImproperlyConfigured (the prod blocker)."""
@@ -146,15 +162,40 @@ class WatiOtpSenderTests(TestCase):
         poster = MagicMock()
         poster.side_effect = RuntimeError("boom")
         sender = WatiOtpSender(self.tenant, poster=poster)
-        with self.assertRaises(OtpDeliveryError):
+        with self.assertRaises(OtpDeliveryError) as caught:
             sender.send_otp("+919900000002", "123456", tenant=self.tenant)
+        self.assertEqual(caught.exception.reason, "transport_error")
+
+    def test_http_failure_reason_carries_status_code(self) -> None:
+        """A provider HTTP error → reason ``http_<status>`` (no secret/body)."""
+        response = requests.Response()
+        response.status_code = 401
+        poster = MagicMock()
+        poster.return_value = MagicMock(
+            status_code=401, raise_for_status=MagicMock(side_effect=requests.HTTPError("401", response=response))
+        )
+        sender = WatiOtpSender(self.tenant, poster=poster)
+        with self.assertRaises(OtpDeliveryError) as caught:
+            sender.send_otp("+919900000002", "123456", tenant=self.tenant)
+        self.assertEqual(caught.exception.reason, "http_401")
+
+    def test_daily_cap_error_reason(self) -> None:
+        """The budget guard fails with reason ``daily_cap_reached``."""
+        cap = override_settings(TENANT_WATI_OTP_DAILY_CAP=0)
+        cap.enable()
+        self.addCleanup(cap.disable)
+        sender = WatiOtpSender(self.tenant, poster=self._poster())
+        with self.assertRaises(OtpDeliveryError) as caught:
+            sender.send_otp("+919900000002", "123456", tenant=self.tenant)
+        self.assertEqual(caught.exception.reason, "daily_cap_reached")
 
     def test_unconfigured_tenant_raises(self) -> None:
         """No WATI key → not even attempted."""
         plain = provision_tenant(name="No Wati", contact_email="nowati@local.test")
         sender = WatiOtpSender(plain, poster=self._poster())
-        with self.assertRaises(OtpDeliveryError):
+        with self.assertRaises(OtpDeliveryError) as caught:
             sender.send_otp("+919900000002", "123456", tenant=plain)
+        self.assertEqual(caught.exception.reason, "not_configured")
 
     def test_tenant_daily_cap_skips_to_next_channel(self) -> None:
         """Exhausting the tenant's WATI OTP budget → skip straight to SMS."""
@@ -198,8 +239,23 @@ class Msg91OtpSenderTests(TestCase):
         """Missing credentials → delivery error, not a silent drop."""
         with override_settings(SMS_PROVIDER="msg91", MSG91_AUTH_KEY="", MSG91_TEMPLATE_ID=""):
             sender = Msg91OtpSender(poster=MagicMock())
-            with self.assertRaises(OtpDeliveryError):
+            with self.assertRaises(OtpDeliveryError) as caught:
                 sender.send_otp("+919900000004", "654321")
+        self.assertEqual(caught.exception.reason, "not_configured")
+
+    def test_http_failure_reason_carries_status_code(self) -> None:
+        """A carrier HTTP error → reason ``http_<status>``."""
+        response = requests.Response()
+        response.status_code = 503
+        poster = MagicMock()
+        poster.return_value = MagicMock(
+            status_code=503, raise_for_status=MagicMock(side_effect=requests.HTTPError("503", response=response))
+        )
+        with override_settings(**SMS_SETTINGS):
+            sender = Msg91OtpSender(poster=poster)
+            with self.assertRaises(OtpDeliveryError) as caught:
+                sender.send_otp("+919900000004", "654321")
+        self.assertEqual(caught.exception.reason, "http_503")
 
 
 class IssueOtpChainTests(TestCase):
@@ -244,6 +300,25 @@ class IssueOtpChainTests(TestCase):
         with self.assertLogs("apps.users.otp", level="CRITICAL") as logs, self.assertRaises(OtpDeliveryError):
             issue_otp("+919900000005", self.tenant, sender=[first, second])
         self.assertTrue(any("all channels" in line for line in logs.output))
+
+    def test_exhaustion_error_lists_channel_reasons(self) -> None:
+        """The final raise aggregates one {channel, reason} per failed leg (#59)."""
+        first = MagicMock()
+        first.name = "wati"
+        first.send_otp.side_effect = OtpDeliveryError("down1", reason="http_500")
+        second = MagicMock()
+        second.name = "sms"
+        second.send_otp.side_effect = OtpDeliveryError("down2", reason="transport_error")
+        with self.assertRaises(OtpDeliveryError) as caught:
+            issue_otp("+919900000005", self.tenant, sender=[first, second])
+        self.assertEqual(caught.exception.reason, "all_channels_failed")
+        self.assertEqual(
+            caught.exception.channels,
+            [
+                {"channel": "wati", "reason": "http_500"},
+                {"channel": "sms", "reason": "transport_error"},
+            ],
+        )
 
     def test_empty_chain_raises_loudly(self) -> None:
         """No configured channel → OtpDeliveryError (view → 503)."""

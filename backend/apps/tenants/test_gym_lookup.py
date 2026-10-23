@@ -135,6 +135,27 @@ class TenantLookupTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["uuid"], str(self.tenant.uuid))
 
+    def test_lookup_strips_spaces_and_punctuation(self) -> None:
+        """Hand-typed variants ("PX3-CTJY", "PX3 CTJY", lowercase) match."""
+        code = self.tenant.gym_code
+        for variant in (
+            f"{code[:3]}-{code[3:]}",
+            f"{code[:2]} {code[2:4]} {code[4:]}",
+            f"  {code.lower()}  ",
+        ):
+            with self.subTest(variant=variant):
+                response = self.client.get(LOOKUP_URL, {"code": variant})
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["uuid"], str(self.tenant.uuid))
+
+    def test_punctuation_stripping_never_widens_matching(self) -> None:
+        """Stripping normalizes input only — an unrelated code still 404s."""
+        response = self.client.get(LOOKUP_URL, {"code": f" {self.tenant.gym_code}X "})
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.data, {"detail": "Gym not found."})
+
     def test_unknown_code_generic_404(self) -> None:
         """An unknown code gets the same generic error as a missing one."""
         unknown = self.client.get(LOOKUP_URL, {"code": "ZZZZZZZ"})

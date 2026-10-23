@@ -190,7 +190,11 @@ class TenantLookupView(APIView):
             ``{uuid, name}`` for the gym, or a generic 404 / 429 response.
         """
         throttle_gym_lookup(_client_ip(request))
-        code = (request.query_params.get("code") or "").strip().upper()
+        # Codes are uppercase alphanumerics (safe alphabet); members type them
+        # by hand, so strip spaces/punctuation before the exact match
+        # ("hash fit", "px3-ctjy" → canonical form). Stored codes match as-is.
+        raw = (request.query_params.get("code") or "").strip().upper()
+        code = "".join(ch for ch in raw if ch.isalnum())
         if not code:
             return Response({"detail": "Gym not found."}, status=404)
         tenant = Tenant.objects.filter(gym_code=code).first()
