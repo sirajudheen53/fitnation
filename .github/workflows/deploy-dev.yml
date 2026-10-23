@@ -132,6 +132,17 @@ jobs:
             --max-instances 3 \
             --timeout 120
 
+      - name: Promote dev traffic to the new revision
+        run: |
+          # Explicit pin: gcloud run deploy can leave 100% on the previous revision,
+          # and unpromoted revisions auto-retire within minutes — dev traffic sat on
+          # a Sep-19 revision for a month while every deploy quietly retired
+          # (202a021 added the same step for prod; issue #61).
+          gcloud run services update-traffic ${{ env.CLOUD_RUN_SERVICE }} \
+            --project ${{ env.GCP_PROJECT }} \
+            --region ${{ env.GCP_REGION }} \
+            --to-latest
+
   # ─────────────────────────────────────────────────────────────────────────
   #  # Frontend: deploy to Vercel
   # ─────────────────────────────────────────────────────────────────────────
