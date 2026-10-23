@@ -353,17 +353,33 @@ class SendVerificationMessageTests(TestCase):
 
     def test_no_channels_email_is_last_resort(self) -> None:
         """No messaging channel → the email leg delivers (SendGrid provider)."""
-        log = send_verification_message(self.user)
+        with mock.patch("apps.core.services.email.send_verification_email", return_value=True) as email_mock:
+            log = send_verification_message(self.user)
         self.assertEqual(log.status, NotificationLog.Status.SENT)
         self.assertEqual(log.channel, "email")
         self.assertEqual(log.provider, "sendgrid")
+        email_mock.assert_called_once()
 
-    def test_only_whatsapp_configured_means_no_email_attempt_even_after_failure(self) -> None:
-        """A failed WhatsApp leg without other messaging channels → email
-        still runs (last resort), but the audit row keeps the WhatsApp
-        provenance when nothing delivers."""
+    def test_email_transport_failure_is_audited_failed(self) -> None:
+        """An unusable email transport (SendGrid unconfigured) is audited as
+        FAILED with the error — never a silent ``SENT`` (issue #66 audit
+        rule; this is the shape CI hit with a keyless dev environment)."""
+        with mock.patch("apps.core.services.email.send_verification_email", return_value=False):
+            log = send_verification_message(self.user)
+        self.assertEqual(log.status, NotificationLog.Status.FAILED)
+        self.assertEqual(log.channel, "email")
+        self.assertEqual(log.provider, "sendgrid")
+        self.assertEqual(log.error_message, "Email delivery failed")
+
+    def test_wati_failure_falls_through_to_email_leg(self) -> None:
+        """A failed WhatsApp leg with no other messaging channel → the email
+        leg still runs (last resort) and the audit row names the provider
+        that actually delivered."""
         self._configure_wati()
-        with mock.patch.object(router_module, "post_wati_session_text", return_value=("", "wati down")):
+        with (
+            mock.patch.object(router_module, "post_wati_session_text", return_value=("", "wati down")),
+            mock.patch("apps.core.services.email.send_verification_email", return_value=True),
+        ):
             log = send_verification_message(self.user)
         self.assertEqual(log.status, NotificationLog.Status.SENT)
         self.assertEqual(log.channel, "email")
@@ -384,17 +400,23 @@ class SendVerificationMessageTests(TestCase):
         self._configure_wati()
         self.user.phone = ""
         self.user.save(update_fields=["phone"])
-        with mock.patch.object(router_module, "post_wati_session_text") as wati_mock:
+        with (
+            mock.patch.object(router_module, "post_wati_session_text") as wati_mock,
+            mock.patch("apps.core.services.email.send_verification_email", return_value=True) as email_mock,
+        ):
             log = send_verification_message(self.user)
         self.assertEqual(log.status, NotificationLog.Status.SENT)
+        self.assertEqual(log.channel, "email")
         self.assertEqual(log.provider, "sendgrid")
         wati_mock.assert_not_called()
+        email_mock.assert_called_once()
 
     def test_user_without_tenant_is_email_only_and_not_audited(self) -> None:
         """Platform-level accounts have no channel config; email runs alone
         and no NotificationLog row is written (the table requires a tenant)."""
         self.user.tenant = None
-        log = send_verification_message(self.user)
+        with mock.patch("apps.core.services.email.send_verification_email", return_value=True):
+            log = send_verification_message(self.user)
         self.assertEqual(log.status, NotificationLog.Status.SENT)
         self.assertEqual(log.provider, "sendgrid")
         self.assertIsNone(log.pk)
