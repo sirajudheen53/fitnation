@@ -10,6 +10,8 @@ import 'core/anchor/anchor_providers.dart';
 import 'core/anchor/anchor_store.dart';
 import 'core/deeplink/deep_link_service.dart';
 import 'core/deeplink/join_link.dart';
+import 'core/preferences/dial_code_providers.dart';
+import 'core/preferences/dial_code_store.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/data/data_sources/api_client.dart';
 import 'features/auth/data/data_sources/auth_local_data_source.dart';
@@ -31,6 +33,9 @@ Future<void> main() async {
   await localDataSource.init();
   final anchorStore = AnchorStore();
   await anchorStore.init();
+  // Last-selected dial code for the phone input (issue #69).
+  final dialCodeStore = DialCodeStore();
+  await dialCodeStore.init();
 
   // Firebase is optional: without a `google-services.json` the bootstrap
   // returns null and the app boots with push disabled (FBOS-011 M4).
@@ -42,6 +47,7 @@ Future<void> main() async {
         // Pre-initialized local data sources
         authLocalDataSourceProvider.overrideWithValue(localDataSource),
         anchorStoreProvider.overrideWithValue(anchorStore),
+        dialCodeStoreProvider.overrideWithValue(dialCodeStore),
         if (messagingClient != null)
           messagingClientProvider.overrideWithValue(messagingClient),
       ],

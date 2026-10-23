@@ -2,11 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/preferences/dial_code_providers.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/country_code.dart';
 import '../../../../core/utils/phone_validator.dart';
 import '../providers/auth_notifier.dart';
+import '../providers/dial_code_provider.dart';
 
 /// Phone number input screen — first step of OTP auth flow.
+///
+/// The dial code is picked from the attached selector (default +91 India,
+/// issue #69); the field takes the national number. The submitted payload
+/// is normalized to `+<dial><national>` exactly as before.
 class PhoneInputScreen extends ConsumerStatefulWidget {
   const PhoneInputScreen({super.key});
 
@@ -24,10 +31,53 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
     super.dispose();
   }
 
+  CountryCode get _country => ref.read(selectedCountryProvider);
+
+  void _selectCountry(CountryCode country) {
+    ref.read(selectedCountryProvider.notifier).state = country;
+    ref.read(dialCodeStoreOrNull)?.save(country);
+    setState(() {});
+    // Re-run validation: a number too short for the old dial code may be
+    // valid for the new one (e.g. 501234567 is 8 digits — invalid for
+    // India, valid for the UAE). The field's validator reads the provider
+    // live, so this sees the new dial code even before the rebuild.
+    if (_phoneController.text.isNotEmpty) _formKey.currentState?.validate();
+  }
+
+  Future<void> _openCountryPicker() async {
+    final selected = await showModalBottomSheet<CountryCode>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.6,
+          child: ListView.builder(
+            itemCount: CountryCodes.all.length,
+            itemBuilder: (context, index) {
+              final country = CountryCodes.all[index];
+              return ListTile(
+                key: ValueKey('country_${country.code}'),
+                leading: Text(country.flag, style: const TextStyle(fontSize: 24)),
+                title: Text(country.name),
+                subtitle: Text(country.numberHint),
+                trailing: Text(
+                  country.displayDialCode,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                onTap: () => Navigator.of(sheetContext).pop(country),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    if (selected != null) _selectCountry(selected);
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final phone = PhoneValidator.normalize(_phoneController.text);
+    final phone = PhoneValidator.normalize(_phoneController.text, _country);
     final success = await ref.read(authProvider.notifier).requestOtp(phone);
 
     if (success && mounted) {
@@ -38,6 +88,7 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
+    final country = ref.watch(selectedCountryProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -73,18 +124,24 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
 
                 const SizedBox(height: 32),
 
-                // Phone input
+                // Phone input with dial-code selector
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
-                  autofillHints: const [AutofillHints.telephoneNumber],
+                  autofillHints: const [AutofillHints.telephoneNumberNational],
                   textInputAction: TextInputAction.done,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Phone Number',
-                    hintText: '+919876543210',
-                    prefixIcon: Icon(Icons.phone_outlined),
+                    hintText: country.numberHint,
+                    prefixIcon: _DialCodeChip(
+                      country: country,
+                      onTap: _openCountryPicker,
+                    ),
                   ),
-                  validator: PhoneValidator.validate,
+                  // Reads the provider (not the build-captured value) so a
+                  // dial-code switch revalidates against the new country.
+                  validator: (value) =>
+                      PhoneValidator.validateNational(value, _country),
                   onFieldSubmitted: (_) => _submit(),
                 ),
 
@@ -158,6 +215,38 @@ class _PhoneInputScreenState extends ConsumerState<PhoneInputScreen> {
         borderRadius: BorderRadius.circular(20),
       ),
       child: const Icon(Icons.fitness_center, color: Colors.white, size: 40),
+    );
+  }
+}
+
+/// The tappable `🇮🇳 +91 ▾` chip inside the phone field — opens the
+/// country picker.
+class _DialCodeChip extends StatelessWidget {
+  const _DialCodeChip({required this.country, required this.onTap});
+
+  final CountryCode country;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      key: const Key('dial_code_chip'),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(country.flag, style: const TextStyle(fontSize: 20)),
+            const SizedBox(width: 6),
+            Text(
+              country.displayDialCode,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+            const Icon(Icons.keyboard_arrow_down, size: 20),
+          ],
+        ),
+      ),
     );
   }
 }

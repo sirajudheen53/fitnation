@@ -240,6 +240,42 @@ void main() {
       expect(body['otp'], '123456');
       expect(body['phone'], '+919876543210');
     });
+
+    testWidgets('a non-India dial code reaches OTP delivery normalized',
+        (tester) async {
+      final built = buildApp(
+        verifyResponse: verifyBody('active'),
+      );
+      container = built.container;
+      router = built.router;
+      await pumpApp(tester, router: router, container: container);
+
+      // Switch the dial code to the UAE, then enter the national number.
+      await tester.tap(find.byKey(const Key('dial_code_chip')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('United Arab Emirates'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField), '501234567');
+      await tester.tap(find.text('Send OTP'));
+      await tester.pumpAndSettle();
+
+      // The OTP screen receives the normalized number.
+      expect(find.byType(OtpVerifyScreen), findsOneWidget);
+      expect(find.textContaining('+971501234567'), findsOneWidget);
+
+      await enterOtp(tester, '123456');
+      await tester.pumpAndSettle();
+
+      // Both the request and the verify calls carry exactly one country
+      // code, in the same body shape as the India flow.
+      expect(
+        calls.where((c) => c.uri.path.contains('/otp/request/')).single.body,
+        containsPair('phone', '+971501234567'),
+      );
+      final verify = calls.firstWhere((c) => c.uri.path.contains('/otp/verify/'));
+      expect((verify.body as Map<String, dynamic>)['phone'], '+971501234567');
+      expect(router.routeInformationProvider.value.uri.path, '/dashboard');
+    });
   });
 }
 
