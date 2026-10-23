@@ -1,4 +1,10 @@
-"""Email service using SendGrid."""
+"""Email service using SendGrid.
+
+The email leg is the LAST resort of the outbound send policy (issue #66) —
+flows deliver over the tenant's WhatsApp channels first and land here only
+when no messaging channel is configured. The policy itself lives in
+``apps/notifications/services/router.py``.
+"""
 
 from __future__ import annotations
 
@@ -54,21 +60,41 @@ def send_email(
         return False
 
 
-def send_verification_email(user, request) -> bool:
-    """Send email verification link to a newly registered user.
+def build_verification_url(user, request) -> str:
+    """Create the user's verification token and the full verify URL.
+
+    Token creation is side-effecting (invalidates the user's previous unused
+    tokens), so callers create it once and hand the URL to every channel leg.
 
     Args:
-        user: The user who just registered.
-        request: The HTTP request (used to build the verification URL).
+        user: The user who needs to verify their email.
+        request: The HTTP request, or ``None`` in CLI/management contexts.
 
     Returns:
-        ``True`` if the email was sent successfully, ``False`` otherwise.
+        The absolute verification URL.
     """
     from apps.users.models import EmailVerificationToken
 
     token = EmailVerificationToken.create_token(user)
-    verify_url = f"{_get_base_url(request)}/api/v1/auth/verify-email/{token.token}/"
+    return f"{_get_base_url(request)}/api/v1/auth/verify-email/{token.token}/"
 
+
+def send_verification_email(user, verify_url: str) -> bool:
+    """Send the verification link to a user's email (the policy's last resort).
+
+    Channel routing lives in
+    :func:`apps.notifications.services.router.send_verification_message` —
+    this function is the email leg only and takes the prebuilt URL so the
+    same token/link is shared by whichever channel delivers.
+
+    Args:
+        user: The user who just registered (or asked for a resend).
+        verify_url: The absolute verification URL (see
+            :func:`build_verification_url`).
+
+    Returns:
+        ``True`` if the email was sent successfully, ``False`` otherwise.
+    """
     subject = "Verify your email — FitNation"
     html_content = f"""
     <h2>Welcome to FitNation, {user.first_name}!</h2>

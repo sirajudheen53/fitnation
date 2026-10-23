@@ -57,6 +57,20 @@ class Tenant(models.Model):
     wati_api_key = EncryptedCharField(max_length=500, blank=True)
     wati_endpoint = models.URLField(blank=True)
     is_wati_enabled = models.BooleanField(default=False)
+    # Gupshup WhatsApp BSP (issue #66) — the second WhatsApp provider. The
+    # channel policy tries WATI first when both are configured.
+    gupshup_api_key = EncryptedCharField(max_length=500, blank=True)
+    gupshup_source = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="The WhatsApp sender number registered in Gupshup (the 'source' form field).",
+    )
+    gupshup_app_name = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="The Gupshup app name (the 'src.name' form field).",
+    )
+    is_gupshup_enabled = models.BooleanField(default=False)
     settings = models.JSONField(default=dict, blank=True)
     features = models.JSONField(
         default=dict,

@@ -1,6 +1,7 @@
 """App invite tests (FBOS-011 §5): channel chain, dedupe/resend, endpoint
 contract shapes, tenant isolation, and the CustomerSerializer surface."""
 
+import json
 from datetime import timedelta
 from unittest import mock
 from unittest.mock import MagicMock
@@ -64,6 +65,31 @@ def _wati_down_poster():
     poster = MagicMock()
     poster.side_effect = _post
     return poster
+
+
+def _whatsapp_down_poster():
+    """A fake HTTP post where BOTH WhatsApp hosts are down; MSG91 delivers.
+
+    With Gupshup in the chain (issue #66) the full WhatsApp outage — WATI and
+    Gupshup together — must still fall through to the SMS leg.
+    """
+
+    def _post(url, **kwargs):
+        if "api.wati.io" in url or "api.gupshup.io" in url:
+            raise requests.exceptions.ConnectionError("transport down")
+        return MagicMock(status_code=200, raise_for_status=MagicMock())
+
+    poster = MagicMock()
+    poster.side_effect = _post
+    return poster
+
+
+GUPSHUP_CONFIG = {
+    "is_gupshup_enabled": True,
+    "gupshup_api_key": "gup-key",
+    "gupshup_source": "911234567890",
+    "gupshup_app_name": "hash-fit-app",
+}
 
 
 def _posted_urls(poster) -> list[str]:
@@ -269,6 +295,98 @@ class InviteServiceTests(TestCase):
         self.assertEqual(NotificationLog.objects.for_tenant(other).count(), 1)
 
 
+class GupshupInviteTests(TestCase):
+    """The Gupshup WhatsApp leg (issue #66): second BSP, same invite policy."""
+
+    def setUp(self) -> None:
+        """A Gupshup-only gym (WATI off) with a flag-on tenant + member."""
+        self.tenant = provision_tenant(
+            name="Gup Gym",
+            contact_email="gup@local.test",
+            features={"app_access": True},
+            **GUPSHUP_CONFIG,
+        )
+        self.plan = MembershipPlan.objects.create(tenant=self.tenant, name="Monthly", price=2500, duration_days=30)
+        member_user = User.objects.create_user(
+            email="gupmember@fitnation.local",
+            password="x",
+            first_name="G",
+            last_name="M",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+            phone="+919900060010",
+        )
+        self.customer = Customer.objects.create(tenant=self.tenant, user=member_user, name="GM", phone="+919900060010")
+        Membership.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            plan=self.plan,
+            start_date=timezone.localdate(),
+            end_date=timezone.localdate() + timedelta(days=30),
+        )
+
+    def test_gupshup_only_tenant_sends_whatsapp_invite(self) -> None:
+        """Only Gupshup configured → the invite rides it, audited as gupshup."""
+        poster = _ok_poster()
+        result = send_app_invite(self.tenant, self.customer, poster=poster)
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.channel, "whatsapp")
+        self.assertEqual(result.log.provider, "gupshup")
+        args, kwargs = poster.call_args
+        self.assertIn("api.gupshup.io", args[0])
+        link = build_app_invite_links(self.tenant)["web"]
+        message = json.loads(kwargs["data"]["message"])
+        self.assertEqual(
+            message,
+            {
+                "type": "template",
+                "name": "fitnation_app_invite",
+                "params": ["GM", "Gup Gym", "Monthly", link],
+            },
+        )
+        self.assertEqual(kwargs["data"]["destination"], "919900060010")
+
+    def test_wati_down_gupshup_carries(self) -> None:
+        """WATI failing → the Gupshup leg delivers before SMS is considered."""
+        self.tenant.is_wati_enabled = True
+        self.tenant.wati_api_key = "wati-key"
+        self.tenant.save(update_fields=["is_wati_enabled", "wati_api_key"])
+        poster = _wati_down_poster()
+        result = send_app_invite(self.tenant, self.customer, poster=poster)
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.channel, "whatsapp")
+        self.assertEqual(result.log.provider, "gupshup")
+        # Both the failed WATI leg and the delivering Gupshup leg are audited.
+        providers = list(
+            NotificationLog.objects.for_tenant(self.tenant)
+            .filter(notification_type="app_invite")
+            .values_list("provider", "status")
+        )
+        self.assertIn(("wati", "failed"), providers)
+        self.assertIn(("gupshup", "sent"), providers)
+
+    def test_both_whatsapp_down_sms_carries(self) -> None:
+        """WATI + Gupshup both failing → MSG91 SMS carries the invite."""
+        self.tenant.is_wati_enabled = True
+        self.tenant.wati_api_key = "wati-key"
+        self.tenant.save(update_fields=["is_wati_enabled", "wati_api_key"])
+        with override_settings(**SMS_INVITE_SETTINGS):
+            result = send_app_invite(self.tenant, self.customer, poster=_whatsapp_down_poster())
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.channel, "sms")
+        self.assertEqual(result.log.provider, "msg91")
+
+    def test_sms_invite_rows_record_msg91_provider(self) -> None:
+        """The pre-existing SMS path now audits provider=msg91."""
+        self.tenant.is_gupshup_enabled = False
+        self.tenant.save(update_fields=["is_gupshup_enabled"])
+        with override_settings(**SMS_INVITE_SETTINGS):
+            result = send_app_invite(self.tenant, self.customer, poster=_ok_poster())
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.channel, "sms")
+        self.assertEqual(result.log.provider, "msg91")
+
+
 class LinkBuilderTests(TestCase):
     """The gym-anchored link set (§5.4)."""
 
@@ -384,7 +502,9 @@ class AppInviteEndpointTests(APITestCase):
     @override_settings(MSG91_AUTH_KEY="", MSG91_INVITE_TEMPLATE_ID="")
     def test_fresh_send_201_with_block(self) -> None:
         """Fresh send → 201 + the documented app_invite block."""
-        with mock.patch.object(invite_module, "post_wati_template") as wati:
+        # The WhatsApp provider walk lives in the router (issue #66), so the
+        # WATI transport is mocked there.
+        with mock.patch("apps.notifications.services.router.post_wati_template") as wati:
             wati.return_value = MagicMock(status_code=200)
             response = self.post_invite()
         self.assertEqual(response.status_code, 201, response.data)

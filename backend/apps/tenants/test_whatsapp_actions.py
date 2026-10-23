@@ -172,6 +172,92 @@ class WhatsappTestSendTests(WhatsappActionTestBase):
         self.assertEqual(response.status_code, 401)
 
 
+@override_settings(TENANT_WATI_OTP_DAILY_CAP=200)
+class GupshupTestSendTests(WhatsappActionTestBase):
+    """provider=gupshup test sends (issue #66/#67) — the chosen BSP's own
+    outcome, never a silent fallback to WATI."""
+
+    def configure_gupshup(self, tenant: Tenant, **overrides) -> None:
+        """Turn the tenant into a fully configured Gupshup setup."""
+        defaults = {
+            "is_gupshup_enabled": True,
+            "gupshup_api_key": "secret-gup-key",
+            "gupshup_source": "911234567890",
+            "gupshup_app_name": "hash-fit-app",
+        }
+        defaults.update(overrides)
+        for field, value in defaults.items():
+            setattr(tenant, field, value)
+        tenant.save()
+
+    def test_gupshup_test_send_success(self) -> None:
+        """provider=gupshup on a Gupshup-only tenant → sent + audited."""
+        self.configure_gupshup(self.tenant)
+        self.auth(self.owner)
+        with mock.patch("apps.notifications.services.channels.requests.post") as post:
+            post.return_value.raise_for_status = MagicMock()
+            post.return_value.json = MagicMock(return_value={"status": "success"})
+            response = self.client.post(
+                TEST_URL,
+                {"phone": "+919876543210", "provider": "gupshup"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "sent")
+        log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
+        self.assertEqual(log.provider, "gupshup")
+        self.assertEqual(log.channel, "whatsapp")
+        _, kwargs = post.call_args
+        self.assertEqual(kwargs["data"]["destination"], "919876543210")
+        self.assertEqual(kwargs["data"]["source"], "911234567890")
+        self.assertEqual(kwargs["headers"], {"apikey": "secret-gup-key"})
+
+    def test_gupshup_test_send_does_not_fall_back_to_wati(self) -> None:
+        """provider=gupshup with Gupshup off → skipped even though WATI works."""
+        self.configure_wati(self.tenant)
+        self.auth(self.owner)
+        with mock.patch("apps.notifications.services.wati_service.requests.post") as wati_post:
+            response = self.client.post(
+                TEST_URL,
+                {"phone": "+919876543210", "provider": "gupshup"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "skipped")
+        self.assertIn("Gupshup is not enabled", response.data["detail"])
+        wati_post.assert_not_called()
+
+    def test_gupshup_half_configured_fails_clean(self) -> None:
+        """Enabled + key but no source number → failed with a named detail."""
+        self.configure_gupshup(self.tenant, gupshup_source="", gupshup_app_name="")
+        self.auth(self.owner)
+        response = self.client.post(TEST_URL, {"phone": "+919876543210", "provider": "gupshup"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertIn("source number", response.data["detail"])
+
+    def test_default_provider_is_wati(self) -> None:
+        """No provider in the body → the original WATI contract is kept."""
+        self.configure_wati(self.tenant)
+        self.auth(self.owner)
+        with mock.patch("apps.notifications.services.wati_service.requests.post") as post:
+            post.return_value.raise_for_status = MagicMock()
+            post.return_value.json = MagicMock(return_value={"messageId": "wamid.w"})
+            response = self.client.post(TEST_URL, {"phone": "+919876543210"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "sent")
+        log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
+        self.assertEqual(log.provider, "wati")
+
+    def test_invalid_provider_is_400(self) -> None:
+        """An unknown provider name is a clean 400."""
+        self.configure_wati(self.tenant)
+        self.auth(self.owner)
+        response = self.client.post(TEST_URL, {"phone": "+919876543210", "provider": "postmark"}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+
 class WhatsappStatusTests(WhatsappActionTestBase):
     """GET /tenants/whatsapp/status/ returns today's three counters."""
 

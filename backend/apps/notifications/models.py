@@ -21,6 +21,7 @@ class NotificationLog(TenantModelMixin):
         APP_INVITE = "app_invite", "App Invite"
         OTP = "otp", "OTP Delivery"
         WELCOME = "welcome", "Welcome"
+        EMAIL_VERIFICATION = "email_verification", "Email Verification"
 
     class Status(models.TextChoices):
         """Lifecycle status of a notification attempt."""
@@ -29,6 +30,20 @@ class NotificationLog(TenantModelMixin):
         FAILED = "failed", "Failed"
         PENDING = "pending", "Pending"
         SKIPPED = "skipped", "Skipped"
+
+    class Provider(models.TextChoices):
+        """The transport that carried (or attempted) the send.
+
+        ``channel`` stays semantic (whatsapp | sms | email); ``provider``
+        names which WhatsApp BSP / SMS / email vendor actually handled it
+        (issue #66) — with two WhatsApp BSPs available the log must show
+        which one carried the message.
+        """
+
+        WATI = "wati", "WATI"
+        GUPSHUP = "gupshup", "Gupshup"
+        MSG91 = "msg91", "MSG91"
+        SENDGRID = "sendgrid", "SendGrid"
 
     customer = models.ForeignKey(
         "customers.Customer",
@@ -58,6 +73,12 @@ class NotificationLog(TenantModelMixin):
         max_length=20,
         blank=True,
         help_text='Delivery channel used for the attempt, e.g. "whatsapp" or "sms".',
+    )
+    provider = models.CharField(
+        max_length=20,
+        blank=True,
+        choices=Provider.choices,
+        help_text="The transport that carried the attempt (channel stays semantic, issue #66).",
     )
     content = models.TextField(blank=True)
     wati_message_id = models.CharField(max_length=100, blank=True)

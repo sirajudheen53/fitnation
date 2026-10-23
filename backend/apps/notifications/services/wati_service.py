@@ -1,12 +1,15 @@
-"""Wati WhatsApp notification service.
+"""WhatsApp notification router (WATI → Gupshup, issue #66).
 
-Builds message content from per-type templates, dispatches to the tenant's Wati
-endpoint (if enabled), and records every attempt in
-:class:`~apps.notifications.models.NotificationLog`.
+Builds message content from per-type templates, then dispatches over the
+tenant's configured WhatsApp channels in policy order — WATI first (the
+original per-tenant BSP), Gupshup second — and records every attempt in
+:class:`~apps.notifications.models.NotificationLog` with the semantic
+``channel`` and the ``provider`` that carried it.
 
-The HTTP transport is injectable (``send_notification(..., sender=...)``) so
-tests can substitute a fake without network access. Multi-tenant isolation is
-guaranteed by always using the tenant's own Wati configuration.
+The HTTP transports are injectable (``send_notification(..., sender=...,
+poster=...)``) so tests can substitute fakes without network access.
+Multi-tenant isolation is guaranteed by always using the tenant's own
+channel configuration.
 """
 
 from __future__ import annotations
@@ -19,6 +22,13 @@ from django.conf import settings
 import requests
 
 from apps.notifications.models import NotificationLog
+from apps.notifications.services.channels import (
+    CHANNEL_WHATSAPP,
+    PROVIDER_GUPSHUP,
+    PROVIDER_WATI,
+    normalize_msisdn,
+    post_gupshup_text,
+)
 
 if TYPE_CHECKING:
     from apps.customers.models import Customer
@@ -49,6 +59,12 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     "app_invite": (
         "Hi {customer_name}! Welcome to {gym_name} 🎉 Your {plan_name} membership is active. "
         "Get your workout & diet plans, check-in QR and progress tracking in the FitNation app: {invite_link}"
+    ),
+    # Issue #66: the email-verification link rides the member's WhatsApp when
+    # the gym has a messaging channel — a link works identically over either.
+    "email_verification": (
+        "Hi {customer_name}, please verify your email to finish setting up your {gym_name} account: "
+        "{verify_link} The link is valid for 24 hours."
     ),
 }
 
@@ -85,6 +101,36 @@ def _default_sender() -> Callable[..., Any]:
     return requests.post
 
 
+def post_wati_session_text(
+    tenant: Tenant,
+    to_phone: str,
+    text: str,
+    *,
+    sender: Callable[..., Any] | None = None,
+) -> tuple[str, str]:
+    """POST one freeform session-window message via the tenant's WATI endpoint.
+
+    Returns:
+        ``(message_id, error)`` — ``error`` is empty on success. Kept in this
+        module (with its ``requests.post`` default) so tests keep mocking the
+        WATI transport here.
+    """
+    endpoint = tenant.wati_endpoint or DEFAULT_WATI_ENDPOINT
+    post = sender or _default_sender()
+    try:
+        response = post(
+            endpoint,
+            json={"sessionMessage": text, "to": to_phone},
+            headers={"Authorization": tenant.wati_api_key},
+            timeout=getattr(settings, "WATI_TIMEOUT", 10),
+        )
+        response.raise_for_status()
+    except Exception as exc:  # noqa: BLE001 - the caller records the failure
+        return "", str(exc)
+    data = response.json() if hasattr(response, "json") else {}
+    return (data.get("messageId") or data.get("id") or data.get("result", "")), ""
+
+
 def send_notification(
     tenant: Tenant,
     customer: Customer | None,
@@ -94,14 +140,25 @@ def send_notification(
     to_phone: str | None = None,
     actor: Any = None,
     sender: Callable[..., Any] | None = None,
+    poster: Callable[..., Any] | None = None,
+    provider: str | None = None,
 ) -> NotificationLog:
     """Send a WhatsApp notification for a tenant, logging the attempt.
 
+    Channel policy (issue #66): the message rides the tenant's WhatsApp
+    channels in order — WATI when enabled, then Gupshup. A failed provider
+    falls through to the next one; when none delivers, the attempt is logged
+    ``failed`` (or ``skipped`` when no channel is enabled at all — these
+    types have no SMS/email template, so there is no further leg).
+
     Behavior:
-    - If ``tenant.is_wati_enabled`` is False → log ``skipped`` and return.
-    - If ``tenant.wati_endpoint`` is empty → fall back to the default endpoint.
-    - On HTTP success (2xx) → log ``sent`` with the Wati message id.
-    - On failure → log ``failed`` with the error message.
+    - No WhatsApp channel enabled → log ``skipped``.
+    - Recipient has no phone → log ``skipped`` (capability check).
+    - A provider enabled but misconfigured → counts as a failed leg (no
+      HTTP call), recorded in the log.
+    - On provider success (2xx) → log ``sent`` with channel + provider.
+    - ``provider`` forces one leg (settings-page test send: test the chosen
+      provider, never silently succeed via the other).
 
     Args:
         tenant: The tenant sending the notification.
@@ -111,7 +168,9 @@ def send_notification(
         to_phone: Explicit recipient for sends without a customer record
             (e.g. the settings-page test send). Overrides the customer phone.
         actor: The staff user who triggered the send (audit trail).
-        sender: Injectable HTTP post callable (tests).
+        sender: Injectable WATI session-post callable (tests).
+        poster: Injectable Gupshup HTTP post callable (tests).
+        provider: Force ``"wati"`` or ``"gupshup"`` (default: policy order).
 
     Returns:
         The created ``NotificationLog`` record.
@@ -130,42 +189,83 @@ def send_notification(
         content=content,
     )
 
-    if not tenant.is_wati_enabled:
+    if provider is not None:
+        enabled = [provider] if getattr(tenant, f"is_{provider}_enabled", False) else []
+        if not enabled:
+            name = "Wati" if provider == PROVIDER_WATI else "Gupshup"
+            log.status = NotificationLog.Status.SKIPPED
+            log.error_message = f"{name} is not enabled for this tenant"
+            log.save(update_fields=["status", "error_message", "updated_at"])
+            return log
+    else:
+        enabled = [name for name in (PROVIDER_WATI, PROVIDER_GUPSHUP) if getattr(tenant, f"is_{name}_enabled", False)]
+        if not enabled:
+            log.status = NotificationLog.Status.SKIPPED
+            log.error_message = "No WhatsApp channel is enabled for this tenant (Wati and Gupshup are both not enabled)"
+            log.save(update_fields=["status", "error_message", "updated_at"])
+            return log
+
+    recipient = (to_phone or (customer.phone if customer else "") or "").strip()
+    if not recipient:
         log.status = NotificationLog.Status.SKIPPED
-        log.error_message = "Wati is not enabled for this tenant"
+        log.error_message = "No recipient phone for this notification"
         log.save(update_fields=["status", "error_message", "updated_at"])
         return log
 
-    if not tenant.wati_api_key:
-        log.status = NotificationLog.Status.FAILED
-        log.error_message = "Wati API key is not configured"
-        log.save(update_fields=["status", "error_message", "updated_at"])
-        return log
+    last_provider = enabled[-1]
+    last_error = ""
+    for candidate in enabled:
+        if candidate == PROVIDER_WATI:
+            if not tenant.wati_api_key:
+                last_error = "Wati API key is not configured"
+                continue
+            message_id, error = post_wati_session_text(tenant, recipient, content, sender=sender)
+            if error:
+                last_error = error
+                continue
+            log.wati_message_id = message_id
+            log.channel = CHANNEL_WHATSAPP
+            log.provider = PROVIDER_WATI
+            log.status = NotificationLog.Status.SENT
+            log.save(update_fields=["wati_message_id", "channel", "provider", "status", "updated_at"])
+            return log
 
-    endpoint = tenant.wati_endpoint or DEFAULT_WATI_ENDPOINT
-    payload: dict[str, Any] = {
-        "sessionMessage": content,
-        "to": to_phone or (customer.phone if customer else ""),
-    }
-    headers = {"Authorization": tenant.wati_api_key}
-
-    post = sender or _default_sender()
-    try:
-        response = post(
-            endpoint,
-            json=payload,
-            headers=headers,
-            timeout=getattr(settings, "WATI_TIMEOUT", 10),
+        # Gupshup leg — needs all three credentials or the provider would
+        # reject every message; treat a half-configured app as a failed leg.
+        missing = next(
+            (
+                label
+                for label, value in (
+                    ("API key", tenant.gupshup_api_key),
+                    ("source number", tenant.gupshup_source),
+                    ("app name", tenant.gupshup_app_name),
+                )
+                if not value
+            ),
+            "",
         )
-        response.raise_for_status()
-    except Exception as exc:  # noqa: BLE001 - record any transport failure
-        log.status = NotificationLog.Status.FAILED
-        log.error_message = str(exc)
-        log.save(update_fields=["status", "error_message", "updated_at"])
+        if missing:
+            last_error = f"Gupshup {missing} is not configured"
+            continue
+        try:
+            post_gupshup_text(
+                tenant,
+                normalize_msisdn(recipient, getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91")),
+                content,
+                poster=poster,
+            )
+        except Exception as exc:  # noqa: BLE001 - fall through to the next provider
+            last_error = str(exc)
+            continue
+        log.channel = CHANNEL_WHATSAPP
+        log.provider = PROVIDER_GUPSHUP
+        log.status = NotificationLog.Status.SENT
+        log.save(update_fields=["channel", "provider", "status", "updated_at"])
         return log
 
-    data = response.json() if hasattr(response, "json") else {}
-    log.wati_message_id = data.get("messageId") or data.get("id") or data.get("result", "")
-    log.status = NotificationLog.Status.SENT
-    log.save(update_fields=["wati_message_id", "status", "updated_at"])
+    log.channel = CHANNEL_WHATSAPP
+    log.provider = last_provider
+    log.status = NotificationLog.Status.FAILED
+    log.error_message = last_error
+    log.save(update_fields=["channel", "provider", "status", "error_message", "updated_at"])
     return log

@@ -28,9 +28,21 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
 
 
 class WhatsappTestSendSerializer(serializers.Serializer):
-    """Body of ``POST /tenants/whatsapp/test/`` (settings-page test send)."""
+    """Body of ``POST /tenants/whatsapp/test/`` (settings-page test send).
+
+    ``provider`` picks which WhatsApp BSP to test — ``wati`` (default, the
+    original contract) or ``gupshup`` (issue #66 / frontend ticket #67). The
+    test never falls back to the other provider: it reports the chosen one's
+    own outcome.
+    """
 
     phone = serializers.CharField(max_length=20)
+    provider = serializers.ChoiceField(
+        choices=["wati", "gupshup"],
+        default="wati",
+        required=False,
+        help_text="Which WhatsApp provider to test (wati | gupshup).",
+    )
 
 
 class ModuleFeatureMetaSerializer(serializers.Serializer):
@@ -112,7 +124,7 @@ class TenantFeatureUpdateSerializer(serializers.Serializer):
 
 
 class TenantSerializer(serializers.ModelSerializer):
-    """Serialize tenant details, including the WhatsApp (WATI) config."""
+    """Serialize tenant details, including the WhatsApp (WATI/Gupshup) config."""
 
     config = TenantSettingsSerializer(read_only=True)
     wati_api_key = serializers.CharField(
@@ -122,6 +134,13 @@ class TenantSerializer(serializers.ModelSerializer):
         help_text="Write-only. Stored encrypted; a PATCH without it keeps the stored key.",
     )
     wati_api_key_configured = serializers.SerializerMethodField()
+    gupshup_api_key = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True,
+        help_text="Write-only. Stored encrypted; a PATCH without it keeps the stored key.",
+    )
+    gupshup_api_key_configured = serializers.SerializerMethodField()
 
     class Meta:
         """Serializer metadata."""
@@ -146,6 +165,12 @@ class TenantSerializer(serializers.ModelSerializer):
             "wati_endpoint",
             "wati_api_key",
             "wati_api_key_configured",
+            # Gupshup (issue #66): same exposure pattern as WATI.
+            "is_gupshup_enabled",
+            "gupshup_source",
+            "gupshup_app_name",
+            "gupshup_api_key",
+            "gupshup_api_key_configured",
             "created_at",
             "updated_at",
         ]
@@ -153,6 +178,10 @@ class TenantSerializer(serializers.ModelSerializer):
     def get_wati_api_key_configured(self, obj: Tenant) -> bool:
         """Whether the tenant has a WATI API key configured (never the value)."""
         return bool(obj.wati_api_key)
+
+    def get_gupshup_api_key_configured(self, obj: Tenant) -> bool:
+        """Whether the tenant has a Gupshup API key configured (never the value)."""
+        return bool(obj.gupshup_api_key)
 
     def update(self, instance: Tenant, validated_data: dict[str, Any]) -> Tenant:
         """Persist the tenant, treating an omitted/blank key as "keep existing".
@@ -167,4 +196,7 @@ class TenantSerializer(serializers.ModelSerializer):
         wati_key = validated_data.pop("wati_api_key", None)
         if wati_key:
             instance.wati_api_key = wati_key
+        gupshup_key = validated_data.pop("gupshup_api_key", None)
+        if gupshup_key:
+            instance.gupshup_api_key = gupshup_key
         return super().update(instance, validated_data)

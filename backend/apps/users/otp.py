@@ -4,8 +4,9 @@ Replaces the deterministic "123456" stub: 6-digit codes, hashed at rest,
 10-minute expiry, max 5 verify attempts, resend cooldown, per-phone + per-IP
 daily caps, and phone↔code binding.
 
-Delivery is a per-tenant sender chain (FBOS-011 §4.2): WATI WhatsApp template
-(tenant config) → MSG91 SMS (platform config) → loud failure (503). The
+Delivery is a per-tenant sender chain (FBOS-011 §4.2, issue #66): WATI
+WhatsApp template (tenant config) → Gupshup WhatsApp template (tenant
+config) → MSG91 SMS (platform config) → loud failure (503). The
 response-returning ``stub`` and the ``console`` logger survive ONLY behind
 DEBUG — ``resolve_otp_senders`` refuses both in production, so shipping with
 codes going to logs or API responses is structurally impossible.
@@ -28,10 +29,12 @@ import requests
 
 from apps.notifications.services.channels import (
     normalize_msisdn,
+    post_gupshup_template,
     post_msg91_flow,
     post_wati_template,
     wati_template_endpoint,
 )
+from apps.notifications.services.router import OTP_CHANNEL_BY_SENDER, gupshup_ready
 from apps.users.models import OtpCode
 
 logger = logging.getLogger(__name__)
@@ -39,6 +42,9 @@ logger = logging.getLogger(__name__)
 # WATI approved template (one-time setup in the tenant's WATI console):
 # "{{1}} is your {{2}} login code. Valid for {{3}} minutes. Never share this code."
 WATI_OTP_TEMPLATE_NAME = "fitnation_otp"
+# Gupshup approved template — the same platform-wide slug, approved once in
+# the tenant's Gupshup console (issue #66).
+GUPSHUP_OTP_TEMPLATE_NAME = "fitnation_otp"
 
 
 class OtpError(Exception):
@@ -192,24 +198,11 @@ class WatiOtpSender(OtpSender):
         Returns:
             ``True`` while today's count is below ``TENANT_WATI_OTP_DAILY_CAP``.
         """
-        from django.core.cache import cache
-
-        cap = int(getattr(settings, "TENANT_WATI_OTP_DAILY_CAP", 200))
-        key = f"wati-otp:{self.tenant.pk}:{date.today().isoformat()}"  # noqa: DTZ011 — local-date OTP windows
-        try:
-            return (cache.get(key) or 0) < cap
-        except Exception:  # noqa: BLE001 - fail open to the next channel
-            return True
+        return _under_whatsapp_daily_budget(self.tenant.pk, self.name)
 
     def _count_sent(self) -> None:
         """Increment today's per-tenant WATI OTP counter (best-effort)."""
-        from django.core.cache import cache
-
-        key = f"wati-otp:{self.tenant.pk}:{date.today().isoformat()}"  # noqa: DTZ011 — local-date OTP windows
-        try:
-            cache.set(key, (cache.get(key) or 0) + 1, timeout=172800)
-        except Exception:  # noqa: BLE001 - accounting must never block delivery
-            logger.warning("WATI OTP budget counter not updated (cache unavailable)")
+        _count_whatsapp_otp(self.tenant.pk, self.name)
 
     def send_otp(self, phone: str, code: str, tenant=None) -> None:
         """POST the template message; raise ``OtpDeliveryError`` on any failure.
@@ -236,6 +229,112 @@ class WatiOtpSender(OtpSender):
             )
         except Exception as exc:
             raise OtpDeliveryError(f"WATI delivery failed: {exc}", reason=_http_failure_reason(exc)) from exc
+        self._count_sent()
+
+
+def _under_whatsapp_daily_budget(tenant_pk, provider: str) -> bool:
+    """Per-tenant per-provider WhatsApp OTP budget (protects the BSP wallet).
+
+    Args:
+        tenant_pk: The issuing tenant's id (counter is scoped to it).
+        provider: ``wati`` or ``gupshup`` (each wallet counts separately).
+
+    Returns:
+        ``True`` while today's count is below ``TENANT_WATI_OTP_DAILY_CAP``.
+    """
+    from django.core.cache import cache
+
+    cap = int(getattr(settings, "TENANT_WATI_OTP_DAILY_CAP", 200))
+    key = f"{provider}-otp:{tenant_pk}:{date.today().isoformat()}"  # noqa: DTZ011 — local-date OTP windows
+    try:
+        return (cache.get(key) or 0) < cap
+    except Exception:  # noqa: BLE001 - fail open to the next channel
+        return True
+
+
+def _count_whatsapp_otp(tenant_pk, provider: str) -> None:
+    """Increment today's per-tenant per-provider OTP counter (best-effort).
+
+    Args:
+        tenant_pk: The issuing tenant's id.
+        provider: ``wati`` or ``gupshup``.
+    """
+    from django.core.cache import cache
+
+    key = f"{provider}-otp:{tenant_pk}:{date.today().isoformat()}"  # noqa: DTZ011 — local-date OTP windows
+    try:
+        cache.set(key, (cache.get(key) or 0) + 1, timeout=172800)
+    except Exception:  # noqa: BLE001 - accounting must never block delivery
+        logger.warning("%s OTP budget counter not updated (cache unavailable)", provider)
+
+
+class GupshupOtpSender(OtpSender):
+    """Delivers the OTP over WhatsApp via the tenant's own Gupshup app (#66).
+
+    The second WhatsApp BSP in the delivery chain — same approved template
+    slug as WATI (``fitnation_otp``), same variable map, posted through the
+    Gupshup ``/wa/api/v1/msg`` contract. All three Gupshup credentials (key,
+    source number, app name) must be configured; anything less would fail on
+    the provider side for every send, so the chain skips straight past it.
+    """
+
+    name = "gupshup"
+
+    def __init__(self, tenant, *, poster=None) -> None:
+        """Bind the sender to one tenant's Gupshup configuration.
+
+        Args:
+            tenant: The tenant whose Gupshup credentials are used.
+            poster: Injectable HTTP post callable (tests).
+        """
+        self.tenant = tenant
+        self.poster = poster or requests.post
+
+    @staticmethod
+    def is_configured_for(tenant) -> bool:
+        """Whether the tenant has Gupshup OTP delivery available.
+
+        Args:
+            tenant: The tenant to inspect.
+
+        Returns:
+            ``True`` when Gupshup is enabled with key, source and app name.
+        """
+        return gupshup_ready(tenant)
+
+    def _under_daily_budget(self) -> bool:
+        """Per-tenant Gupshup OTP budget (own wallet, same cap value)."""
+        return _under_whatsapp_daily_budget(self.tenant.pk, self.name)
+
+    def _count_sent(self) -> None:
+        """Increment today's per-tenant Gupshup OTP counter (best-effort)."""
+        _count_whatsapp_otp(self.tenant.pk, self.name)
+
+    def send_otp(self, phone: str, code: str, tenant=None) -> None:
+        """POST the template message; raise ``OtpDeliveryError`` on any failure.
+
+        Args:
+            phone: The member's phone number.
+            code: The 6-digit code.
+            tenant: Unused (the tenant is bound at construction).
+        """
+        del tenant
+        if not self.is_configured_for(self.tenant):
+            raise OtpDeliveryError("Gupshup is not configured for this tenant", reason="not_configured")
+        if not self._under_daily_budget():
+            raise OtpDeliveryError("Tenant Gupshup OTP daily cap reached", reason="daily_cap_reached")
+
+        to = normalize_msisdn(phone, getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91"))
+        try:
+            post_gupshup_template(
+                self.tenant,
+                GUPSHUP_OTP_TEMPLATE_NAME,
+                to,
+                [code, _tenant_gym_name(self.tenant), "10"],
+                poster=self.poster,
+            )
+        except Exception as exc:
+            raise OtpDeliveryError(f"Gupshup delivery failed: {exc}", reason=_http_failure_reason(exc)) from exc
         self._count_sent()
 
 
@@ -301,14 +400,15 @@ class Msg91OtpSender(OtpSender):
 
 
 def resolve_otp_senders(tenant) -> list[OtpSender]:
-    """Resolve the ordered delivery chain for a tenant (FBOS-011 §4).
+    """Resolve the ordered delivery chain for a tenant (FBOS-011 §4, #66).
 
     ``OTP_SENDER`` values:
 
     - ``auto`` (default): DEBUG → console; production → the tenant's real
-      chain, WATI (when enabled + keyed) then MSG91 SMS.
-    - ``wati`` / ``sms``: force exactly that leg (empty chain → loud 503 when
-      unconfigured).
+      chain, WATI (when enabled + keyed) → Gupshup (when fully configured)
+      → MSG91 SMS.
+    - ``wati`` / ``gupshup`` / ``sms``: force exactly that leg (empty chain
+      → loud 503 when unconfigured).
     - ``console``: dev convenience; ignored with a warning in production
       (the real chain resolves instead — codes can never silently drop to
       logs in prod).
@@ -316,7 +416,7 @@ def resolve_otp_senders(tenant) -> list[OtpSender]:
       (returning codes in API responses must be impossible in prod).
 
     Args:
-        tenant: The issuing tenant (selects the WATI leg).
+        tenant: The issuing tenant (selects the WhatsApp legs).
 
     Returns:
         The ordered sender chain (possibly empty → callers fail loudly).
@@ -338,6 +438,8 @@ def resolve_otp_senders(tenant) -> list[OtpSender]:
         configured = "auto"
     if configured == "wati":
         return [WatiOtpSender(tenant)] if WatiOtpSender.is_configured_for(tenant) else []
+    if configured == "gupshup":
+        return [GupshupOtpSender(tenant)] if GupshupOtpSender.is_configured_for(tenant) else []
     if configured == "sms":
         return [Msg91OtpSender()] if Msg91OtpSender.is_configured() else []
     # auto
@@ -346,6 +448,8 @@ def resolve_otp_senders(tenant) -> list[OtpSender]:
     chain: list[OtpSender] = []
     if WatiOtpSender.is_configured_for(tenant):
         chain.append(WatiOtpSender(tenant))
+    if GupshupOtpSender.is_configured_for(tenant):
+        chain.append(GupshupOtpSender(tenant))
     if Msg91OtpSender.is_configured():
         chain.append(Msg91OtpSender())
     return chain
@@ -355,16 +459,20 @@ def channel_diagnostics(tenant) -> list[dict]:
     """Per-leg configuration status for delivery-failure reporting (no secrets).
 
     Args:
-        tenant: The issuing tenant (selects the WATI leg).
+        tenant: The issuing tenant (selects the WhatsApp legs).
 
     Returns:
         One ``{"channel", "reason"}`` dict per real leg — ``configured`` or
-        ``not_configured`` — in chain order (WATI, then SMS).
+        ``not_configured`` — in chain order (WATI, Gupshup, then SMS).
     """
     return [
         {
             "channel": "wati",
             "reason": "configured" if WatiOtpSender.is_configured_for(tenant) else "not_configured",
+        },
+        {
+            "channel": "gupshup",
+            "reason": "configured" if GupshupOtpSender.is_configured_for(tenant) else "not_configured",
         },
         {
             "channel": "sms",
@@ -402,11 +510,13 @@ def _log_otp_delivery(tenant, channel: str, sent: bool, error: str) -> None:
     """Record a real-channel OTP delivery attempt in the audit trail.
 
     Content NEVER contains the code (FBOS-011 §10.3) — channel metadata only.
-    Console/stub attempts are dev-only and are not logged (noise).
+    Console/stub attempts are dev-only and are not logged (noise). The row's
+    ``channel`` is semantic (whatsapp | sms) and ``provider`` names the BSP
+    that carried it (issue #66).
 
     Args:
         tenant: The issuing tenant (rows are tenant-scoped; skipped if None).
-        channel: Sender name that attempted delivery.
+        channel: Sender name that attempted delivery (wati | gupshup | sms).
         sent: Whether delivery succeeded.
         error: Transport error text on failure.
     """
@@ -414,12 +524,14 @@ def _log_otp_delivery(tenant, channel: str, sent: bool, error: str) -> None:
 
     if tenant is None or channel in {"console", "stub"}:
         return
+    semantic_channel, provider = OTP_CHANNEL_BY_SENDER.get(channel, (channel, ""))
     NotificationLog.objects.create(
         tenant=tenant,
         customer=None,
         notification_type=NotificationLog.NotificationType.OTP,
         status=NotificationLog.Status.SENT if sent else NotificationLog.Status.FAILED,
-        channel=channel,
+        channel=semantic_channel,
+        provider=provider,
         content=f"OTP issued via {channel}",
         error_message=error or "",
     )

@@ -1,9 +1,11 @@
-"""App invite service — WhatsApp (WATI) first, MSG91 SMS fallback (FBOS-011 §5).
+"""App invite service — WhatsApp (WATI → Gupshup) first, MSG91 SMS fallback
+(FBOS-011 §5, issue #66).
 
 Every invocation is audited as a ``NotificationLog`` row (type ``app_invite``,
-with the triggering ``actor`` and the delivery ``channel``). Sends never
-raise — transport failures are recorded and returned as statuses so an
-onboarding flow or a front-desk resend can always complete.
+with the triggering ``actor``, the delivery ``channel`` and the ``provider``
+that carried it). Sends never raise — transport failures are recorded and
+returned as statuses so an onboarding flow or a front-desk resend can always
+complete.
 """
 
 from __future__ import annotations
@@ -18,8 +20,15 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.notifications.models import NotificationLog
-from apps.notifications.services.channels import normalize_msisdn, post_msg91_flow, post_wati_template
-from apps.notifications.services.wati_service import WATI_TEMPLATE_NAMES, build_message
+from apps.notifications.services.channels import normalize_msisdn, post_msg91_flow
+from apps.notifications.services.router import (
+    CHANNEL_SMS,
+    CHANNEL_WHATSAPP,
+    PROVIDER_MSG91,
+    WHATSAPP_TEMPLATE_NAMES,
+    send_whatsapp_template,
+)
+from apps.notifications.services.wati_service import build_message
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +44,6 @@ REASON_FLAG_OFF = "flag_off"
 REASON_PLAN_EXCLUDES_APP = "plan_excludes_app"
 REASON_WATI_NOT_CONFIGURED = "wati_not_configured"
 REASON_DAILY_LIMIT = "daily_limit_reached"
-
-CHANNEL_WHATSAPP = "whatsapp"
-CHANNEL_SMS = "sms"
 
 
 @dataclass(frozen=True)
@@ -177,12 +183,12 @@ def send_app_invite(
 ) -> AppInviteResult:
     """Send (or resend) the app invite to a member over WhatsApp, then SMS.
 
-    Behaviour (FBOS-011 §5): the rollout flag or the plan toggle can make the
-    invite ``not_applicable``; a sent invite inside
+    Behaviour (FBOS-011 §5, issue #66): the rollout flag or the plan toggle
+    can make the invite ``not_applicable``; a sent invite inside
     ``APP_INVITE_RESEND_WINDOW_HOURS`` short-circuits to ``already_sent``
-    unless ``force``; WATI is tried first (tenant config), MSG91 SMS second
-    (platform config), and no-channel-configured is ``skipped``. Never
-    raises — outcomes are returned and logged.
+    unless ``force``; WhatsApp carries via WATI first, then Gupshup (tenant
+    config), MSG91 SMS second (platform config), and no-channel-configured
+    is ``skipped``. Never raises — outcomes are returned and logged.
 
     Args:
         tenant: The tenant sending the invite.
@@ -219,7 +225,7 @@ def send_app_invite(
     link = build_app_invite_links(tenant)["web"]
     content = _render_content(tenant, customer, membership, link)
 
-    def _log(status: str, channel: str = "", error: str = "") -> NotificationLog:
+    def _log(status: str, channel: str = "", error: str = "", provider: str = "") -> NotificationLog:
         return NotificationLog.objects.create(
             tenant=tenant,
             customer=customer,
@@ -227,38 +233,40 @@ def send_app_invite(
             notification_type=NotificationLog.NotificationType.APP_INVITE,
             status=status,
             channel=channel,
+            provider=provider,
             content=content,
             error_message=error,
         )
 
-    if tenant.is_wati_enabled and tenant.wati_api_key:
-        to = normalize_msisdn(customer.phone or "", getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91"))
-        try:
-            post_wati_template(
-                tenant,
-                WATI_TEMPLATE_NAMES["app_invite"],
-                to,
-                [customer.name, tenant.name, membership.plan.name if membership else "your", link],
-                poster=poster,
-            )
-        except Exception as exc:  # noqa: BLE001 - fall through to SMS
-            logger.warning("WATI app-invite delivery failed for customer %s: %s", customer.pk, exc)
-            log = _log(NotificationLog.Status.FAILED, CHANNEL_WHATSAPP, str(exc))
-        else:
-            log = _log(NotificationLog.Status.SENT, CHANNEL_WHATSAPP)
-            return AppInviteResult(status=STATUS_SENT, channel=CHANNEL_WHATSAPP, log=log, sent_at=log.created_at)
-    else:
-        log = None
+    template_name = WHATSAPP_TEMPLATE_NAMES["app_invite"]
+    to = normalize_msisdn(customer.phone or "", getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91"))
+
+    # WhatsApp legs in policy order — WATI (tenant BSP #1), then Gupshup (#2).
+    # A ready-but-failing provider falls through to the next leg; a provider
+    # that is not fully configured is not attempted at all (the SMS leg
+    # carries instead), matching the original WATI-only contract. Every
+    # attempted leg is audited, so a failed leg leaves its own row.
+    attempt = send_whatsapp_template(
+        tenant,
+        template_name,
+        to,
+        [customer.name, tenant.name, membership.plan.name if membership else "your", link],
+        poster=poster,
+    )
+    failure_log: NotificationLog | None = None
+    for provider, error in attempt.failures:
+        logger.warning("%s app-invite delivery failed for customer %s: %s", provider, customer.pk, error)
+        failure_log = _log(NotificationLog.Status.FAILED, CHANNEL_WHATSAPP, error, provider=provider)
+    if attempt.sent:
+        log = _log(NotificationLog.Status.SENT, CHANNEL_WHATSAPP, provider=attempt.provider)
+        return AppInviteResult(status=STATUS_SENT, channel=CHANNEL_WHATSAPP, log=log, sent_at=log.created_at)
 
     if getattr(settings, "MSG91_INVITE_TEMPLATE_ID", "") and getattr(settings, "MSG91_AUTH_KEY", ""):
         try:
             post_msg91_flow(
                 [
                     {
-                        "mobiles": normalize_msisdn(
-                            customer.phone or "",
-                            getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91"),
-                        ),
+                        "mobiles": to,
                         "NAME": customer.name,
                         "GYM": tenant.name,
                         "LINK": link,
@@ -270,19 +278,24 @@ def send_app_invite(
             )
         except Exception as exc:  # noqa: BLE001 - recorded, never raised
             logger.warning("SMS app-invite delivery failed for customer %s: %s", customer.pk, exc)
-            log = _log(NotificationLog.Status.FAILED, CHANNEL_SMS, str(exc))
+            log = _log(NotificationLog.Status.FAILED, CHANNEL_SMS, str(exc), provider=PROVIDER_MSG91)
             return AppInviteResult(
                 status=STATUS_FAILED,
                 reason=str(exc),
                 channel=CHANNEL_SMS,
                 log=log,
             )
-        log = _log(NotificationLog.Status.SENT, CHANNEL_SMS)
+        log = _log(NotificationLog.Status.SENT, CHANNEL_SMS, provider=PROVIDER_MSG91)
         return AppInviteResult(status=STATUS_SENT, channel=CHANNEL_SMS, log=log, sent_at=log.created_at)
 
-    if log is not None:
-        # WATI was configured but failed, and SMS is not set up.
-        return AppInviteResult(status=STATUS_FAILED, reason=str(log.error_message), channel=CHANNEL_WHATSAPP, log=log)
+    if failure_log is not None:
+        # A WhatsApp leg was configured but failed, and SMS is not set up.
+        return AppInviteResult(
+            status=STATUS_FAILED,
+            reason=str(failure_log.error_message),
+            channel=failure_log.channel,
+            log=failure_log,
+        )
     log = _log(NotificationLog.Status.SKIPPED, "", REASON_WATI_NOT_CONFIGURED)
     return AppInviteResult(status=STATUS_SKIPPED, reason=REASON_WATI_NOT_CONFIGURED, log=log)
 

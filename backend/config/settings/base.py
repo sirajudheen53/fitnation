@@ -217,6 +217,10 @@ MSG91_TIMEOUT = 10
 # DLT-registered invite template (FBOS-011 §5.2) with NAME/GYM/LINK/PHONE vars.
 MSG91_INVITE_TEMPLATE_ID = env("MSG91_INVITE_TEMPLATE_ID", default="")
 
+# Gupshup WhatsApp BSP (issue #66) — per-tenant credentials live on the
+# Tenant model; this only sizes the HTTP timeout for its /wa/api/v1/msg API.
+GUPSHUP_TIMEOUT = 10
+
 # App invite deep link (FBOS-011 §5.4). The web base must host the App-Links
 # verification file; the custom scheme is handled by the Android manifest.
 APP_INVITE_WEB_BASE = env("APP_INVITE_WEB_BASE", default="https://app.yougetfitwithus.com")

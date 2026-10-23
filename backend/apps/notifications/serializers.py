@@ -22,6 +22,8 @@ class NotificationLogSerializer(serializers.ModelSerializer):
             "customer_name",
             "notification_type",
             "status",
+            "channel",
+            "provider",
             "content",
             "wati_message_id",
             "error_message",

@@ -63,19 +63,24 @@ def send_whatsapp_test(
     phone: str,
     actor: Any = None,
     sender: Any = None,
+    provider: str = "wati",
 ) -> Any:
-    """Send the settings-page test message via the tenant's own WATI config.
+    """Send the settings-page test message via the tenant's WhatsApp config.
 
     Reuses :func:`apps.notifications.services.wati_service.send_notification`
-    (single WATI client) with the welcome template copy; there is no customer
-    record for the test phone, so ``to_phone`` carries the recipient. The
-    attempt (sent/failed/skipped) is recorded in ``NotificationLog``.
+    with the welcome template copy; there is no customer record for the test
+    phone, so ``to_phone`` carries the recipient. ``provider`` selects which
+    BSP is tested — ``wati`` (default, the original contract) or ``gupshup``
+    (issue #67): the chosen provider's own outcome is reported, never a
+    silent fallback to the other one. The attempt (sent/failed/skipped) is
+    recorded in ``NotificationLog`` with that provider.
 
     Args:
-        tenant: The tenant whose WATI configuration to use.
+        tenant: The tenant whose WhatsApp configuration to use.
         phone: Recipient phone number from the settings form.
         actor: The staff user who triggered the send (audit trail).
-        sender: Injectable HTTP post callable (tests).
+        sender: Injectable WATI HTTP post callable (tests).
+        provider: ``"wati"`` or ``"gupshup"`` — the BSP under test.
 
     Returns:
         The created ``NotificationLog`` record.
@@ -97,6 +102,7 @@ def send_whatsapp_test(
         to_phone=phone,
         actor=actor,
         sender=sender,
+        provider=provider,
     )
 
 

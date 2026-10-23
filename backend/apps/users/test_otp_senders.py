@@ -1,17 +1,21 @@
 """OTP delivery chain tests (FBOS-011 §4): per-tenant sender resolution,
-WATI/MSG91 contracts, prod-safety blocks, caps, audit logging, and the
-machine-readable failure diagnostics (issue #59)."""
+WATI/Gupshup/MSG91 contracts, prod-safety blocks, caps, audit logging, and
+the machine-readable failure diagnostics (issues #59, #66)."""
 
+import json
 from unittest.mock import MagicMock
 
-import requests
 from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase, override_settings
 
+import requests
+
 from apps.notifications.models import NotificationLog
+from apps.notifications.services.channels import GUPSHUP_MSG_URL
 from apps.tenants.services import provision_tenant
 from apps.users.otp import (
     ConsoleOtpSender,
+    GupshupOtpSender,
     Msg91OtpSender,
     OtpDeliveryError,
     OtpError,
@@ -28,6 +32,13 @@ SMS_SETTINGS = {
     "MSG91_AUTH_KEY": "test-auth-key",
     "MSG91_SENDER_ID": "FITNAT",
     "MSG91_TEMPLATE_ID": "dlt-otp-template",
+}
+
+GUPSHUP_CONFIG = {
+    "is_gupshup_enabled": True,
+    "gupshup_api_key": "gup-key",
+    "gupshup_source": "911234567890",
+    "gupshup_app_name": "hash-fit-app",
 }
 
 
@@ -65,15 +76,18 @@ class SenderResolutionTests(TestCase):
             self.assertEqual(resolve_otp_senders(self.plain_tenant), [])
 
     def test_empty_chain_error_carries_channel_diagnostics(self) -> None:
-        """The empty-chain raise names both legs as not_configured (#59)."""
-        with override_settings(DEBUG=False, OTP_SENDER="auto", SMS_PROVIDER="none", MSG91_AUTH_KEY=""):
-            with self.assertRaises(OtpDeliveryError) as caught:
-                issue_otp("+919900000007", self.plain_tenant, sender=resolve_otp_senders(self.plain_tenant))
+        """The empty-chain raise names all three legs as not_configured (#59, #66)."""
+        with (
+            override_settings(DEBUG=False, OTP_SENDER="auto", SMS_PROVIDER="none", MSG91_AUTH_KEY=""),
+            self.assertRaises(OtpDeliveryError) as caught,
+        ):
+            issue_otp("+919900000007", self.plain_tenant, sender=resolve_otp_senders(self.plain_tenant))
         self.assertEqual(caught.exception.reason, "not_configured")
         self.assertEqual(
             caught.exception.channels,
             [
                 {"channel": "wati", "reason": "not_configured"},
+                {"channel": "gupshup", "reason": "not_configured"},
                 {"channel": "sms", "reason": "not_configured"},
             ],
         )
@@ -214,6 +228,120 @@ class WatiOtpSenderTests(TestCase):
         sms_poster.assert_called_once()  # SMS carried delivery
 
 
+class GupshupOtpSenderTests(TestCase):
+    """The Gupshup WhatsApp OTP contract (issue #66) — second BSP, same
+    template variable map, /wa/api/v1/msg transport."""
+
+    def setUp(self) -> None:
+        """A tenant with the full Gupshup configuration."""
+        self.tenant = provision_tenant(name="Gup Gym", contact_email="gup@local.test", **GUPSHUP_CONFIG)
+
+    def _poster(self):
+        """A fake requests.post returning a 2xx response."""
+        poster = MagicMock()
+        poster.return_value = MagicMock(status_code=200, raise_for_status=MagicMock())
+        return poster
+
+    def test_send_posts_template_with_apikey_header(self) -> None:
+        """Body carries [code, gym, ttl]; the apikey header is the tenant key."""
+        poster = self._poster()
+        sender = GupshupOtpSender(self.tenant, poster=poster)
+        sender.send_otp("+919900000020", "123456", tenant=self.tenant)
+        args, kwargs = poster.call_args
+        self.assertEqual(args[0], GUPSHUP_MSG_URL)
+        self.assertEqual(
+            json.loads(kwargs["data"]["message"]),
+            {"type": "template", "name": "fitnation_otp", "params": ["123456", "Gup Gym", "10"]},
+        )
+        self.assertEqual(kwargs["data"]["destination"], "919900000020")
+        self.assertEqual(kwargs["data"]["source"], "911234567890")
+        self.assertEqual(kwargs["headers"], {"apikey": "gup-key"})
+
+    def test_half_configured_tenant_is_not_ready(self) -> None:
+        """Enabled + key but no source/app name → not configured (chain skips)."""
+        half = provision_tenant(
+            name="Half Gup",
+            contact_email="half@local.test",
+            is_gupshup_enabled=True,
+            gupshup_api_key="gup-key",
+        )
+        self.assertFalse(GupshupOtpSender.is_configured_for(half))
+        with self.assertRaises(OtpDeliveryError) as caught:
+            GupshupOtpSender(half, poster=self._poster()).send_otp("+919900000020", "123456")
+        self.assertEqual(caught.exception.reason, "not_configured")
+
+    def test_transport_failure_raises_delivery_error(self) -> None:
+        """Any HTTP failure → OtpDeliveryError (chain falls through)."""
+        poster = MagicMock()
+        poster.side_effect = RuntimeError("boom")
+        sender = GupshupOtpSender(self.tenant, poster=poster)
+        with self.assertRaises(OtpDeliveryError) as caught:
+            sender.send_otp("+919900000020", "123456", tenant=self.tenant)
+        self.assertEqual(caught.exception.reason, "transport_error")
+
+    def test_daily_cap_error_reason(self) -> None:
+        """The budget guard fails with reason ``daily_cap_reached``."""
+        cap = override_settings(TENANT_WATI_OTP_DAILY_CAP=0)
+        cap.enable()
+        self.addCleanup(cap.disable)
+        sender = GupshupOtpSender(self.tenant, poster=self._poster())
+        with self.assertRaises(OtpDeliveryError) as caught:
+            sender.send_otp("+919900000020", "123456", tenant=self.tenant)
+        self.assertEqual(caught.exception.reason, "daily_cap_reached")
+
+
+class GupshupChainResolutionTests(TestCase):
+    """resolve_otp_senders with the Gupshup leg in the chain (issue #66)."""
+
+    def _both_channels_tenant(self):
+        """A tenant with WATI and Gupshup both configured."""
+        return provision_tenant(
+            name="Both Gyms",
+            contact_email="both3@local.test",
+            is_wati_enabled=True,
+            wati_api_key="wati-key",
+            **GUPSHUP_CONFIG,
+        )
+
+    def test_prod_auto_chain_is_wati_gupshup_sms(self) -> None:
+        """Both WhatsApp BSPs configured → WATI first, Gupshup second, SMS last."""
+        tenant = self._both_channels_tenant()
+        with override_settings(DEBUG=False, OTP_SENDER="auto", **SMS_SETTINGS):
+            self.assertEqual([s.name for s in resolve_otp_senders(tenant)], ["wati", "gupshup", "sms"])
+
+    def test_gupshup_only_tenant_resolves_gupshup_then_sms(self) -> None:
+        """No WATI → the chain starts at Gupshup."""
+        tenant = provision_tenant(name="Gup Only", contact_email="guponly@local.test", **GUPSHUP_CONFIG)
+        with override_settings(DEBUG=False, OTP_SENDER="auto", **SMS_SETTINGS):
+            self.assertEqual([s.name for s in resolve_otp_senders(tenant)], ["gupshup", "sms"])
+
+    def test_forced_gupshup_leg(self) -> None:
+        """OTP_SENDER=gupshup forces exactly that leg."""
+        tenant = self._both_channels_tenant()
+        with override_settings(DEBUG=False, OTP_SENDER="gupshup"):
+            self.assertEqual([s.name for s in resolve_otp_senders(tenant)], ["gupshup"])
+
+    def test_wati_failure_falls_through_to_gupshup(self) -> None:
+        """A live chain: WATI transport down → Gupshup delivers + is audited."""
+        tenant = self._both_channels_tenant()
+        wati_poster = MagicMock(side_effect=RuntimeError("wati down"))
+        gup_poster = MagicMock()
+        gup_poster.return_value = MagicMock(status_code=200, raise_for_status=MagicMock())
+        cooldown = override_settings(OTP_RESEND_COOLDOWN_SECONDS=0)
+        cooldown.enable()
+        self.addCleanup(cooldown.disable)
+        ttl = issue_otp(
+            "+919900000021",
+            tenant,
+            sender=[WatiOtpSender(tenant, poster=wati_poster), GupshupOtpSender(tenant, poster=gup_poster)],
+        )
+        self.assertEqual(ttl, 600)
+        gup_poster.assert_called_once()
+        log = NotificationLog.objects.for_tenant(tenant).get(notification_type="otp")
+        self.assertEqual(log.provider, "gupshup")
+        self.assertEqual(log.channel, "whatsapp")
+
+
 class Msg91OtpSenderTests(TestCase):
     """The MSG91 flow API contract (§4.2)."""
 
@@ -348,14 +476,24 @@ class OtpAuditLogTests(TestCase):
         self.addCleanup(cooldown.disable)
 
     def test_success_row_has_channel_and_no_code(self) -> None:
-        """A sent row records the channel; content never contains the code."""
+        """A sent row records the semantic channel + provider; no code leaks."""
         wati = MagicMock()
         wati.name = "wati"
         issue_otp("+919900000006", self.tenant, sender=wati)
         log = NotificationLog.objects.for_tenant(self.tenant).get(notification_type="otp")
         self.assertEqual(log.status, NotificationLog.Status.SENT)
-        self.assertEqual(log.channel, "wati")
+        self.assertEqual(log.channel, "whatsapp")
+        self.assertEqual(log.provider, "wati")
         self.assertNotIn("123456", log.content)
+
+    def test_gupshup_row_names_whatsapp_channel_and_provider(self) -> None:
+        """A Gupshup-carried OTP audits channel=whatsapp, provider=gupshup."""
+        gupshup = MagicMock()
+        gupshup.name = "gupshup"
+        issue_otp("+919900000006", self.tenant, sender=gupshup)
+        log = NotificationLog.objects.for_tenant(self.tenant).get(notification_type="otp")
+        self.assertEqual(log.channel, "whatsapp")
+        self.assertEqual(log.provider, "gupshup")
 
     def test_failure_row_records_error(self) -> None:
         """A failed chain writes the failed row with the transport error."""
@@ -366,6 +504,8 @@ class OtpAuditLogTests(TestCase):
             issue_otp("+919900000006", self.tenant, sender=sender)
         log = NotificationLog.objects.for_tenant(self.tenant).get(notification_type="otp")
         self.assertEqual(log.status, NotificationLog.Status.FAILED)
+        self.assertEqual(log.channel, "sms")
+        self.assertEqual(log.provider, "msg91")
         self.assertIn("carrier down", log.error_message)
 
     def test_dev_senders_are_not_logged(self) -> None:

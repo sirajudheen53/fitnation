@@ -14,7 +14,8 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ViewSet
 
 from apps.branches.models import Branch
-from apps.core.services.email import send_verification_email
+from apps.notifications.models import NotificationLog
+from apps.notifications.services.router import send_verification_message
 from apps.permissions.models import Role, UserRoleAssignment
 from apps.permissions.permissions import RolePermission
 from apps.tenants.models import Tenant
@@ -413,15 +414,17 @@ class ResendVerificationEmailView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        sent = send_verification_email(user, request)
-        if sent:
+        # Channel policy (issue #66): the tenant's WhatsApp carries the link
+        # when configured; email is the last resort.
+        log = send_verification_message(user, request)
+        if log.status == NotificationLog.Status.SENT:
             return Response(
-                {"message": "Verification email sent. Check your inbox (and spam)."},
+                {"message": "Verification sent — check your WhatsApp or email inbox."},
                 status=status.HTTP_200_OK,
             )
         else:
             return Response(
-                {"error": "Failed to send verification email. Please try again."},
+                {"error": "Failed to send verification message. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -474,10 +477,11 @@ class UserViewSet(ViewSet):
             branch_id=data.get("branch_id"),
             actor=request.user,
         )
-        # Send email verification for non-owner roles
+        # Send verification for non-owner roles — channel-aware (#66): the
+        # gym's WhatsApp carries the link when configured, email otherwise.
         User = get_user_model()
         if user.role != User.Role.GYM_OWNER and not user.is_owner:
-            send_verification_email(user, request)
+            send_verification_message(user, request)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request: Request, pk: int) -> Response:
@@ -592,8 +596,9 @@ class TrainerViewSet(ViewSet):
             profile_photo=data.get("profile_photo", ""),
             actor=request.user,
         )
-        # Send email verification to newly created trainer
-        send_verification_email(trainer.user, request)
+        # Trainer invitation (#66): the verification link rides the gym's
+        # WhatsApp when configured; email is the last resort.
+        send_verification_message(trainer.user, request)
         return Response(TrainerSerializer(trainer).data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request: Request, pk: int) -> Response:

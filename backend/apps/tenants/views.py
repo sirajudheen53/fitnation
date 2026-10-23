@@ -88,7 +88,11 @@ class WhatsappTestSendView(APIView):
     required_permission = "tenants.change_tenant"
 
     def post(self, request: Any) -> Response:
-        """Handle ``{phone}`` and dispatch the welcome-template test message.
+        """Handle ``{phone, provider?}`` and dispatch the welcome-template test message.
+
+        ``provider`` (``wati`` default | ``gupshup``, issue #66/#67) selects
+        the WhatsApp BSP under test — the chosen provider's own outcome is
+        reported, never a fallback to the other one.
 
         Args:
             request: The incoming DRF request.
@@ -102,6 +106,7 @@ class WhatsappTestSendView(APIView):
             request.tenant,
             body.validated_data["phone"],
             actor=request.user,
+            provider=body.validated_data.get("provider", "wati"),
         )
         return Response({"status": log.status, "detail": log.error_message})
 

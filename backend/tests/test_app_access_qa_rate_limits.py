@@ -251,7 +251,8 @@ class OtpDeliveryAuditTests(APITestCase):
         self.assertTrue(logs.exists(), "the OTP delivery attempt was not audited")
         for log in logs:
             self.assertNotIn("captured code", log.content or "")
-            self.assertIn(log.channel, {"wati"})
+            self.assertEqual(log.channel, "whatsapp")
+            self.assertEqual(log.provider, "wati")
 
 
 class OtpExpiryTests(APITestCase):

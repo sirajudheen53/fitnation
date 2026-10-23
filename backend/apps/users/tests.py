@@ -1164,7 +1164,7 @@ class OtpDeliveryUnavailableViewTests(APITestCase):
         self.addCleanup(overrides.disable)
 
     def test_unconfigured_chain_returns_diagnosable_503(self) -> None:
-        """Empty chain → 503 with code + both channels not_configured."""
+        """Empty chain → 503 with code + every channel not_configured."""
         response = self.client.post("/api/v1/users/auth/otp/request/", {"phone": "+9199000000100"}, format="json")
 
         self.assertEqual(response.status_code, 503)
@@ -1173,6 +1173,7 @@ class OtpDeliveryUnavailableViewTests(APITestCase):
             response.data["channels"],
             [
                 {"channel": "wati", "reason": "not_configured"},
+                {"channel": "gupshup", "reason": "not_configured"},
                 {"channel": "sms", "reason": "not_configured"},
             ],
         )

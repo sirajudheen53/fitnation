@@ -222,7 +222,13 @@ def _enroll_biometrics(tenant: Tenant, customer: Customer, entries: list[dict]) 
     return results
 
 
-def _notify(tenant: Tenant, customer: Customer, membership: Membership | None, send_welcome: bool) -> list[dict]:
+def _notify(
+    tenant: Tenant,
+    customer: Customer,
+    membership: Membership | None,
+    send_welcome: bool,
+    poster: Any = None,
+) -> list[dict]:
     """Send the welcome (+ payment receipt) WhatsApp messages, best-effort.
 
     Args:
@@ -230,6 +236,7 @@ def _notify(tenant: Tenant, customer: Customer, membership: Membership | None, s
         customer: The new member.
         membership: The created membership (None in razorpay phase 1).
         send_welcome: The wizard's opt-out flag.
+        poster: Injectable notification HTTP transport (tests).
 
     Returns:
         ``{"type", "status"}`` rows for the response's ``notifications``.
@@ -245,6 +252,7 @@ def _notify(tenant: Tenant, customer: Customer, membership: Membership | None, s
                 "end_date": membership.end_date.isoformat() if membership else "",
                 "phone": customer.phone,
             },
+            poster=poster,
         )
         rows.append({"type": "welcome", "status": log.status})
     return rows
@@ -486,9 +494,9 @@ def create_member_onboarding(
             request_payload=_snapshot(payload),
         )
 
-    notifications = _notify(tenant, customer, membership, data.get("send_welcome", True))
+    notifications = _notify(tenant, customer, membership, data.get("send_welcome", True), poster)
     if payment is not None and payment.status == Payment.Status.COMPLETED:
-        log = send_notification(tenant, customer, "payment_received", {"amount": payment.amount})
+        log = send_notification(tenant, customer, "payment_received", {"amount": payment.amount}, poster=poster)
         notifications.append({"type": "payment_received", "status": log.status})
     app_invite = _send_app_invite(tenant, customer, user, data.get("send_app_invite", True), poster)
 
@@ -696,7 +704,7 @@ def complete_razorpay_onboarding(
         session.status = OnboardingSession.Status.COMPLETED
         session.save(update_fields=["status", "updated_at"])
 
-    notifications = _notify(tenant, customer, membership, data.get("send_welcome", True))
+    notifications = _notify(tenant, customer, membership, data.get("send_welcome", True), poster)
     app_invite = _send_app_invite(tenant, customer, user, data.get("send_app_invite", True), poster)
     return _finalize_response(
         session=session,
