@@ -91,15 +91,18 @@ export default function MembershipsPage() {
     }
   };
 
-  /** Renew extends the SAME membership (end_date += plan days, status → active). */
-  const handleRenew = async (days: number | undefined) => {
+  /**
+   * Renew extends the SAME membership (end_date += plan days, status →
+   * active); a planId switches the membership to that plan first (issue #68).
+   */
+  const handleRenew = async (days: number | undefined, planId?: number) => {
     if (!renewTarget) return;
     const token = getToken();
     if (!token) return;
     const authToken: string = token;
     setRenewing(true);
     try {
-      const updated = await renewMembership(renewTarget.id, authToken, days);
+      const updated = await renewMembership(renewTarget.id, authToken, days, planId);
       setMemberships((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
       toast.success(`Renewed until ${formatMembershipDate(updated.end_date)}`);
       setRenewTarget(null);
@@ -217,6 +220,7 @@ export default function MembershipsPage() {
       )}
       {renewTarget && (
         <RenewMembershipDialog
+          key={renewTarget.id}
           membership={renewTarget}
           plans={plans}
           busy={renewing}

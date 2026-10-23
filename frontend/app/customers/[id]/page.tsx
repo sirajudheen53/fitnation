@@ -332,17 +332,19 @@ export default function CustomerDetailPage() {
 
   /**
    * Renew one of the customer's memberships: extends the SAME membership
-   * (end_date += days, status → active). Resolves the updated membership so
-   * the overview card can close its dialog, or null on failure.
+   * (end_date += days, status → active); a planId switches the plan first
+   * (issue #68). Resolves the updated membership so the overview card can
+   * close its dialog, or null on failure.
    */
   const handleRenewMembership = async (
     membership: Membership,
     days?: number,
+    planId?: number,
   ): Promise<Membership | null> => {
     const token = getToken();
     if (!token) return null;
     try {
-      const updated = await renewMembership(membership.id, token, days);
+      const updated = await renewMembership(membership.id, token, days, planId);
       setMemberships(
         (prev) => prev?.map((m) => (m.id === updated.id ? updated : m)) ?? prev,
       );

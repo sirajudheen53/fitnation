@@ -10,6 +10,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import MembershipsPage from "@/app/memberships/page";
 import AssignMembershipPage from "@/app/memberships/assign/page";
 import { OverviewTab } from "@/features/customers/components/OverviewTab";
+import { RenewMembershipDialog } from "@/features/memberships/components/RenewMembershipDialog";
 import {
   fetchCustomers,
   fetchMembershipPlans,
@@ -161,6 +162,108 @@ describe("renewMembership API contract", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.body).toBeUndefined();
   });
+
+  /* Issue #68: renewing onto a different plan — plan_id travels ONLY when
+   * the user picked one that differs from the membership's current plan. */
+
+  it("POSTs {days, plan_id} when a plan switch is given", async () => {
+    const fetchMock = mockFetch({ id: 7 });
+    const realRenew = jest.requireActual<typeof import("@/lib/api")>("@/lib/api")
+      .renewMembership;
+    await realRenew(7, "tok", 45, 12);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ days: 45, plan_id: 12 });
+  });
+
+  it("POSTs {plan_id} alone when days are omitted", async () => {
+    const fetchMock = mockFetch({ id: 7 });
+    const realRenew = jest.requireActual<typeof import("@/lib/api")>("@/lib/api")
+      .renewMembership;
+    await realRenew(7, "tok", undefined, 12);
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ plan_id: 12 });
+  });
+});
+
+/* ── Renew dialog plan selector (issue #68) ───────────────────── */
+
+describe("RenewMembershipDialog plan selector", () => {
+  const plans = [
+    plan(),
+    plan({
+      id: 3,
+      name: "Platinum",
+      price: "4999.00",
+      duration_days: 90,
+      plan_type: "quarterly",
+    }),
+  ];
+
+  function renderDialog(
+    membershipOverrides: Partial<Membership> = {},
+    planList: MembershipPlan[] = plans,
+  ) {
+    const onConfirm = jest.fn();
+    render(
+      <RenewMembershipDialog
+        membership={membership(membershipOverrides)}
+        plans={planList}
+        onConfirm={onConfirm}
+        onClose={jest.fn()}
+      />,
+    );
+    return onConfirm;
+  }
+
+  function changePlan(value: string) {
+    fireEvent.change(screen.getByLabelText("Plan"), { target: { value } });
+  }
+
+  it("renders the selector listing every tenant plan, current one preselected", () => {
+    renderDialog();
+    const selector = screen.getByLabelText("Plan") as HTMLSelectElement;
+    expect(selector.value).toBe("2");
+    expect(within(selector).getByRole("option", { name: "Gold · 30 days" })).toBeInTheDocument();
+    expect(
+      within(selector).getByRole("option", { name: "Platinum · 90 days" }),
+    ).toBeInTheDocument();
+    // No "switching" hint while the current plan is selected.
+    expect(screen.queryByText(/moves this membership to/i)).not.toBeInTheDocument();
+  });
+
+  it("recomputes days and the New end date preview from the selected plan", () => {
+    renderDialog();
+    changePlan("3");
+
+    expect(screen.getByText(/membership by 90 days\?/)).toBeInTheDocument();
+    expect(screen.getByText(/membership by 90 days\?/).textContent).toContain(
+      "Platinum",
+    );
+    expect(screen.getByText(/New end date:/).textContent).toContain(
+      fmt("2026-12-29"),
+    );
+    expect(screen.getByText(/moves this membership to Platinum/i)).toBeInTheDocument();
+  });
+
+  it("sends plan_id only when the selection differs from the current plan", () => {
+    const onConfirm = renderDialog();
+
+    fireEvent.click(screen.getByRole("button", { name: "Renew" }));
+    expect(onConfirm).toHaveBeenCalledWith(30, undefined);
+
+    changePlan("3");
+    fireEvent.click(screen.getByRole("button", { name: "Renew" }));
+    expect(onConfirm).toHaveBeenCalledWith(90, 3);
+  });
+
+  it("keeps the current plan selectable when it's missing from the tenant list", () => {
+    renderDialog({}, []);
+    const selector = screen.getByLabelText("Plan") as HTMLSelectElement;
+    expect(selector.value).toBe("2");
+    expect(within(selector).getByRole("option", { name: "Gold" })).toBeInTheDocument();
+    // Unresolvable plan duration → backend-mirroring 30-day fallback.
+    expect(screen.getByText(/membership by 30 days\?/)).toBeInTheDocument();
+  });
 });
 
 /* ── Memberships page renew flow ──────────────────────────────── */
@@ -242,7 +345,7 @@ describe("MembershipsPage renew flow", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Renew" }));
 
     await waitFor(() =>
-      expect(mockedRenew).toHaveBeenCalledWith(2, "test-token", 30),
+      expect(mockedRenew).toHaveBeenCalledWith(2, "test-token", 30, undefined),
     );
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(`Renewed until ${fmt("2026-10-30")}`),
@@ -270,6 +373,51 @@ describe("MembershipsPage renew flow", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(screen.getByText(/Current end date:/)).toBeInTheDocument();
     expect(row?.textContent).toContain(fmt("2026-09-30"));
+  });
+
+  it("renews onto a different plan and passes plan_id to the API (issue #68)", async () => {
+    const platinum = plan({
+      id: 3,
+      name: "Platinum",
+      duration_days: 90,
+      plan_type: "quarterly",
+    });
+    mockedFetchPlans.mockResolvedValue({
+      count: 2,
+      next: null,
+      previous: null,
+      results: [plan(), platinum],
+    });
+    mockedFetchMemberships.mockResolvedValue({
+      count: 1,
+      next: null,
+      previous: null,
+      results: [expiredM],
+    });
+    mockedRenew.mockResolvedValue({
+      ...expiredM,
+      plan_id: 3,
+      plan_name: "Platinum",
+      status: "active",
+      end_date: "2026-12-29",
+    });
+    render(<MembershipsPage />);
+    await screen.findByText("Meera Nair");
+    fireEvent.click(screen.getByRole("button", { name: "Renew membership" }));
+
+    fireEvent.change(await screen.findByLabelText("Plan"), {
+      target: { value: "3" },
+    });
+    const dialog = screen.getByText("Renew membership").closest(".max-w-md") as HTMLElement;
+    expect(screen.getByText(/membership by 90 days\?/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Renew" }));
+
+    await waitFor(() =>
+      expect(mockedRenew).toHaveBeenCalledWith(2, "test-token", 90, 3),
+    );
+    // Row refreshed with the switched plan from the response.
+    const row = screen.getByText("Meera Nair").closest("tr");
+    await waitFor(() => expect(row?.textContent).toContain("Platinum"));
   });
 });
 
@@ -331,10 +479,38 @@ describe("OverviewTab memberships card", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Renew" }));
 
     await waitFor(() =>
-      expect(onRenewMembership).toHaveBeenCalledWith(membership(), 30),
+      expect(onRenewMembership).toHaveBeenCalledWith(membership(), 30, undefined),
     );
     await waitFor(() =>
       expect(screen.queryByText(/Current end date:/)).not.toBeInTheDocument(),
+    );
+  });
+
+  it("passes a plan switch through from the card dialog (issue #68)", async () => {
+    const onRenewMembership = jest.fn().mockResolvedValue(membership());
+    render(
+      <OverviewTab
+        customer={customer}
+        summary={null}
+        memberships={[membership()]}
+        membershipPlans={[
+          plan(),
+          plan({ id: 3, name: "Platinum", duration_days: 90, plan_type: "quarterly" }),
+        ]}
+        onRenewMembership={onRenewMembership}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Renew" }));
+    fireEvent.change(await screen.findByLabelText("Plan"), {
+      target: { value: "3" },
+    });
+
+    const dialog = screen.getByText("Renew membership").closest(".max-w-md") as HTMLElement;
+    fireEvent.click(within(dialog).getByRole("button", { name: "Renew" }));
+
+    await waitFor(() =>
+      expect(onRenewMembership).toHaveBeenCalledWith(membership(), 90, 3),
     );
   });
 });

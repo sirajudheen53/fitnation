@@ -23,8 +23,12 @@ export const RENEWAL_FALLBACK_DAYS = 30;
 export function renewalDays(
   membership: Membership,
   plans: MembershipPlan[],
+  /** Selected plan id — when the user renews onto a different plan
+   * (issue #68), the preview must use THAT plan's duration. */
+  planIdOverride?: number,
 ): number {
-  const plan = plans.find((p) => p.id === membership.plan_id);
+  const planId = planIdOverride ?? membership.plan_id;
+  const plan = plans.find((p) => p.id === planId);
   return plan?.duration_days || RENEWAL_FALLBACK_DAYS;
 }
 
@@ -33,6 +37,10 @@ export function renewalDays(
 export function renewalNewEndDate(
   membership: Membership,
   plans: MembershipPlan[],
+  planIdOverride?: number,
 ): string | null {
-  return addDaysISO(membership.end_date, renewalDays(membership, plans));
+  return addDaysISO(
+    membership.end_date,
+    renewalDays(membership, plans, planIdOverride),
+  );
 }

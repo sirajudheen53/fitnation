@@ -63,6 +63,29 @@ describe("renewalDays", () => {
   });
 });
 
+/* Issue #68: renewing onto a DIFFERENT plan — the preview must use the
+ * selected plan's duration, not the membership's current one. */
+describe("renewalDays plan override", () => {
+  const plans = [
+    plan({ duration_days: 30 }),
+    plan({ id: 3, name: "Platinum", duration_days: 90, plan_type: "quarterly" }),
+  ];
+
+  it("uses the overridden plan's duration", () => {
+    expect(renewalDays(membership(), plans, 3)).toBe(90);
+  });
+
+  it("keeps current-plan behavior when the override is undefined", () => {
+    expect(renewalDays(membership(), plans, undefined)).toBe(30);
+  });
+
+  it("falls back to 30 when the overridden plan isn't in the list", () => {
+    expect(renewalDays(membership(), [plan()], 999)).toBe(
+      RENEWAL_FALLBACK_DAYS,
+    );
+  });
+});
+
 describe("renewalNewEndDate", () => {
   it("computes end_date + plan duration", () => {
     expect(renewalNewEndDate(membership(), [plan({ duration_days: 30 })])).toBe(
@@ -72,5 +95,15 @@ describe("renewalNewEndDate", () => {
 
   it("returns null when the end date isn't a usable date", () => {
     expect(renewalNewEndDate(membership({ end_date: "" }), [plan()])).toBeNull();
+  });
+
+  it("uses the overridden plan's duration (issue #68)", () => {
+    expect(
+      renewalNewEndDate(
+        membership(),
+        [plan(), plan({ id: 3, duration_days: 90 })],
+        3,
+      ),
+    ).toBe("2026-12-29");
   });
 });

@@ -461,16 +461,24 @@ export function cancelMembership(id: number | string, token: string): Promise<Me
 /**
  * Renew a membership: extends end_date by `days` (omitted → the backend
  * defaults to plan.duration_days, else 30), sets status back to ACTIVE and
- * re-syncs door access. Returns the updated membership.
+ * re-syncs door access. `planId` (issue #68) switches the membership to that
+ * plan before the extension — pass it ONLY when the user picked a different
+ * plan; omitted plan_id keeps the legacy days-only behavior. Returns the
+ * updated membership.
  */
 export function renewMembership(
   id: number | string,
   token: string,
   days?: number,
+  planId?: number,
 ): Promise<Membership> {
+  const body: { days?: number; plan_id?: number } = {};
+  if (days !== undefined) body.days = days;
+  if (planId !== undefined) body.plan_id = planId;
+  const hasBody = Object.keys(body).length > 0;
   return request<Membership>(`/memberships/memberships/${id}/renewal/`, {
     method: "POST",
-    body: days !== undefined ? { days } : undefined,
+    body: hasBody ? body : undefined,
     token,
   });
 }

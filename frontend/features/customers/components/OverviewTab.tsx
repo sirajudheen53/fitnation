@@ -123,11 +123,13 @@ interface OverviewTabProps {
   membershipPlans?: MembershipPlan[];
   /**
    * Renew a membership — the caller POSTs the renewal and updates its own
-   * state. Resolves the updated membership (dialog closes) or null (stays open).
+   * state. Resolves the updated membership (dialog closes) or null (stays
+   * open). planId (issue #68) switches the plan before the extension.
    */
   onRenewMembership?: (
     membership: Membership,
     days?: number,
+    planId?: number,
   ) => Promise<Membership | null>;
 }
 
@@ -472,12 +474,13 @@ export function OverviewTab({
       {/* Renewal confirmation */}
       {renewTarget && onRenewMembership && (
         <RenewMembershipDialog
+          key={renewTarget.id}
           membership={renewTarget}
           plans={membershipPlans}
           busy={renewing}
-          onConfirm={async (days) => {
+          onConfirm={async (days, planId) => {
             setRenewing(true);
-            const updated = await onRenewMembership(renewTarget, days);
+            const updated = await onRenewMembership(renewTarget, days, planId);
             setRenewing(false);
             if (updated) setRenewTarget(null);
           }}
