@@ -22,7 +22,15 @@ export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     return (err.data?.error as string | undefined) || err.message;
   }
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) {
+    // fetch() rejects with a bare TypeError on network/CORS failures — the
+    // browser gives no status or body (e.g. a preflight-blocked request, so
+    // the server never even saw it). Translate to something actionable.
+    if (err instanceof TypeError && /fetch|network/i.test(err.message)) {
+      return "Could not reach the server — check your connection and try again.";
+    }
+    return err.message;
+  }
   if (typeof err === "string") return err;
   return "An unexpected error occurred.";
 }

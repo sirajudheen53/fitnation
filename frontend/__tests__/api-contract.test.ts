@@ -5,6 +5,7 @@
  * and the analytics crash (`t is not iterable` with DRF envelopes).
  */
 import {
+  errorMessage,
   fetchDashboardTrainers,
   fetchRevenueReport,
   fetchAttendanceHeatmap,
@@ -43,7 +44,6 @@ describe("unwrapList", () => {
   it("passes plain arrays through", () => {
     expect(unwrapList([1, 2, 3])).toEqual([1, 2, 3]);
   });
-
   it("unwraps DRF paginated envelopes", () => {
     expect(unwrapList({ count: 2, next: null, previous: null, results: [1, 2] })).toEqual([1, 2]);
   });
@@ -56,6 +56,25 @@ describe("unwrapList", () => {
     expect(unwrapList({ detail: "Not found." })).toEqual([]);
     expect(unwrapList(null)).toEqual([]);
     expect(unwrapList(undefined)).toEqual([]);
+  });
+});
+
+describe("errorMessage", () => {
+  it("translates network-level fetch failures into an actionable message", () => {
+    // Browser: a CORS/preflight-blocked or offline request rejects with a
+    // bare TypeError — no status, no body (issue #61 wizard symptom).
+    expect(errorMessage(new TypeError("Failed to fetch"))).toBe(
+      "Could not reach the server — check your connection and try again.",
+    );
+    expect(errorMessage(new TypeError("fetch failed"))).toBe(
+      "Could not reach the server — check your connection and try again.",
+    );
+  });
+
+  it("keeps real backend errors readable", () => {
+    expect(errorMessage(new Error("Something specific happened"))).toBe(
+      "Something specific happened",
+    );
   });
 });
 

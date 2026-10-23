@@ -10,6 +10,7 @@ Multi-tenant: docs/fbos-010-multi-tenant.md
 from pathlib import Path
 
 import environ
+from corsheaders.defaults import default_headers
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 # backend/ is the project root for Django
@@ -152,6 +153,11 @@ CORS_ALLOWED_ORIGINS = env.list(
     default=["http://localhost:3000", "http://localhost:8080"],
 )
 CORS_ALLOW_CREDENTIALS = True
+# The defaults predate custom request headers: the onboarding wizard POSTs an
+# `Idempotency-Key` (double-submit guard), and a browser drops the whole POST
+# when the preflight doesn't allow that header — the request never reaches
+# Django (issue #61).
+CORS_ALLOW_HEADERS = [*default_headers, "idempotency-key"]
 
 # ── Redis / Cache ───────────────────────────────────────────────────────────────
 REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/1")
