@@ -164,13 +164,36 @@ class MembershipViewSet(ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def renewal(self, request: Request, pk: int) -> Response:
-        """Renew a membership by extending end_date and refreshing status."""
+        """Renew a membership by extending end_date and refreshing status.
+
+        An optional ``plan_id`` (must belong to this tenant) moves the
+        membership onto that plan before the extension (issue #68); the
+        default ``days`` then comes from the NEW plan's duration. Without
+        ``plan_id`` the renewal extends the current plan as before.
+        """
         self.required_permission = "memberships.edit_membership"
         membership = self.get_object()
 
+        plan = membership.plan
+        plan_id = request.data.get("plan_id")
+        if plan_id is not None:
+            try:
+                plan_id = int(plan_id)
+            except (TypeError, ValueError):
+                return Response(
+                    {"plan_id": "Must be an integer."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            plan = MembershipPlan.objects.for_tenant(request.tenant).filter(id=plan_id).first()
+            if plan is None:
+                return Response(
+                    {"plan_id": "Invalid plan for this gym."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         days = request.data.get("days")
         if days is None:
-            days = membership.plan.duration_days or 30
+            days = plan.duration_days or 30
         try:
             days = int(days)
         except (TypeError, ValueError):
@@ -191,6 +214,7 @@ class MembershipViewSet(ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        membership.plan = plan
         membership.end_date = new_end
         membership.status = Membership.Status.ACTIVE
         membership.refresh_status()

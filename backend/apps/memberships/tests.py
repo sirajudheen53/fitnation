@@ -2,6 +2,7 @@
 
 from datetime import date, timedelta
 from typing import ClassVar
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -10,6 +11,7 @@ from rest_framework.test import APITestCase
 
 from apps.customers.models import Customer
 from apps.memberships.models import Coupon, Membership, MembershipPlan
+from apps.memberships.views import MembershipViewSet
 from apps.tenants.services import provision_tenant
 from apps.users.services import create_owner_user, issue_token
 
@@ -418,6 +420,188 @@ class MembershipAPITests(APITestCase):
         )
         response = self.client.get(f"/api/v1/memberships/memberships/{other_membership.id}/")
         self.assertEqual(response.status_code, 404)
+
+
+class MembershipRenewalPlanSwapAPITests(APITestCase):
+    """Renewal with an optional plan_id moves the membership to that plan (#68)."""
+
+    def setUp(self) -> None:
+        """Create tenant, owner token, two plans, a foreign plan, and a member."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        self.plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Monthly",
+            price="1500.00",
+            duration_days=30,
+        )
+        self.other_plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Quarterly",
+            price="4000.00",
+            duration_days=90,
+        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        self.foreign_plan = MembershipPlan.objects.create(
+            tenant=other_tenant,
+            name="Foreign Plan",
+            price="1000.00",
+            duration_days=60,
+        )
+        self.user = User.objects.create_user(
+            email="swap-cust@local.test",
+            password="F1tNati0n!",
+            first_name="Swap",
+            last_name="Customer",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Swap Customer",
+            email="swap-cust@local.test",
+        )
+
+    def _membership(self) -> Membership:
+        """Create an expired-on-dates membership ending 10 days ago."""
+        return Membership.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            plan=self.plan,
+            start_date=date.today() - timedelta(days=40),  # noqa: DTZ011 — naive local test date
+            end_date=date.today() - timedelta(days=10),  # noqa: DTZ011 — naive local test date
+            status=Membership.Status.ACTIVE,
+        )
+
+    def _renewal_url(self, membership: Membership) -> str:
+        """Return the renewal action URL for a membership."""
+        return f"/api/v1/memberships/memberships/{membership.id}/renewal/"
+
+    def test_renewal_with_plan_id_swaps_plan_and_uses_new_plan_duration(self) -> None:
+        """plan_id without days switches the plan; default days = new plan's duration."""
+        membership = self._membership()
+        original_end = membership.end_date
+        response = self.client.post(
+            self._renewal_url(membership),
+            {"plan_id": self.other_plan.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["plan"], self.other_plan.id)
+        self.assertEqual(response.data["plan_name"], "Quarterly")
+        self.assertEqual(
+            date.fromisoformat(response.data["end_date"]),
+            original_end + timedelta(days=90),
+        )
+        membership.refresh_from_db()
+        self.assertEqual(membership.plan_id, self.other_plan.id)
+        self.assertEqual(membership.status, Membership.Status.ACTIVE)
+        # Same membership row is renewed — no new record is created.
+        self.assertEqual(Membership.objects.for_tenant(self.tenant).count(), 1)
+
+    def test_renewal_with_plan_id_and_explicit_days_prefers_days(self) -> None:
+        """An explicit days wins over the new plan's duration."""
+        membership = self._membership()
+        original_end = membership.end_date
+        response = self.client.post(
+            self._renewal_url(membership),
+            {"plan_id": self.other_plan.id, "days": 7},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["plan"], self.other_plan.id)
+        self.assertEqual(
+            date.fromisoformat(response.data["end_date"]),
+            original_end + timedelta(days=7),
+        )
+
+    def test_renewal_rejects_foreign_tenant_plan(self) -> None:
+        """A plan belonging to another tenant is rejected and changes nothing."""
+        membership = self._membership()
+        response = self.client.post(
+            self._renewal_url(membership),
+            {"plan_id": self.foreign_plan.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("plan_id", response.data)
+        membership.refresh_from_db()
+        self.assertEqual(membership.plan_id, self.plan.id)
+        self.assertEqual(
+            membership.end_date,
+            date.today() - timedelta(days=10),  # noqa: DTZ011 — naive local test date
+        )
+
+    def test_renewal_rejects_unknown_plan(self) -> None:
+        """A plan id that does not exist is rejected with a helpful detail."""
+        membership = self._membership()
+        response = self.client.post(
+            self._renewal_url(membership),
+            {"plan_id": 999999},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("plan_id", response.data)
+
+    def test_renewal_rejects_non_integer_plan_id(self) -> None:
+        """A non-integer plan id is rejected with a helpful detail."""
+        membership = self._membership()
+        response = self.client.post(
+            self._renewal_url(membership),
+            {"plan_id": "not-a-number"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("plan_id", response.data)
+
+    def test_days_only_renewal_keeps_current_plan(self) -> None:
+        """Legacy days-only renewal still extends the same plan."""
+        membership = self._membership()
+        original_end = membership.end_date
+        response = self.client.post(
+            self._renewal_url(membership),
+            {"days": 30},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["plan"], self.plan.id)
+        membership.refresh_from_db()
+        self.assertEqual(membership.plan_id, self.plan.id)
+        self.assertEqual(membership.end_date, original_end + timedelta(days=30))
+
+    def test_plan_swap_renewal_propagates_access_change(self) -> None:
+        """A plan-swap renewal still pushes the access change downstream."""
+        membership = self._membership()
+        with mock.patch.object(MembershipViewSet, "_propagate_access_change") as propagate:
+            response = self.client.post(
+                self._renewal_url(membership),
+                {"plan_id": self.other_plan.id},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(propagate.call_count, 1)
+        self.assertEqual(propagate.call_args.args[0].plan_id, self.other_plan.id)
+
+    def test_days_only_renewal_propagates_access_change(self) -> None:
+        """A legacy days-only renewal keeps propagating the access change."""
+        membership = self._membership()
+        with mock.patch.object(MembershipViewSet, "_propagate_access_change") as propagate:
+            response = self.client.post(
+                self._renewal_url(membership),
+                {"days": 30},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(propagate.call_count, 1)
 
 
 class MembershipPlanPlanTypeAPITests(APITestCase):
