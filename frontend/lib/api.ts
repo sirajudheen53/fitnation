@@ -2504,3 +2504,44 @@ export function updateAdminTenantStatus(
     token,
   });
 }
+
+/* ── Tenant module feature flags (issues #46/#63) ──────────────── */
+
+/** One toggleable module from the settings catalog. */
+export interface ModuleFeatureMeta {
+  key: string;
+  /** Settings-page display name. */
+  label: string;
+  description: string;
+  /** Value seeded for new tenants; re-enabling resets to this. */
+  default: boolean;
+}
+
+/** Resolved module flags + toggle catalog (GET /tenants/features/). */
+export interface TenantFeatureSettings {
+  flags: Record<string, boolean>;
+  catalog: ModuleFeatureMeta[];
+}
+
+/** Read the gym's module toggles (any tenant member). */
+export function fetchTenantFeatureSettings(
+  token: string,
+): Promise<TenantFeatureSettings> {
+  return request<TenantFeatureSettings>("/tenants/features/", { token });
+}
+
+/**
+ * Merge module-flag overrides (PATCH /tenants/features/ — owner-only).
+ * Partial: only the given keys change; the response carries the refreshed
+ * flags + catalog after persistence.
+ */
+export function updateTenantFeatureFlags(
+  flags: Record<string, boolean>,
+  token: string,
+): Promise<TenantFeatureSettings> {
+  return request<TenantFeatureSettings>("/tenants/features/", {
+    method: "PATCH",
+    body: { flags },
+    token,
+  });
+}

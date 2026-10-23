@@ -7,6 +7,7 @@ import { CreditCard, MessageCircle } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardBody } from "@/components/ui";
 import { GymCodeCard } from "@/features/settings/components/GymCodeCard";
+import { ModulesCard } from "@/features/settings/components/ModulesCard";
 import { getStoredUser } from "@/lib/auth";
 
 /** Settings index — the sidebar "Settings" entry lands here. */
@@ -49,6 +50,7 @@ export default function SettingsPage() {
       {ready ? (
         <div className="max-w-3xl space-y-4">
           <GymCodeCard />
+          <ModulesCard />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {items.map((item) => (
               <Link key={item.href} href={item.href} className="group">
