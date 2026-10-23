@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { CreditCard, MessageCircle } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardBody } from "@/components/ui";
+import { GymCodeCard } from "@/features/settings/components/GymCodeCard";
 import { getStoredUser } from "@/lib/auth";
 
 /** Settings index — the sidebar "Settings" entry lands here. */
@@ -46,18 +47,21 @@ export default function SettingsPage() {
   return (
     <DashboardLayout title="Settings">
       {ready ? (
-        <div className="grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
-          {items.map((item) => (
-            <Link key={item.href} href={item.href} className="group">
-              <Card className="h-full transition-colors group-hover:border-brand-400">
-                <CardBody className="space-y-2">
-                  <item.icon className="h-6 w-6 text-brand-600" />
-                  <h2 className="font-semibold text-gray-900">{item.title}</h2>
-                  <p className="text-sm text-gray-500">{item.description}</p>
-                </CardBody>
-              </Card>
-            </Link>
-          ))}
+        <div className="max-w-3xl space-y-4">
+          <GymCodeCard />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {items.map((item) => (
+              <Link key={item.href} href={item.href} className="group">
+                <Card className="h-full transition-colors group-hover:border-brand-400">
+                  <CardBody className="space-y-2">
+                    <item.icon className="h-6 w-6 text-brand-600" />
+                    <h2 className="font-semibold text-gray-900">{item.title}</h2>
+                    <p className="text-sm text-gray-500">{item.description}</p>
+                  </CardBody>
+                </Card>
+              </Link>
+            ))}
+          </div>
         </div>
       ) : (
         <div className="flex h-48 items-center justify-center text-sm text-gray-500">

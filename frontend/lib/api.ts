@@ -2440,9 +2440,15 @@ export interface WhatsappTestResult {
   detail?: string;
 }
 
-/** Current tenant (GET /tenants/me/). WATI fields may be absent pre-B9. */
-export function fetchTenant(token: string): Promise<Partial<TenantWhatsappConfig>> {
-  return request<Partial<TenantWhatsappConfig>>("/tenants/me/", { token });
+/** Current tenant payload (GET /tenants/me/). WATI fields may be absent pre-B9. */
+export type TenantMe = Partial<TenantWhatsappConfig> & {
+  /** Short code members type during gym lookup on app install (issue #60). */
+  gym_code?: string | null;
+};
+
+/** Current tenant (GET /tenants/me/). */
+export function fetchTenant(token: string): Promise<TenantMe> {
+  return request<TenantMe>("/tenants/me/", { token });
 }
 
 /**
