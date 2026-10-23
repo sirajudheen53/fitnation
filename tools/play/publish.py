@@ -166,6 +166,12 @@ class Play:
         finally:
             self.edit_delete(e)   # read-only: discard the empty edit
 
+    def edit_commit(self, edit_id: str):
+        # Play accounts with API auto-send-for-review disabled reject a plain
+        # commit (HTTP 400 changesNotSentForReview); the flag commits the edit
+        # as pending so it can be sent for review from the Play Console UI.
+        self.call("POST", f"/edits/{edit_id}:commit?changesNotSentForReview=true", payload={})
+
 
 def _token_from_sa(sa_file: str) -> str:
     try:
@@ -268,7 +274,7 @@ def cmd_release(args) -> int:
 
     if args.dry_run:
         print("dry-run: would create edit → (upload bundle) → (put track) → (put listing) → "
-              "(wipe+upload images) → ':commit'. No network calls made.")
+              "(wipe+upload images) → ':commit?changesNotSentForReview=true'. No network calls made.")
         return 0
 
     play = Play(args.package, args.sa_file, args.token_cmd)
@@ -302,9 +308,11 @@ def cmd_release(args) -> int:
                 play.call("POST", f"/edits/{edit}/listings/{args.lang}/{IMAGE_TYPES[img_type]}",
                           payload=p.read_bytes(), content_type=ctype, timeout=300, upload=True)
         play.call("PUT", f"/edits/{edit}/tracks/{args.track}", payload={"releases": [release]})
-        play.call("POST", f"/edits/{edit}:commit", payload={})
+        play.edit_commit(edit)
         print(f"✅ committed edit {edit}: track {args.track} now points at versionCode "
               f"[{code}], status {args.status}")
+        print("↳ edit uploaded+committed (changesNotSentForReview=true) — if the release stays "
+              "pending in Play, hit 'Send for review' in the Play Console UI")
         return 0
     except ApiError as e:
         print(f"discarding failed edit {edit} (nothing was published)", file=sys.stderr)
@@ -315,8 +323,9 @@ def cmd_release(args) -> int:
             print("404 'Item not found': the Play app shell (package name) may not exist yet, "
                   "OR the first AAB upload has not propagated from this SA yet (can take hours for brand-new apps)", file=sys.stderr)
         if "changesNotSentForReview" in e.body:
-            print("hint: commit was refused because this edit has pending changes that require review — re-run "
-                  "is identical (idempotent); Play asks for a review on first edits", file=sys.stderr)
+            print("hint: Play refused to auto-send this edit for review — publish.py commits with "
+                  "changesNotSentForReview=true, so the edit lands as pending in the Play Console: "
+                  "finish with 'Send for review' there (nothing was published; re-run is identical/idempotent)", file=sys.stderr)
         return 1
     finally:
         pass
@@ -340,14 +349,16 @@ def cmd_listing(args) -> int:
           f"({len(listing['shortDescription'])}/80 chars) full="
           f"({len(listing['fullDescription'])}/4000 chars)")
     if args.dry_run:
-        print("dry-run: create edit → PUT /listings/%s → ':commit'" % args.lang)
+        print("dry-run: create edit → PUT /listings/%s → ':commit?changesNotSentForReview=true'" % args.lang)
         return 0
     play = Play(args.package, args.sa_file, args.token_cmd)
     edit = play.edit_create(False)
     try:
         play.call("PUT", f"/edits/{edit}/listings/{args.lang}", payload=listing)
-        play.call("POST", f"/edits/{edit}:commit", payload={})
+        play.edit_commit(edit)
         print(f"✅ committed edit {edit}: listing updated")
+        print("↳ edit uploaded+committed (changesNotSentForReview=true) — if the listing stays "
+              "pending in Play, hit 'Send for review' in the Play Console UI")
         return 0
     except ApiError as e:
         print(f"discarding failed edit {edit} (nothing was published)", file=sys.stderr)
@@ -368,7 +379,7 @@ def cmd_assets(args) -> int:
         for p in paths:
             print(f"  {IMAGE_TYPES[key]}> {p.name} ({p.stat().st_size} bytes)")
     if args.dry_run:
-        print("dry-run: create edit → wipe+POST images per type → ':commit'")
+        print("dry-run: create edit → wipe+POST images per type → ':commit?changesNotSentForReview=true'")
         return 0
     play = Play(args.package, args.sa_file, args.token_cmd)
     edit = play.edit_create(False)
@@ -380,8 +391,10 @@ def cmd_assets(args) -> int:
                 ctype = "image/jpeg" if p.suffix.lower() in (".jpg", ".jpeg") else "image/png"
                 play.call("POST", f"/edits/{edit}/listings/{args.lang}/{IMAGE_TYPES[img_type]}",
                           payload=p.read_bytes(), content_type=ctype, timeout=300, upload=True)
-        play.call("POST", f"/edits/{edit}:commit", payload={})
+        play.edit_commit(edit)
         print(f"✅ committed edit {edit}: {sum(len(v) for v in assets.values())} image(s) replaced")
+        print("↳ edit uploaded+committed (changesNotSentForReview=true) — if the assets stay "
+              "pending in Play, hit 'Send for review' in the Play Console UI")
         return 0
     except ApiError as e:
         print(f"discarding failed edit {edit} (nothing was published)", file=sys.stderr)

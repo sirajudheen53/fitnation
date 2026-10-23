@@ -207,6 +207,34 @@ class CommandArgs(unittest.TestCase):
         self.assertEqual(code, 0)
 
 
+class EditCommitFlag(unittest.TestCase):
+    """Play accounts without API auto-send-for-review reject a plain edit commit
+    (HTTP 400 changesNotSentForReview) — every commit must carry the flag (#69)."""
+
+    def test_edit_commit_appends_changes_not_sent_for_review(self):
+        captured = {}
+
+        def fake_call(self, method, path, **kw):
+            captured["method"], captured["path"] = method, path
+            return {}
+
+        original = P.Play.call
+        P.Play.call = fake_call
+        try:
+            P.Play("com.test.app", "sa.json", None).edit_commit("edit-1")
+        finally:
+            P.Play.call = original
+        self.assertEqual(captured["method"], "POST")
+        self.assertIn(":commit?changesNotSentForReview=true", captured["path"])
+
+    def test_every_commit_line_carries_the_flag(self):
+        # guard all call sites + dry-run prints: no bare ":commit" may return
+        src = Path(P.__file__).read_text()
+        bare = [ln.strip() for ln in src.splitlines()
+                if ":commit" in ln and "changesNotSentForReview=true" not in ln]
+        self.assertEqual(bare, [], f"commit line(s) missing the flag: {bare}")
+
+
 class PlayUrlBuilding(unittest.TestCase):
     def test_call_targets_package_scoped_urls(self):
         # routing helper assertion: paths start with /edits and never embed credentials
