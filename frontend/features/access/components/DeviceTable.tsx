@@ -7,6 +7,7 @@ import {
   RefreshCw,
   DownloadCloud,
   Building2,
+  Trash2,
 } from "lucide-react";
 import { Alert, Badge, Button, Spinner } from "@/components/ui";
 import type { Branch } from "@/types/branch";
@@ -30,6 +31,8 @@ interface DeviceTableProps {
   onSync: (device: AccessDevice) => Promise<DeviceSyncResult>;
   onFetchEvents: (device: AccessDevice) => Promise<DeviceEventsResult>;
   onEdit: (device: AccessDevice) => void;
+  /** Ask the parent to open the delete confirmation for this device. */
+  onDelete: (device: AccessDevice) => void;
 }
 
 /** Group devices by branch, preserving the branch list order. */
@@ -70,6 +73,7 @@ export function DeviceTable({
   onSync,
   onFetchEvents,
   onEdit,
+  onDelete,
 }: DeviceTableProps) {
   const [busy, setBusy] = useState<Record<number, RowAction | undefined>>({});
   const [testResults, setTestResults] = useState<Record<number, DeviceTestResult>>({});
@@ -208,6 +212,15 @@ export function DeviceTable({
                               aria-label={`Edit ${device.name}`}
                             >
                               <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => onDelete(device)}
+                              aria-label={`Delete ${device.name}`}
+                              data-testid={`device-delete-btn-${device.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
                         </td>

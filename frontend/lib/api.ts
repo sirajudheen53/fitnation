@@ -1964,6 +1964,21 @@ export function updateDevice(
   });
 }
 
+/**
+ * Remove a device from the registry (DELETE /access/devices/{id}/).
+ * The backend may refuse when attendance logs, credentials, or queued
+ * commands still reference the device — the error detail is surfaced 1:1.
+ */
+export function deleteDevice(
+  id: number | string,
+  token: string,
+): Promise<void> {
+  return request<void>(`/access/devices/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
 /** Run the vendor adapter connection test against a device. */
 export function testDeviceConnection(
   id: number | string,

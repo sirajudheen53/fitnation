@@ -9,12 +9,14 @@ import { DeviceTable, DeviceTableLoading } from "@/features/access/components/De
 import { DeviceFormDialog } from "@/features/access/components/DeviceFormDialog";
 import { OverridePanel } from "@/features/access/components/OverridePanel";
 import { AccessLogViewer } from "@/features/access/components/AccessLogViewer";
+import { ConfirmDialog } from "@/features/admin/components/ConfirmDialog";
 import { Alert, Button, Spinner } from "@/components/ui";
 import { getToken } from "@/lib/auth";
 import { canAccessRoute } from "@/lib/permissions";
 import {
   createAccessOverride,
   createDevice,
+  deleteDevice,
   errorMessage,
   fetchAccessLogs,
   fetchAccessOverrides,
@@ -74,6 +76,9 @@ export default function DevicesPage() {
   const [editingDevice, setEditingDevice] = useState<AccessDevice | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
+  const [deletingDevice, setDeletingDevice] = useState<AccessDevice | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [overrideSaving, setOverrideSaving] = useState(false);
   const [overrideError, setOverrideError] = useState<unknown>(null);
 
@@ -163,6 +168,38 @@ export default function DevicesPage() {
     setEditingDevice(device);
     setSaveError(null);
     setDialogOpen(true);
+  };
+
+  const openDelete = (device: AccessDevice) => {
+    setDeleteError(null);
+    setDeletingDevice(device);
+  };
+
+  const handleDeleteConfirm = async () => {
+    const token = getToken();
+    const target = deletingDevice;
+    if (!token || !target) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteDevice(target.id, token);
+      setDevices((prev) => prev.filter((d) => d.id !== target.id));
+      setDeletingDevice(null);
+      toast.success(`${target.name} deleted`);
+      // Reconcile with the server — a delete can cascade beyond this row.
+      fetchDevices(token)
+        .then(setDevices)
+        .catch(() => undefined);
+    } catch (err) {
+      // Surface the server detail 1:1 (e.g. device still referenced by
+      // PunchLogRaw / credentials / queued commands) and keep the dialog
+      // open so the message stays visible.
+      const message = errorMessage(err);
+      setDeleteError(message);
+      toast.error(message);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleDeviceSubmit = async (data: AccessDeviceFormData) => {
@@ -308,6 +345,7 @@ export default function DevicesPage() {
           onSync={handleSync}
           onFetchEvents={handleFetchEvents}
           onEdit={openEdit}
+          onDelete={openDelete}
         />
       )}
 
@@ -348,6 +386,32 @@ export default function DevicesPage() {
         onSubmit={handleDeviceSubmit}
         onClose={() => setDialogOpen(false)}
       />
+
+      {deletingDevice && (
+        <ConfirmDialog
+          title={`Delete ${deletingDevice.name}?`}
+          confirmLabel="Delete"
+          destructive
+          busy={deleting}
+          onConfirm={handleDeleteConfirm}
+          onClose={() => setDeletingDevice(null)}
+        >
+          <p>
+            Serial{" "}
+            <span className="font-mono text-gray-900" data-testid="device-delete-serial">
+              {deletingDevice.serial_number}
+            </span>
+          </p>
+          <p data-testid="device-delete-warning">
+            Deleting stops attendance sync for this device until it is re-added.
+          </p>
+          {deleteError && (
+            <Alert variant="error" data-testid="device-delete-error">
+              {deleteError}
+            </Alert>
+          )}
+        </ConfirmDialog>
+      )}
     </DashboardLayout>
   );
 }
