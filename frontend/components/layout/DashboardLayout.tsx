@@ -15,6 +15,8 @@ import {
   Apple,
   ShoppingBag,
   MessageCircle,
+  MessageSquare,
+  Star,
   Utensils,
   TrendingUp,
   BarChart3,
@@ -38,27 +40,74 @@ interface DashboardLayoutProps {
   actions?: ReactNode;
 }
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/branches", label: "Branches", icon: Building2 },
-  { href: "/customers", label: "Customers", icon: Users },
-  { href: "/memberships", label: "Memberships", icon: CreditCard },
-  { href: "/payments", label: "Payments", icon: Wallet },
-  { href: "/attendance", label: "Attendance", icon: CalendarCheck },
-  { href: "/devices", label: "Access Devices", icon: Fingerprint },
-  { href: "/inventory", label: "Inventory", icon: Boxes },
-  { href: "/trainers", label: "Trainers", icon: Medal },
-  { href: "/pt-sessions", label: "PT Sessions", icon: CalendarClock },
-  { href: "/trainers/performance", label: "Trainer Performance", icon: TrendingUp },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/workouts", label: "Workouts", icon: Dumbbell },
-  { href: "/diet", label: "Diets", icon: Apple },
-  { href: "/marketplace", label: "Marketplace", icon: ShoppingBag },
-  { href: "/ai-coach", label: "AI Coach", icon: MessageCircle },
-  { href: "/notifications/settings", label: "Notifications", icon: Bell },
-  { href: "/nutrition", label: "Nutrition", icon: Utensils },
-  { href: "/settings", label: "Settings", icon: Settings },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+}
+
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    label: "Operations",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/branches", label: "Branches", icon: Building2 },
+      { href: "/customers", label: "Customers", icon: Users },
+      { href: "/memberships", label: "Memberships", icon: CreditCard },
+      { href: "/payments", label: "Payments", icon: Wallet },
+      { href: "/attendance", label: "Attendance", icon: CalendarCheck },
+      { href: "/devices", label: "Access Devices", icon: Fingerprint },
+    ],
+  },
+  {
+    label: "Trainers",
+    items: [
+      { href: "/trainers", label: "Trainers", icon: Medal },
+      { href: "/pt-sessions", label: "PT Sessions", icon: CalendarClock },
+      { href: "/trainers/performance", label: "Trainer Performance", icon: TrendingUp },
+    ],
+  },
+  {
+    label: "Programs",
+    items: [
+      { href: "/workouts", label: "Workouts", icon: Dumbbell },
+      { href: "/diet", label: "Diets", icon: Apple },
+      { href: "/nutrition", label: "Nutrition", icon: Utensils },
+      { href: "/ai-coach", label: "AI Coach", icon: MessageCircle },
+    ],
+  },
+  {
+    label: "Growth",
+    items: [
+      { href: "/inventory", label: "Inventory", icon: Boxes },
+      { href: "/marketplace", label: "Marketplace", icon: ShoppingBag },
+      { href: "/reviews", label: "Reviews", icon: Star },
+      { href: "/feedback", label: "Feedback", icon: MessageSquare },
+      { href: "/analytics", label: "Analytics", icon: BarChart3 },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
+      { href: "/notifications/settings", label: "Notifications", icon: Bell },
+      { href: "/settings", label: "Settings", icon: Settings },
+    ],
+  },
 ];
+
+const ADMIN_NAV_SECTION: NavSection = {
+  label: "Admin",
+  items: [
+    { href: "/admin", label: "Gyms", icon: Building2 },
+    { href: "/admin/plans", label: "Plans", icon: CreditCard },
+    { href: "/admin/onboard", label: "Onboard Gym", icon: UserPlus },
+  ],
+};
 
 export function DashboardLayout({ children, title, actions }: DashboardLayoutProps) {
   const pathname = usePathname();
@@ -67,14 +116,8 @@ export function DashboardLayout({ children, title, actions }: DashboardLayoutPro
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Platform admins are tenant-less — they get the operator nav only.
-  const navItems =
-    user?.role === "platform_admin"
-      ? [
-          { href: "/admin", label: "Gyms", icon: Building2 },
-          { href: "/admin/plans", label: "Plans", icon: CreditCard },
-          { href: "/admin/onboard", label: "Onboard Gym", icon: UserPlus },
-        ]
-      : NAV_ITEMS;
+  const navSections =
+    user?.role === "platform_admin" ? [ADMIN_NAV_SECTION] : NAV_SECTIONS;
 
   const handleLogout = () => {
     logout();
@@ -83,27 +126,38 @@ export function DashboardLayout({ children, title, actions }: DashboardLayoutPro
 
   const renderNav = (onNavigate?: () => void) => (
     <>
-      <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-4">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                active
-                  ? "bg-brand-50 text-brand-700"
-                  : "text-gray-700 hover:bg-gray-50 hover:text-gray-900",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+        {navSections.map((section) => (
+          <div key={section.label}>
+            <div className="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">
+              {section.label}
+            </div>
+            <div className="space-y-1">
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                const active =
+                  pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={onNavigate}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      active
+                        ? "bg-brand-50 text-brand-700"
+                        : "text-gray-700 hover:bg-gray-50 hover:text-gray-900",
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       <div className="border-t border-gray-100 p-4">
