@@ -2451,6 +2451,17 @@ export interface TenantWhatsappConfig {
   wati_api_key_configured: boolean;
 }
 
+/** Gupshup fields on the tenant payload (issue #66/#67) — same masked pattern as WATI. */
+export interface TenantGupshupConfig {
+  is_gupshup_enabled: boolean;
+  /** Sender/source identifier (phone number or source string) from Gupshup. */
+  gupshup_source: string;
+  /** Gupshup app (data bot) name messages are sent through. */
+  gupshup_app_name: string;
+  /** Read state only: whether a key is configured — never the secret. */
+  gupshup_api_key_configured: boolean;
+}
+
 /** Usage counters for the settings page (today's sends + budget). */
 export interface WhatsappStatus {
   otp_sent_today: number;
@@ -2463,8 +2474,8 @@ export interface WhatsappTestResult {
   detail?: string;
 }
 
-/** Current tenant payload (GET /tenants/me/). WATI fields may be absent pre-B9. */
-export type TenantMe = Partial<TenantWhatsappConfig> & {
+/** Current tenant payload (GET /tenants/me/). Channel fields may be absent pre-#66. */
+export type TenantMe = Partial<TenantWhatsappConfig & TenantGupshupConfig> & {
   /** Short code members type during gym lookup on app install (issue #60). */
   gym_code?: string | null;
 };
@@ -2490,14 +2501,40 @@ export function updateTenantWhatsappConfig(
   });
 }
 
-/** Send the welcome-template test message to a phone (POST /tenants/whatsapp/test/). */
+/**
+ * Save the Gupshup config (PATCH /tenants/me/ — issue #66/#67).
+ * The API key is write-only: only include it when the owner typed a new one;
+ * the backend keeps the stored secret otherwise.
+ */
+export function updateTenantGupshupConfig(
+  payload: {
+    is_gupshup_enabled: boolean;
+    gupshup_source: string;
+    gupshup_app_name: string;
+    gupshup_api_key?: string;
+  },
+  token: string,
+): Promise<Partial<TenantGupshupConfig>> {
+  return request<Partial<TenantGupshupConfig>>("/tenants/me/", {
+    method: "PATCH",
+    body: payload,
+    token,
+  });
+}
+
+/**
+ * Send the welcome-template test message to a phone (POST /tenants/whatsapp/test/).
+ * ``provider`` selects the WhatsApp BSP under test (issue #66/#67) — default
+ * "wati" keeps the pre-#66 call sites unchanged.
+ */
 export function sendWhatsappTest(
   phone: string,
   token: string,
+  provider: "wati" | "gupshup" = "wati",
 ): Promise<WhatsappTestResult> {
   return request<WhatsappTestResult>("/tenants/whatsapp/test/", {
     method: "POST",
-    body: { phone },
+    body: { phone, provider },
     token,
   });
 }

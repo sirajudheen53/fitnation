@@ -152,6 +152,8 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   "/settings": ["tenants.edit_tenant"],
   // FBOS-011 §6: WhatsApp/WATI config is owner-only (tenants.edit_tenant).
   "/settings/whatsapp": ["tenants.edit_tenant"],
+  // Issue #67: Gupshup WhatsApp config — same owner-only gate as WATI.
+  "/settings/gupshup": ["tenants.edit_tenant"],
   "/feedback": ["feedback.view_feedback"],
   "/feedback/new": ["feedback.create_feedback"],
   "/feedback/analytics": ["feedback.view_feedback"],
