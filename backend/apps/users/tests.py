@@ -4,6 +4,7 @@ from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -261,6 +262,21 @@ class UserAPITests(APITestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["role"], "manager")
+
+    def test_create_user_duplicate_email_returns_400(self) -> None:
+        """Creating a user with an already-taken email yields a 400 field error."""
+        response = self.client.post(
+            "/api/v1/users/users/",
+            {
+                "email": "owner@local.test",
+                "first_name": "Dup",
+                "last_name": "Manager",
+                "role": "manager",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("email", response.data)
+        self.assertIn("A user with this email already exists.", str(response.data["email"]))
 
     def test_assign_branch(self) -> None:
         """Owners can assign a user to a branch."""
@@ -600,6 +616,74 @@ class TrainerAPITests(APITestCase):
         self.assertEqual(response.data["experience_years"], 3)
         self.assertEqual(response.data["max_clients"], 25)
         self.assertEqual(len(response.data["certifications"]), 1)
+
+    def test_create_trainer_duplicate_email_same_tenant_returns_400(self) -> None:
+        """An email already used in this tenant yields a friendly 400, not a 500."""
+        response = self.client.post(
+            "/api/v1/users/trainers/",
+            {
+                "email": "trainer@local.test",
+                "first_name": "Dup",
+                "last_name": "Trainer",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("email", response.data)
+        self.assertIn("A user with this email already exists.", str(response.data["email"]))
+        self.assertEqual(Trainer.objects.count(), 1)
+
+    def test_create_trainer_duplicate_email_case_insensitive_returns_400(self) -> None:
+        """Casing differences do not bypass the platform-wide email check."""
+        response = self.client.post(
+            "/api/v1/users/trainers/",
+            {
+                "email": "TRAINER@LOCAL.TEST",
+                "first_name": "Dup",
+                "last_name": "Trainer",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("A user with this email already exists.", str(response.data["email"]))
+
+    def test_create_trainer_duplicate_email_other_tenant_returns_400(self) -> None:
+        """Emails taken by users in OTHER tenants (any role) are rejected too."""
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        create_user(
+            tenant=other_tenant,
+            email="taken@local.test",
+            first_name="Taken",
+            last_name="Elsewhere",
+            role=User.Role.CUSTOMER,
+        )
+        response = self.client.post(
+            "/api/v1/users/trainers/",
+            {
+                "email": "taken@local.test",
+                "first_name": "New",
+                "last_name": "Trainer",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("A user with this email already exists.", str(response.data["email"]))
+        self.assertEqual(Trainer.objects.count(), 1)
+
+    def test_create_trainer_integrity_error_returns_400(self) -> None:
+        """A stray IntegrityError is mapped to a 400 response, never a 500."""
+        with patch("apps.users.views.create_trainer", side_effect=IntegrityError("uniq")):
+            response = self.client.post(
+                "/api/v1/users/trainers/",
+                {
+                    "email": "racy@local.test",
+                    "first_name": "Race",
+                    "last_name": "Loser",
+                },
+                format="json",
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("A user with this email already exists.", str(response.data["detail"]))
 
     def test_partial_update_trainer(self) -> None:
         """Owners can update trainer profiles."""

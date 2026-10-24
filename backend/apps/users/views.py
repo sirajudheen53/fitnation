@@ -4,6 +4,7 @@ import logging
 from typing import ClassVar
 
 from django.contrib.auth import authenticate, get_user_model
+from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import AuthenticationFailed, NotFound, ValidationError
@@ -581,21 +582,27 @@ class TrainerViewSet(ViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        trainer = create_trainer(
-            tenant=request.tenant,
-            email=data["email"],
-            first_name=data["first_name"],
-            last_name=data["last_name"],
-            phone=data.get("phone", ""),
-            password=data.get("password", ""),
-            specialization=data.get("specialization", ""),
-            bio=data.get("bio", ""),
-            certifications=data.get("certifications", []),
-            experience_years=data.get("experience_years", 0),
-            max_clients=data.get("max_clients", 50),
-            profile_photo=data.get("profile_photo", ""),
-            actor=request.user,
-        )
+        try:
+            trainer = create_trainer(
+                tenant=request.tenant,
+                email=data["email"],
+                first_name=data["first_name"],
+                last_name=data["last_name"],
+                phone=data.get("phone", ""),
+                password=data.get("password", ""),
+                specialization=data.get("specialization", ""),
+                bio=data.get("bio", ""),
+                certifications=data.get("certifications", []),
+                experience_years=data.get("experience_years", 0),
+                max_clients=data.get("max_clients", 50),
+                profile_photo=data.get("profile_photo", ""),
+                actor=request.user,
+            )
+        except IntegrityError as exc:
+            # Safety net: a constraint the serializer check missed (e.g. a
+            # concurrent insert winning the email race) is a client error,
+            # never a 500.
+            raise ValidationError({"detail": "A user with this email already exists."}) from exc
         # Trainer invitation (#66): the verification link rides the gym's
         # WhatsApp when configured; email is the last resort.
         send_verification_message(trainer.user, request)

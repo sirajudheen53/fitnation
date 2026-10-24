@@ -9,6 +9,16 @@ from apps.users.auth import AuthToken
 from apps.users.models import Trainer, TrainerCustomerAssignment, TrainerSchedule, User
 
 
+def _reject_duplicate_email(email: str) -> None:
+    """Reject emails already taken by ANY platform user (case-insensitive).
+
+    ``User.email`` is unique platform-wide; checking here surfaces the
+    collision as a 400 field error instead of an IntegrityError 500.
+    """
+    if email and User.objects.filter(email__iexact=email.strip()).exists():
+        raise serializers.ValidationError({"email": "A user with this email already exists."})
+
+
 class UserSerializer(serializers.ModelSerializer):
     """Serialize user details."""
 
@@ -39,6 +49,11 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating a new user."""
+
+    # Declared so DRF's model-derived UniqueValidator (exact-match only) is
+    # not attached — a casing-only duplicate would slip past it and 500 at
+    # insert. Uniqueness is enforced case-insensitively in ``validate``.
+    email = serializers.EmailField()
 
     password = serializers.CharField(
         write_only=True,
@@ -81,6 +96,11 @@ class UserCreateSerializer(serializers.ModelSerializer):
         }:
             raise serializers.ValidationError("Managers cannot create owners or other managers.")
         return value
+
+    def validate(self, data: dict) -> dict:
+        """Reject emails already used by any platform user."""
+        _reject_duplicate_email(data.get("email", ""))
+        return data
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
@@ -250,6 +270,11 @@ class TrainerCreateSerializer(serializers.Serializer):
             except (json.JSONDecodeError, ValueError):
                 raise serializers.ValidationError({"certifications": "Value must be valid JSON."}) from None
         return super().to_internal_value(data)
+
+    def validate(self, data: dict) -> dict:
+        """Reject emails already used by any platform user."""
+        _reject_duplicate_email(data.get("email", ""))
+        return data
 
 
 class TrainerUpdateSerializer(serializers.ModelSerializer):
