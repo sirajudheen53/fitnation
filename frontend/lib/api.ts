@@ -527,6 +527,7 @@ import {
   PaymentListResponse,
   PaymentStatus,
   RevenueSummary,
+  SendPaymentLinkResponse,
 } from "@/types/payment";
 
 /**
@@ -572,6 +573,15 @@ export function updatePayment(
 
 export function fetchRevenueSummary(token: string): Promise<RevenueSummary> {
   return request<RevenueSummary>("/payments/revenue-summary/", { token });
+}
+
+/**
+ * POST /payments/{id}/send-link/ (issue #72) — create a Razorpay payment
+ * link for a pending payment and deliver it over WhatsApp (→ SMS → email).
+ * A resend inside the backend cooldown reports status "already_sent".
+ */
+export function sendPaymentLink(id: number | string, token: string): Promise<SendPaymentLinkResponse> {
+  return request<SendPaymentLinkResponse>(`/payments/${id}/send-link/`, { method: "POST", token });
 }
 
 /* Invoices */

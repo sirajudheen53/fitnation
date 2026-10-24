@@ -5,7 +5,8 @@ import { Eye } from "lucide-react";
 import { Badge } from "@/components/ui";
 import type { Payment, PaymentKind, PaymentStatus } from "@/types/payment";
 
-const STATUS_VARIANTS: Record<PaymentStatus, "success" | "warning" | "danger" | "info"> = {
+/** Badge variant per payment status — shared with the pending-payments queue (issue #72). */
+export const STATUS_VARIANTS: Record<PaymentStatus, "success" | "warning" | "danger" | "info"> = {
   completed: "success",
   pending: "warning",
   failed: "danger",

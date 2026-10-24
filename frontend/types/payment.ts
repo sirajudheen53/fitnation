@@ -15,17 +15,32 @@ export interface Payment {
   id: number;
   customer_id: number;
   customer_name: string;
+  /** Member phone (issue #72 pending-payments queue); null when unset. */
+  customer_phone?: string | null;
   amount: string;
   method: PaymentMethod;
   status: PaymentStatus;
   /** Defaults to "membership" backend-side; admission fees carry kind=admission. */
   kind: PaymentKind;
   membership_id: number | null;
+  /** Plan name of the linked membership, when any (issue #72 queue). */
+  plan_name?: string | null;
   invoice_id: number | null;
   notes: string | null;
   payment_date: string;
   created_at: string;
   updated_at: string;
+}
+
+/** Response of POST /payments/{id}/send-link/ (issue #72). */
+export interface SendPaymentLinkResponse {
+  status: "sent" | "already_sent" | "skipped";
+  reason?: string | null;
+  channel?: string | null;
+  provider?: string | null;
+  payment_link_url?: string | null;
+  resend_allowed_after?: string | null;
+  payment?: Payment;
 }
 
 export interface PaymentFormData {
