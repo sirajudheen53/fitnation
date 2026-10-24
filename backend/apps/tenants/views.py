@@ -92,23 +92,35 @@ class WhatsappTestSendView(APIView):
 
         ``provider`` (``wati`` default | ``gupshup``, issue #66/#67) selects
         the WhatsApp BSP under test — the chosen provider's own outcome is
-        reported, never a fallback to the other one.
+        reported, never a fallback to the other one. ``provider_status`` /
+        ``message_id`` carry the provider's verbatim response (issue #73):
+        the UI shows SUCCESS only when the provider accepted the message.
 
         Args:
             request: The incoming DRF request.
 
         Returns:
-            ``{status, detail}`` matching the frontend's ``WhatsappTestResult``.
+            ``{status, detail, provider, provider_status, message_id}``
+            matching the frontend's ``WhatsappTestResult``.
         """
         body = WhatsappTestSendSerializer(data=request.data)
         body.is_valid(raise_exception=True)
-        log = send_whatsapp_test(
+        provider = body.validated_data.get("provider", "wati")
+        outcome = send_whatsapp_test(
             request.tenant,
             body.validated_data["phone"],
             actor=request.user,
-            provider=body.validated_data.get("provider", "wati"),
+            provider=provider,
         )
-        return Response({"status": log.status, "detail": log.error_message})
+        return Response(
+            {
+                "status": outcome.log.status,
+                "detail": outcome.detail,
+                "provider": provider,
+                "provider_status": outcome.provider_status,
+                "message_id": outcome.provider_message_id,
+            }
+        )
 
 
 class WhatsappStatusView(APIView):

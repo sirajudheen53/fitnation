@@ -38,6 +38,9 @@ class NotificationLogViewSet(ReadOnlyModelViewSet):
         type_param = self.request.query_params.get("notification_type")
         if type_param:
             queryset = queryset.filter(notification_type=type_param)
+        provider_param = self.request.query_params.get("provider")
+        if provider_param:
+            queryset = queryset.filter(provider=provider_param)
         customer = self.request.query_params.get("customer")
         if customer:
             queryset = queryset.filter(customer_id=customer)

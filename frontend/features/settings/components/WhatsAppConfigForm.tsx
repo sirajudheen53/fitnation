@@ -140,7 +140,9 @@ export function WhatsAppConfigForm() {
       setTestResult({
         ok,
         message: ok
-          ? `Test message sent to +91${testPhone.trim()} — check the phone.`
+          ? `Test message sent to +91${testPhone.trim()} — check the phone.` +
+            `${result.provider_status ? ` Provider accepted it (status: ${result.provider_status}).` : ""}` +
+            `${result.message_id ? ` Message id: ${result.message_id}.` : ""}`
           : `Send finished with status "${result.status}"${result.detail ? `: ${result.detail}` : ""}.`,
       });
     } catch (err) {

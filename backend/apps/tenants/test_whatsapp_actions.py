@@ -1,12 +1,15 @@
 """WhatsApp test-send + status endpoints (FBOS-011 §6).
 
 Contract = ``frontend/lib/api.ts``:
-- ``WhatsappTestResult`` → ``{status, detail?}`` where ``status`` is the
-  ``NotificationLog`` status ("sent"/"failed"/"skipped") and failure modes are
-  non-500.
+- ``WhatsappTestResult`` → ``{status, detail?, provider, provider_status?,
+  message_id?}`` where ``status`` is the ``NotificationLog`` status
+  ("sent"/"failed"/"skipped"), failure modes are non-500, and
+  ``provider_status``/``message_id`` echo the provider's verbatim response
+  (issue #73).
 - ``WhatsappStatus`` → ``{otp_sent_today, invites_sent_today, daily_cap}``.
 """
 
+import json
 from datetime import timedelta
 from unittest import mock
 from unittest.mock import MagicMock
@@ -23,6 +26,13 @@ from apps.users.models import AuthToken, User
 
 TEST_URL = "/api/v1/tenants/whatsapp/test/"
 STATUS_URL = "/api/v1/tenants/whatsapp/status/"
+
+# The Gupshup test-send template is settings-driven (approved per tenant in
+# the Gupshup console); the tests pin it so defaults can't drift silently.
+TEST_TEMPLATE_SETTINGS = {
+    "GUPSHUP_TEST_TEMPLATE_NAME": "fitnation_test_welcome",
+    "GUPSHUP_TEST_TEMPLATE_PARAMS": "Test Runner,Test Gym",
+}
 
 
 class WhatsappActionTestBase(APITestCase):
@@ -78,6 +88,8 @@ class WhatsappTestSendTests(WhatsappActionTestBase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "sent")
+        self.assertEqual(response.data["provider"], "wati")
+        self.assertEqual(response.data["message_id"], "wamid.test")
 
         log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
         self.assertEqual(log.notification_type, NotificationLog.NotificationType.WELCOME)
@@ -172,7 +184,7 @@ class WhatsappTestSendTests(WhatsappActionTestBase):
         self.assertEqual(response.status_code, 401)
 
 
-@override_settings(TENANT_WATI_OTP_DAILY_CAP=200)
+@override_settings(TENANT_WATI_OTP_DAILY_CAP=200, **TEST_TEMPLATE_SETTINGS)
 class GupshupTestSendTests(WhatsappActionTestBase):
     """provider=gupshup test sends (issue #66/#67) — the chosen BSP's own
     outcome, never a silent fallback to WATI."""
@@ -191,7 +203,10 @@ class GupshupTestSendTests(WhatsappActionTestBase):
         tenant.save()
 
     def test_gupshup_test_send_success(self) -> None:
-        """provider=gupshup on a Gupshup-only tenant → sent + audited."""
+        """provider=gupshup on a Gupshup-only tenant → sent + audited.
+
+        (issue #73) The response carries the provider's verbatim status word.
+        """
         self.configure_gupshup(self.tenant)
         self.auth(self.owner)
         with mock.patch("apps.notifications.services.channels.requests.post") as post:
@@ -205,13 +220,97 @@ class GupshupTestSendTests(WhatsappActionTestBase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "sent")
-        log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
-        self.assertEqual(log.provider, "gupshup")
-        self.assertEqual(log.channel, "whatsapp")
+        self.assertEqual(response.data["provider"], "gupshup")
+        self.assertEqual(response.data["provider_status"], "success")
         _, kwargs = post.call_args
         self.assertEqual(kwargs["data"]["destination"], "919876543210")
         self.assertEqual(kwargs["data"]["source"], "911234567890")
         self.assertEqual(kwargs["headers"], {"apikey": "secret-gup-key"})
+        log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
+        self.assertEqual(log.provider, "gupshup")
+        self.assertEqual(log.channel, "whatsapp")
+
+    def test_gupshup_test_send_delivers_an_approved_template_payload(self) -> None:
+        """The gupshup leg sends a TEMPLATE message — not freeform text (issue #73).
+
+        Freeform business-initiated text is provider-ACKed but silently never
+        delivered; the approved template is what the tenant's real sends ride.
+        """
+        self.configure_gupshup(self.tenant)
+        self.auth(self.owner)
+        with mock.patch("apps.notifications.services.channels.requests.post") as post:
+            post.return_value.raise_for_status = MagicMock()
+            post.return_value.json = MagicMock(return_value={"status": "submitted", "messageId": "gs-1"})
+            response = self.client.post(
+                TEST_URL,
+                {"phone": "+919876543210", "provider": "gupshup"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "sent")
+        # The provider response verbatim on the wire + audited.
+        self.assertEqual(response.data["provider_status"], "submitted")
+        self.assertEqual(response.data["message_id"], "gs-1")
+        _, kwargs = post.call_args
+        sent_message = json.loads(kwargs["data"]["message"])
+        self.assertEqual(sent_message["type"], "template")
+        self.assertEqual(sent_message["name"], TEST_TEMPLATE_SETTINGS["GUPSHUP_TEST_TEMPLATE_NAME"])
+        self.assertEqual(
+            sent_message["params"],
+            TEST_TEMPLATE_SETTINGS["GUPSHUP_TEST_TEMPLATE_PARAMS"].split(","),
+        )
+        log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
+        self.assertEqual(log.status, NotificationLog.Status.SENT)
+        self.assertEqual(log.wati_message_id, "gs-1")
+        self.assertEqual(log.provider, "gupshup")
+
+    def test_gupshup_test_send_fails_on_a_non_accepted_body_with_verbatim_text(self) -> None:
+        """HTTP 2xx whose body is not an acceptance → failed, provider text verbatim."""
+        self.configure_gupshup(self.tenant)
+        self.auth(self.owner)
+        with mock.patch("apps.notifications.services.channels.requests.post") as post:
+            post.return_value.raise_for_status = MagicMock()
+            post.return_value.json = MagicMock(
+                return_value={"status": "error", "message": "Invalid message type"}
+            )
+            response = self.client.post(
+                TEST_URL,
+                {"phone": "+919876543210", "provider": "gupshup"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "failed")
+        self.assertEqual(response.data["provider_status"], "error")
+        self.assertIn("Invalid message type", response.data["detail"])
+        log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
+        self.assertEqual(log.status, NotificationLog.Status.FAILED)
+        self.assertIn("Invalid message type", log.error_message)
+
+    def test_gupshup_test_send_surfaces_the_provider_error_body_verbatim(self) -> None:
+        """A transport failure carries the provider's response body verbatim."""
+        import requests as requests_lib
+
+        self.configure_gupshup(self.tenant)
+        self.auth(self.owner)
+        http_error = requests_lib.HTTPError("500 Server Error for url")
+        http_error.response = MagicMock(text='{"message": {"message": "Gupshup upstream exploded"}}')
+        with mock.patch("apps.notifications.services.channels.requests.post") as post:
+            post.side_effect = http_error
+            response = self.client.post(
+                TEST_URL,
+                {"phone": "+919876543210", "provider": "gupshup"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "failed")
+        # The verbatim provider body, not the requests exception summary.
+        self.assertIn("Gupshup upstream exploded", response.data["detail"])
+        log = NotificationLog.objects.for_tenant(self.tenant).latest("id")
+        self.assertEqual(log.status, NotificationLog.Status.FAILED)
+        self.assertIn("Gupshup upstream exploded", log.error_message)
 
     def test_gupshup_test_send_does_not_fall_back_to_wati(self) -> None:
         """provider=gupshup with Gupshup off → skipped even though WATI works."""
@@ -225,6 +324,7 @@ class GupshupTestSendTests(WhatsappActionTestBase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "skipped")
+        self.assertEqual(response.data["provider"], "gupshup")
         self.assertIn("Gupshup is not enabled", response.data["detail"])
         wati_post.assert_not_called()
 

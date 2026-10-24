@@ -1739,14 +1739,19 @@ export function sendTestNotification(
   });
 }
 
-/** List notification logs, optionally filtered by status and/or type. */
+/** List notification logs, optionally filtered by status, type and/or provider. */
 export function fetchNotificationLogs(
   token: string,
-  params?: { status?: NotificationStatus; notification_type?: NotificationType },
+  params?: {
+    status?: NotificationStatus;
+    notification_type?: NotificationType;
+    provider?: string;
+  },
 ): Promise<NotificationLogListResponse> {
   const query = new URLSearchParams();
   if (params?.status) query.set("status", params.status);
   if (params?.notification_type) query.set("notification_type", params.notification_type);
+  if (params?.provider) query.set("provider", params.provider);
   const qs = query.toString();
   return request<NotificationLogListResponse>(
     `/notifications/logs/${qs ? `?${qs}` : ""}`,
@@ -2490,6 +2495,11 @@ export interface WhatsappStatus {
 export interface WhatsappTestResult {
   status: string;
   detail?: string;
+  provider?: string;
+  /** The provider's own response status word, verbatim (Gupshup: "submitted"). */
+  provider_status?: string;
+  /** The provider's message id, when it returned one. */
+  message_id?: string;
 }
 
 /** Current tenant payload (GET /tenants/me/). Channel fields may be absent pre-#66. */

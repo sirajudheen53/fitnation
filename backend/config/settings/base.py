@@ -221,6 +221,15 @@ MSG91_INVITE_TEMPLATE_ID = env("MSG91_INVITE_TEMPLATE_ID", default="")
 # Tenant model; this only sizes the HTTP timeout for its /wa/api/v1/msg API.
 GUPSHUP_TIMEOUT = 10
 
+# Settings-page WhatsApp test send (issue #73). Gupshup's /wa/api/v1/msg API
+# accepts (202 "submitted") any submit — including business-initiated freeform
+# text it will silently never deliver — so the test must ride an APPROVED
+# template in the tenant's Gupshup app, matching the template names the gym
+# approved (e.g. "welcome"; verify names/params in the Gupshup console).
+GUPSHUP_TEST_TEMPLATE_NAME = env("GUPSHUP_TEST_TEMPLATE_NAME", default="welcome")
+# Positional {{1}}..{{n}} values for the test template, comma-separated.
+GUPSHUP_TEST_TEMPLATE_PARAMS = env("GUPSHUP_TEST_TEMPLATE_PARAMS", default="")
+
 # App invite deep link (FBOS-011 §5.4). The web base must host the App-Links
 # verification file; the custom scheme is handled by the Android manifest.
 APP_INVITE_WEB_BASE = env("APP_INVITE_WEB_BASE", default="https://app.yougetfitwithus.com")

@@ -1,22 +1,29 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { WhatsAppConfigForm } from "@/features/settings/components/WhatsAppConfigForm";
 import { GupshupConfigForm } from "@/features/settings/components/GupshupConfigForm";
+import { WhatsAppChannels } from "@/features/settings/components/WhatsAppChannels";
 import {
   fetchTenant,
+  fetchNotificationLogs,
   fetchWhatsappStatus,
   sendWhatsappTest,
   updateTenantGupshupConfig,
   updateTenantWhatsappConfig,
   errorMessage,
+  unwrapNotificationLogs,
 } from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({
   errorMessage: jest.fn((err) => (err instanceof Error ? err.message : "error")),
   fetchTenant: jest.fn(),
+  fetchNotificationLogs: jest.fn(),
   fetchWhatsappStatus: jest.fn(),
   sendWhatsappTest: jest.fn(),
   updateTenantGupshupConfig: jest.fn(),
   updateTenantWhatsappConfig: jest.fn(),
+  unwrapNotificationLogs: jest.fn(
+    (res: { results: unknown[] } | unknown[]) => (Array.isArray(res) ? res : res?.results ?? []),
+  ),
 }));
 
 jest.mock("@/lib/auth", () => ({
@@ -24,15 +31,19 @@ jest.mock("@/lib/auth", () => ({
 }));
 
 const mockedFetchTenant = fetchTenant as jest.Mock;
+const mockedFetchNotificationLogs = fetchNotificationLogs as jest.Mock;
 const mockedFetchWhatsappStatus = fetchWhatsappStatus as jest.Mock;
 const mockedSendWhatsappTest = sendWhatsappTest as jest.Mock;
 const mockedUpdate = updateTenantWhatsappConfig as jest.Mock;
 const mockedGupshupUpdate = updateTenantGupshupConfig as jest.Mock;
+const mockedUnwrapLogs = unwrapNotificationLogs as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockedFetchTenant.mockResolvedValue({});
   mockedFetchWhatsappStatus.mockRejectedValue(new Error("not implemented yet"));
+  // Logs default to empty — the "last test" line reads "none yet".
+  mockedFetchNotificationLogs.mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
 });
 
 describe("WhatsAppConfigForm", () => {
@@ -242,5 +253,138 @@ describe("GupshupConfigForm (issue #67)", () => {
     fireEvent.click(screen.getByRole("button", { name: /Send test message/i }));
 
     expect(await screen.findByText(/status "failed"/i)).toBeInTheDocument();
+  });
+
+  it("shows the provider's verbatim acceptance after a successful send (issue #73)", async () => {
+    // SUCCESS reflects the provider's own response (status + message id),
+    // not merely an HTTP 200.
+    mockedSendWhatsappTest.mockResolvedValue({
+      status: "sent",
+      detail: "",
+      provider: "gupshup",
+      provider_status: "submitted",
+      message_id: "gs-ack-1",
+    });
+    render(<GupshupConfigForm />);
+
+    await screen.findByTestId("gupshup-key-missing");
+    fireEvent.change(screen.getByLabelText("Phone to message"), { target: { value: "9876543210" } });
+    fireEvent.click(screen.getByRole("button", { name: /Send test message/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Test message sent to \+919876543210/i);
+    expect(alert).toHaveTextContent(/Provider accepted it \(status: submitted\)/i);
+    expect(alert).toHaveTextContent(/Message id: gs-ack-1/i);
+  });
+});
+
+describe("WhatsAppChannels — settings-index cards (issue #73)", () => {
+  const configuredTenant = {
+    is_wati_enabled: false,
+    wati_endpoint: "",
+    wati_api_key_configured: false,
+    is_gupshup_enabled: true,
+    gupshup_source: "918281265866",
+    gupshup_app_name: "getfitwithus",
+    gupshup_api_key_configured: true,
+  };
+
+  it("shows the live configured state matching the saved backend payload", async () => {
+    mockedFetchTenant.mockResolvedValue(configuredTenant);
+    // The last gupshup welcome test send — sent, from today's audit log.
+    mockedFetchNotificationLogs.mockImplementation((_t, params) =>
+      Promise.resolve({
+        count: params?.provider === "gupshup" ? 1 : 0,
+        next: null,
+        previous: null,
+        results: params?.provider === "gupshup" ? [
+          {
+            id: 40,
+            notification_type: "welcome",
+            status: "sent",
+            provider: "gupshup",
+            channel: "whatsapp",
+            content: "Welcome to Hash Fit",
+            wati_message_id: "",
+            error_message: "",
+            created_at: "2026-10-24T14:18:11.212272Z",
+            updated_at: "2026-10-24T14:18:11.212272Z",
+          },
+        ] : [],
+      }),
+    );
+    render(<WhatsAppChannels />);
+
+    // Gupshup card: enabled + saved details + key state, live from the API.
+    expect(await screen.findByTestId("gupshup-channel-active")).toHaveTextContent("Enabled");
+    const gupshupDetails = screen.getAllByTestId("gupshup-channel-detail");
+    expect(gupshupDetails.some((el) => el.textContent === "Source: 918281265866")).toBe(true);
+    expect(gupshupDetails.some((el) => el.textContent === "App: getfitwithus")).toBe(true);
+    expect(screen.getByTestId("gupshup-channel-key-configured")).toHaveTextContent("Configured");
+    expect(screen.getByTestId("gupshup-channel-last-test")).toHaveTextContent(/Last test: sent/);
+
+    // WATI card stays honest: disabled, no endpoint, no key.
+    expect(screen.getByTestId("wati-channel-inactive")).toHaveTextContent("Not enabled");
+    expect(screen.getByTestId("wati-channel-key-missing")).toHaveTextContent("Not configured");
+    expect(screen.getByTestId("wati-channel-last-test")).toHaveTextContent(/none yet/);
+
+    // Both cards link through to their dedicated config pages.
+    const gupshupCard = screen.getByTestId("gupshup-channel-card").closest("a");
+    expect(gupshupCard).toHaveAttribute("href", "/settings/gupshup");
+    const watiCard = screen.getByTestId("wati-channel-card").closest("a");
+    expect(watiCard).toHaveAttribute("href", "/settings/whatsapp");
+  });
+
+  it("starts 'Not enabled' against a payload without the channel fields", async () => {
+    mockedFetchTenant.mockResolvedValue({});
+    render(<WhatsAppChannels />);
+
+    expect(await screen.findByTestId("wati-channel-inactive")).toHaveTextContent("Not enabled");
+    expect(screen.getByTestId("gupshup-channel-inactive")).toHaveTextContent("Not enabled");
+    expect(screen.getByTestId("wati-channel-key-missing")).toBeInTheDocument();
+    expect(screen.getByTestId("gupshup-channel-key-missing")).toBeInTheDocument();
+  });
+
+  it("shows the last failed test with the provider's error text verbatim", async () => {
+    mockedFetchTenant.mockResolvedValue(configuredTenant);
+    mockedFetchNotificationLogs.mockImplementation(
+      (_token: string, params?: { provider?: string }) =>
+        Promise.resolve({
+          count: params?.provider === "gupshup" ? 1 : 0,
+          next: null,
+          previous: null,
+          results:
+            params?.provider === "gupshup"
+              ? [
+                  {
+                    id: 41,
+                    notification_type: "welcome",
+                    status: "failed",
+                    provider: "gupshup",
+                    channel: "whatsapp",
+                    content: "Welcome to Hash Fit",
+                    wati_message_id: "",
+                    error_message: 'Invalid template name "fitnation_otp"',
+                    created_at: "2026-10-24T14:20:11.212272Z",
+                    updated_at: "2026-10-24T14:20:11.212272Z",
+                  },
+                ]
+              : [],
+        }),
+    );
+    render(<WhatsAppChannels />);
+
+    const lastTest = await screen.findByTestId("gupshup-channel-last-test");
+    expect(lastTest).toHaveTextContent(/failed/);
+    expect(lastTest).toHaveTextContent(/Invalid template name/i);
+  });
+
+  it("degrades gracefully when the logs endpoint is unavailable", async () => {
+    mockedFetchTenant.mockResolvedValue(configuredTenant);
+    mockedFetchNotificationLogs.mockRejectedValue(new Error("403"));
+    render(<WhatsAppChannels />);
+
+    expect(await screen.findByTestId("gupshup-channel-active")).toBeInTheDocument();
+    expect(screen.getByTestId("gupshup-channel-last-test")).toHaveTextContent(/Last test: none yet/);
   });
 });

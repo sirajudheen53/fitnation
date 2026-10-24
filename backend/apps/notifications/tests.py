@@ -405,6 +405,30 @@ class NotificationAPITests(APITestCase):
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["status"], "failed")
 
+    def test_filter_logs_by_provider(self) -> None:
+        """Logs can be filtered by provider (issue #73 settings-page last-test)."""
+        NotificationLog.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            notification_type=NotificationLog.NotificationType.WELCOME,
+            status=NotificationLog.Status.SENT,
+            channel="whatsapp",
+            provider="wati",
+        )
+        NotificationLog.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            notification_type=NotificationLog.NotificationType.WELCOME,
+            status=NotificationLog.Status.FAILED,
+            channel="whatsapp",
+            provider="gupshup",
+        )
+        response = self.client.get("/api/v1/notifications/logs/?notification_type=welcome&provider=gupshup")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["provider"], "gupshup")
+        self.assertEqual(response.data["results"][0]["notification_type"], "welcome")
+
     def test_get_settings(self) -> None:
         """GET settings returns the Wati config (masked key)."""
         response = self.client.get("/api/v1/notifications/settings/")

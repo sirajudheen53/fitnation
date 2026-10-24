@@ -7,7 +7,8 @@ export type NotificationType =
   | "check_in"
   | "membership_expiry"
   | "workout_assigned"
-  | "payment_received";
+  | "payment_received"
+  | "welcome";
 
 /** Wati configuration for the tenant (settings endpoint). */
 export interface WatiSettings {
@@ -30,6 +31,8 @@ export interface NotificationLog {
   customer_name: string;
   notification_type: NotificationType;
   status: NotificationStatus;
+  /** The transport that carried the attempt (wati | gupshup | msg91 | …). */
+  provider?: string;
   content: string;
   wati_message_id: string;
   error_message: string;
