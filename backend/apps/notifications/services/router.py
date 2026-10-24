@@ -75,6 +75,10 @@ __all__ = [
 # convention, so ``fitnation_app_invite`` works identically over Gupshup.
 WHATSAPP_TEMPLATE_NAMES: dict[str, str] = {
     "app_invite": "fitnation_app_invite",
+    # Issue #72: pending-payment nudge with a Razorpay payment link. Body:
+    # "Hi {{1}}, your payment of ₹{{2}} for {{3}} is pending. Pay securely
+    # online here: {{4}}" — params (customer_name, amount, gym_name, link).
+    "payment_link": "fitnation_payment_link",
 }
 
 

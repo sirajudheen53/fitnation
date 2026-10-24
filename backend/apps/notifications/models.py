@@ -18,6 +18,7 @@ class NotificationLog(TenantModelMixin):
         MEMBERSHIP_EXPIRY = "membership_expiry", "Membership Expiry"
         WORKOUT_ASSIGNED = "workout_assigned", "Workout Assigned"
         PAYMENT_RECEIVED = "payment_received", "Payment Received"
+        PAYMENT_LINK = "payment_link", "Payment Link"
         APP_INVITE = "app_invite", "App Invite"
         OTP = "otp", "OTP Delivery"
         WELCOME = "welcome", "Welcome"

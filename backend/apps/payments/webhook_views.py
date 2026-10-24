@@ -8,6 +8,8 @@ Supported events:
 - ``payment.captured`` / ``payment.authorized`` → mark payment paid, generate invoice
 - ``payment.failed`` → mark payment failed with failure reason
 - ``refund.processed`` → mark refund/payment refunded
+- ``payment_link.paid`` → mark the payment-link payment paid (issue #72),
+  generate invoice, fire the ``payment_received`` notification
 """
 
 from __future__ import annotations
@@ -125,6 +127,56 @@ def _handle_payment_failed(payload: dict[str, Any]) -> Payment | None:
     return payment
 
 
+def _handle_payment_link_paid(payload: dict[str, Any]) -> Payment | None:
+    """Mark a payment as paid on ``payment_link.paid`` (issue #72).
+
+    The payment link carries ``reference_id`` = our Payment id; fall back to
+    the stored ``razorpay_payment_link_id``. Idempotent: a duplicated webhook
+    short-circuits on the already-completed status, so no double invoice and
+    no second ``payment_received`` notification.
+
+    Args:
+        payload: The webhook event payload.
+
+    Returns:
+        The updated payment, or ``None`` if it could not be resolved.
+    """
+    entity = payload.get("payment_link", {}).get("entity", {})
+    plink_id = entity.get("id", "")
+    reference_id = str(entity.get("reference_id", "") or "")
+
+    payment = None
+    if reference_id:
+        try:
+            payment = Payment.objects.get(id=reference_id)
+        except (Payment.DoesNotExist, ValueError):
+            payment = None
+    if payment is None and plink_id:
+        try:
+            payment = Payment.objects.get(razorpay_payment_link_id=plink_id)
+        except Payment.DoesNotExist:
+            return None
+    if payment is None:
+        return None
+
+    send_received = payment.status != Payment.Status.COMPLETED
+    if send_received:
+        payment_entity = payload.get("payment", {}).get("entity", {})
+        payment_id = payment_entity.get("id", "")
+        if payment_id:
+            payment.razorpay_payment_id = payment_id
+            payment.transaction_id = payment_id
+        payment.status = Payment.Status.COMPLETED
+        if payment.paid_at is None:
+            payment.paid_at = timezone.now()
+        payment.save()
+        _auto_generate_invoice(payment)
+        # The completed-Payment save itself triggers the proven
+        # ``payment_received`` notification (notifications/signals.py) —
+        # replayed webhooks never reach this branch, so nothing doubles.
+    return payment
+
+
 def _handle_refund_processed(payload: dict[str, Any]) -> PaymentRefund | None:
     """Mark a refund as processed on ``refund.processed``.
 
@@ -186,11 +238,21 @@ def razorpay_webhook(request: Any) -> HttpResponse:
         order_id = data.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id", "") or data.get(
             "payload", {}
         ).get("order", {}).get("entity", {}).get("id", "")
+        plink_id = data.get("payload", {}).get("payment_link", {}).get("entity", {}).get("id", "")
+        payment = None
         if order_id:
             try:
                 payment = Payment.objects.get(razorpay_order_id=order_id)
-                config = RazorpayConfig.objects.for_tenant(payment.tenant).first()
-            except (Payment.DoesNotExist, RazorpayConfig.DoesNotExist):
+            except Payment.DoesNotExist:
+                payment = None
+        elif plink_id:
+            try:
+                payment = Payment.objects.get(razorpay_payment_link_id=plink_id)
+            except Payment.DoesNotExist:
+                payment = None
+        if payment is not None:
+            config = RazorpayConfig.objects.for_tenant(payment.tenant).first()
+            if config is None:
                 return JsonResponse({"detail": "Not found"}, status=404)
         else:
             return JsonResponse({"detail": "Unknown tenant"}, status=404)
@@ -202,6 +264,8 @@ def razorpay_webhook(request: Any) -> HttpResponse:
     try:
         if event in ("payment.captured", "payment.authorized"):
             _handle_payment_captured(data.get("payload", {}))
+        elif event == "payment_link.paid":
+            _handle_payment_link_paid(data.get("payload", {}))
         elif event == "payment.failed":
             _handle_payment_failed(data.get("payload", {}))
         elif event == "refund.processed":

@@ -24,6 +24,7 @@ from apps.payments.serializers import (
     RevenueSummarySerializer,
     VerifyPaymentSerializer,
 )
+from apps.payments.services import send_payment_link
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -324,6 +325,48 @@ class PaymentViewSet(ModelViewSet):
         response = super().partial_update(request, *args, **kwargs)
         self._apply_paid_at(self.get_object())
         return response
+
+    @action(detail=True, methods=["post"], url_path="send-link")
+    def send_link(self, request: Request, pk: str | None = None) -> Response:
+        """POST /payments/{id}/send-link/ — Razorpay payment link → WhatsApp (issue #72).
+
+        For a pending payment: create a Razorpay payment link and deliver it
+        over the tenant's messaging channels (WhatsApp templates → SMS →
+        email per the outbound policy), auditing every attempt in
+        ``notification_logs``. A resend within the cooldown returns
+        ``already_sent`` so support cannot spam links.
+
+        Returns:
+            200 with the outcome (``sent`` / ``already_sent`` / ``skipped``),
+            400 when the payment is not pending, the Razorpay link creation
+            or every delivery leg fails, 404 for a foreign-tenant payment.
+        """
+        self.required_permission = "payments.record_payment"
+        payment = self.get_object()
+        if payment.status != Payment.Status.PENDING:
+            return Response(
+                {"detail": "Only pending payments can receive a payment link."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = send_payment_link(request.tenant, payment, actor=request.user)
+
+        if result.status == "failed":
+            return Response({"detail": result.reason}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "status": result.status,
+                "reason": result.reason,
+                "channel": result.channel,
+                "provider": result.provider,
+                "payment_link_url": result.payment_link_url,
+                "resend_allowed_after": (
+                    result.resend_allowed_after.isoformat() if result.resend_allowed_after else None
+                ),
+                "payment": PaymentSerializer(payment).data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @staticmethod
     def _apply_paid_at(payment: Payment) -> None:

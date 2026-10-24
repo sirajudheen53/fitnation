@@ -13,6 +13,8 @@ import hmac
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+from apps.notifications.services.channels import normalize_msisdn
+from apps.notifications.services.router import is_emailable
 from apps.payments.models import Payment, PaymentRefund, RazorpayConfig
 
 if TYPE_CHECKING:
@@ -104,6 +106,62 @@ def create_order(
     except Exception as exc:
         raise RazorpayError(f"Razorpay order creation failed: {exc}") from exc
     return order
+
+
+def create_payment_link(
+    tenant: Tenant,
+    payment: Payment,
+    *,
+    client: Any | None = None,
+) -> dict[str, Any]:
+    """Create a Razorpay Payment Link for a pending payment (issue #72).
+
+    The link carries ``reference_id`` = our Payment id so the
+    ``payment_link.paid`` webhook can resolve the local payment even when the
+    ``razorpay_payment_link_id`` column lookup misses.
+
+    Args:
+        tenant: The tenant creating the link (its own Razorpay credentials).
+        payment: The pending payment to link (amount, customer fields).
+        client: Optional pre-built Razorpay client (injected in tests).
+
+    Returns:
+        The Razorpay payment link payload (``id``, ``short_url``, ...).
+
+    Raises:
+        RazorpayError: If the tenant has no active config or Razorpay fails.
+    """
+    config = get_active_config(tenant)
+    client = client or _build_client(config)
+    amount_paise = int((Decimal(str(payment.amount)) * Decimal(100)).to_integral_value())
+
+    customer = payment.customer
+    customer_data: dict[str, str] = {"name": customer.name or f"Member {customer.id}"}
+    phone = (customer.phone or "").strip()
+    if phone:
+        customer_data["contact"] = normalize_msisdn(phone)
+    email = (customer.email or "").strip()
+    if email and not is_emailable(email):
+        # Synthetic OTP mailboxes can never receive the link email.
+        email = ""
+    if email:
+        customer_data["email"] = email
+
+    try:
+        link = client.payment_link.create(
+            data={
+                "amount": amount_paise,
+                "currency": "INR",
+                "accept_partial": False,
+                "reference_id": str(payment.id),
+                "customer": customer_data,
+                "notes": {"payment_id": str(payment.id), "tenant_id": str(tenant.id)},
+                "notification": {"email": bool(email), "sms": bool(phone)},
+            }
+        )
+    except Exception as exc:
+        raise RazorpayError(f"Razorpay payment link creation failed: {exc}") from exc
+    return link
 
 
 def verify_signature(

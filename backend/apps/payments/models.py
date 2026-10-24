@@ -87,6 +87,10 @@ class Payment(TenantModelMixin):
     transaction_id = models.CharField(max_length=100, blank=True)
     razorpay_order_id = models.CharField(max_length=100, blank=True)
     razorpay_payment_id = models.CharField(max_length=100, blank=True)
+    # Issue #72: the latest Razorpay payment link created for this payment and
+    # when its message was last successfully sent (resend-cooldown guard).
+    razorpay_payment_link_id = models.CharField(max_length=100, blank=True)
+    payment_link_sent_at = models.DateTimeField(null=True, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

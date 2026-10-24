@@ -66,6 +66,13 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "Hi {customer_name}, please verify your email to finish setting up your {gym_name} account: "
         "{verify_link} The link is valid for 24 hours."
     ),
+    # Issue #72: pending-payment nudge with a Razorpay payment link. Sent as
+    # an APPROVED TEMPLATE message (fitnation_payment_link, positional
+    # {{1}}..{{4}} params) like app_invite; this entry renders the audit copy.
+    "payment_link": (
+        "Hi {customer_name}, your payment of ₹{amount} for {gym_name} is pending. "
+        "Pay securely online here: {payment_link}"
+    ),
 }
 
 # WATI approved template names (one-time approval per WATI account; fixed

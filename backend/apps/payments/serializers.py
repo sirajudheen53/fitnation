@@ -20,6 +20,9 @@ class PaymentSerializer(serializers.ModelSerializer):
 
     customer_id = serializers.PrimaryKeyRelatedField(source="customer", queryset=Customer.objects.all())
     customer_name = serializers.CharField(source="customer.name", read_only=True)
+    # Issue #72 pending-payments queue: member phone + plan reference.
+    customer_phone = serializers.CharField(source="customer.phone", read_only=True, default=None)
+    plan_name = serializers.SerializerMethodField()
     membership_id = serializers.PrimaryKeyRelatedField(
         source="membership",
         queryset=Membership.objects.all(),
@@ -39,7 +42,9 @@ class PaymentSerializer(serializers.ModelSerializer):
             "id",
             "customer_id",
             "customer_name",
+            "customer_phone",
             "membership_id",
+            "plan_name",
             "invoice_id",
             "kind",
             "amount",
@@ -56,7 +61,9 @@ class PaymentSerializer(serializers.ModelSerializer):
         read_only_fields: ClassVar[list] = [
             "id",
             "customer_name",
+            "customer_phone",
             "invoice_id",
+            "plan_name",
             "razorpay_order_id",
             "razorpay_payment_id",
             "created_at",
@@ -67,6 +74,12 @@ class PaymentSerializer(serializers.ModelSerializer):
         """Return the first invoice issued for this payment, if any."""
         invoice = payment.invoices.first()
         return invoice.id if invoice else None
+
+    def get_plan_name(self, payment: Payment) -> str | None:
+        """Return the membership plan name when the payment links a membership."""
+        if payment.membership is None:
+            return None
+        return payment.membership.plan.name
 
     def to_representation(self, instance):
         """Ensure payment_date is never null (frontend slices it for filters)."""
