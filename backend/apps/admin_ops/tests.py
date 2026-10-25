@@ -14,6 +14,8 @@ from apps.access.models import BiometricDevice
 from apps.admin_ops.models import ImpersonationLog
 from apps.branches.models import Branch
 from apps.customers.models import Customer
+from apps.exercises.catalogue import EXERCISE_CATALOGUE
+from apps.exercises.models import Exercise
 from apps.memberships.models import Membership, MembershipPlan
 from apps.payments.models import Payment
 from apps.tenants.models import Tenant
@@ -136,6 +138,9 @@ class AdminOnboardGymTests(APITestCase):
         assert response.data["owner_email"] == "owner@irontemple.test"
         assert len(response.data["owner_password"]) >= 16
         assert Tenant.objects.filter(name="Iron Temple").exists()
+        # Ticket #75: every new gym starts with the common exercise catalogue.
+        onboarded = Tenant.objects.get(name="Iron Temple")
+        assert Exercise.objects.filter(tenant=onboarded).count() == len(EXERCISE_CATALOGUE)
 
     def test_owner_can_login_with_generated_password(self) -> None:
         """The generated password works immediately on the login endpoint."""

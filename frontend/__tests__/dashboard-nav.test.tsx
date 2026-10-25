@@ -64,7 +64,7 @@ describe("DashboardLayout sidebar sections (issue #62)", () => {
     const itemsInSection: Record<string, string[]> = {
       Operations: ["/dashboard", "/branches", "/customers", "/memberships", "/payments", "/attendance", "/devices"],
       Trainers: ["/trainers", "/pt-sessions", "/trainers/performance"],
-      Programs: ["/workouts", "/diet", "/nutrition", "/ai-coach"],
+      Programs: ["/exercises", "/workouts", "/diet", "/nutrition", "/ai-coach"],
       Growth: ["/inventory", "/marketplace", "/reviews", "/feedback", "/analytics"],
       Settings: ["/notifications/settings", "/settings"],
     };
@@ -149,6 +149,7 @@ function labelFor(href: string): string {
     "/trainers": "Trainers",
     "/pt-sessions": "PT Sessions",
     "/trainers/performance": "Trainer Performance",
+    "/exercises": "Exercises",
     "/workouts": "Workouts",
     "/diet": "Diets",
     "/nutrition": "Nutrition",

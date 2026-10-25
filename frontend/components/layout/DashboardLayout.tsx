@@ -12,6 +12,7 @@ import {
   Wallet,
   CalendarCheck,
   Dumbbell,
+  BicepsFlexed,
   Apple,
   ShoppingBag,
   MessageCircle,
@@ -75,6 +76,7 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: "Programs",
     items: [
+      { href: "/exercises", label: "Exercises", icon: BicepsFlexed },
       { href: "/workouts", label: "Workouts", icon: Dumbbell },
       { href: "/diet", label: "Diets", icon: Apple },
       { href: "/nutrition", label: "Nutrition", icon: Utensils },

@@ -27,6 +27,19 @@ class ExerciseCategorySerializer(serializers.ModelSerializer):
         ]
         read_only_fields: ClassVar[list[str]] = ["id", "exercise_count", "created_at", "updated_at"]
 
+    def validate_name(self, value: str) -> str:
+        """Strip the name and reject duplicates within the tenant."""
+        name = value.strip()
+        request = self.context.get("request")
+        tenant = getattr(request, "tenant", None) if request else None
+        if tenant and name:
+            queryset = ExerciseCategory.objects.for_tenant(tenant).filter(name__iexact=name)
+            if self.instance is not None:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError("A category with this name already exists.")
+        return name
+
 
 class ExerciseSerializer(serializers.ModelSerializer):
     """Serialize exercise details."""
@@ -57,6 +70,21 @@ class ExerciseSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields: ClassVar[list[str]] = ["id", "category_name", "created_at", "updated_at"]
+
+    def validate_name(self, value: str) -> str:
+        """Strip the name and reject duplicates within the tenant."""
+        name = value.strip()
+        request = self.context.get("request")
+        tenant = getattr(request, "tenant", None) if request else None
+        if tenant and name:
+            queryset = Exercise.objects.for_tenant(tenant).filter(name__iexact=name)
+            if self.instance is not None:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError(
+                    "An exercise with this name already exists in your library.",
+                )
+        return name
 
     def validate_category(self, value: ExerciseCategory) -> ExerciseCategory:
         """Ensure the category belongs to the request tenant."""

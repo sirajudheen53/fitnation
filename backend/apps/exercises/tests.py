@@ -6,6 +6,7 @@ from django.test import TestCase
 from django.test.utils import captured_stdout
 from rest_framework.test import APITestCase
 
+from apps.exercises.catalogue import DEFAULT_CATEGORIES, EXERCISE_CATALOGUE
 from apps.exercises.models import Exercise, ExerciseCategory
 from apps.tenants.services import provision_tenant
 from apps.users.services import create_owner_user, issue_token
@@ -18,7 +19,7 @@ class ExerciseModelTests(TestCase):
 
     def setUp(self) -> None:
         """Create a tenant and category for model tests."""
-        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test", seed_exercises=False)
         self.category = ExerciseCategory.objects.create(
             tenant=self.tenant,
             name="Strength",
@@ -48,7 +49,7 @@ class ExerciseModelTests(TestCase):
 
     def test_category_slug_unique_within_tenant(self) -> None:
         """Category slugs are unique within a tenant but reusable across tenants."""
-        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test", seed_exercises=False)
         ExerciseCategory.objects.create(
             tenant=other_tenant,
             name="Strength",
@@ -90,7 +91,7 @@ class ExerciseModelTests(TestCase):
             difficulty="advanced",
             instructions=["Lift"],
         )
-        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test", seed_exercises=False)
         self.assertEqual(
             Exercise.objects.for_tenant(self.tenant).first().id,
             exercise.id,
@@ -112,16 +113,23 @@ class ExerciseSeedCommandTests(TestCase):
     """Tests for the seed_exercises management command."""
 
     def setUp(self) -> None:
-        """Create a tenant for seeding."""
-        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        """Create a tenant without the auto-seed so the command is under test."""
+        self.tenant = provision_tenant(
+            name="Iron Peak",
+            contact_email="owner@local.test",
+            seed_exercises=False,
+        )
 
-    def test_seed_populates_50_plus_exercises(self) -> None:
-        """Seeding creates at least 50 exercises across categories."""
+    def test_seed_populates_full_catalogue(self) -> None:
+        """Seeding creates every catalogue exercise across the default categories."""
         with captured_stdout():
             call_command("seed_exercises", tenant=self.tenant.id)
-        self.assertGreaterEqual(Exercise.objects.for_tenant(self.tenant).count(), 50)
+        self.assertEqual(
+            Exercise.objects.for_tenant(self.tenant).count(),
+            len(EXERCISE_CATALOGUE),
+        )
         categories = ExerciseCategory.objects.for_tenant(self.tenant)
-        self.assertGreaterEqual(categories.count(), 4)
+        self.assertGreaterEqual(categories.count(), len(DEFAULT_CATEGORIES))
         # Exercises reference valid tenant-scoped categories
         for exercise in Exercise.objects.for_tenant(self.tenant):
             self.assertEqual(exercise.category.tenant_id, self.tenant.id)
@@ -140,13 +148,74 @@ class ExerciseSeedCommandTests(TestCase):
             count_after_first,
         )
 
-    def test_seed_reset_removes_existing(self) -> None:
-        """The --reset flag clears prior exercises and categories."""
+    def test_seed_catalogue_integrity(self) -> None:
+        """The catalogue itself has unique names and known categories."""
+        names = [item["name"] for item in EXERCISE_CATALOGUE]
+        self.assertEqual(len(names), len(set(names)))
+        for item in EXERCISE_CATALOGUE:
+            self.assertIn(item["category"], DEFAULT_CATEGORIES)
+            self.assertGreaterEqual(len(item["instructions"]), 2)
+
+    def test_seed_updates_drifted_rows(self) -> None:
+        """Re-seeding refreshes catalogue rows that drifted from the defaults."""
         with captured_stdout():
             call_command("seed_exercises", tenant=self.tenant.id)
+        push_up = Exercise.objects.for_tenant(self.tenant).get(name="Push-Up")
+        push_up.tips = ""
+        push_up.difficulty = "advanced"
+        push_up.save(update_fields=["tips", "difficulty"])
+
+        with captured_stdout():
+            call_command("seed_exercises", tenant=self.tenant.id)
+
+        push_up.refresh_from_db()
+        expected = next(i for i in EXERCISE_CATALOGUE if i["name"] == "Push-Up")
+        self.assertEqual(push_up.difficulty, expected["difficulty"])
+        self.assertEqual(push_up.tips, expected.get("tips", ""))
+
+    def test_seed_preserves_custom_rows(self) -> None:
+        """Re-seeding never deletes or overwrites tenant-created exercises."""
+        with captured_stdout():
+            call_command("seed_exercises", tenant=self.tenant.id)
+        rehab_category = ExerciseCategory.objects.create(
+            tenant=self.tenant,
+            name="Rehab",
+            slug="rehab",
+        )
+        custom = Exercise.objects.create(
+            tenant=self.tenant,
+            name="Owner Special Move",
+            category=rehab_category,
+            muscle_groups=["shoulders"],
+            equipment_needed=["resistance band"],
+            difficulty="beginner",
+            instructions=["Do the move"],
+        )
+
+        with captured_stdout():
+            call_command("seed_exercises", tenant=self.tenant.id)
+
+        custom.refresh_from_db()
+        self.assertEqual(custom.name, "Owner Special Move")
+        self.assertEqual(custom.category_id, rehab_category.id)
+        self.assertEqual(Exercise.objects.for_tenant(self.tenant).count(), len(EXERCISE_CATALOGUE) + 1)
+        # The custom category is left alone too.
+        self.assertTrue(ExerciseCategory.objects.filter(tenant=self.tenant, slug="rehab").exists())
+
+    def test_seed_reset_removes_existing(self) -> None:
+        """The --reset flag clears prior exercises and categories."""
+        ExerciseCategory.objects.create(
+            tenant=self.tenant,
+            name="Rehab",
+            slug="rehab",
+        )
         with captured_stdout():
             call_command("seed_exercises", tenant=self.tenant.id, reset=True)
-        self.assertGreaterEqual(Exercise.objects.for_tenant(self.tenant).count(), 50)
+        self.assertEqual(
+            Exercise.objects.for_tenant(self.tenant).count(),
+            len(EXERCISE_CATALOGUE),
+        )
+        self.assertFalse(ExerciseCategory.objects.filter(tenant=self.tenant, slug="rehab").exists())
 
     def test_seed_requires_existing_tenant(self) -> None:
         """Seeding for a missing tenant raises CommandError."""
@@ -156,12 +225,40 @@ class ExerciseSeedCommandTests(TestCase):
             call_command("seed_exercises", tenant=999999)
 
 
+class ProvisionTenantSeedTests(TestCase):
+    """Every new gym starts with the common exercise catalogue (ticket #75)."""
+
+    def test_provision_tenant_seeds_catalogue(self) -> None:
+        """Default provisioning populates the full catalogue for the new gym."""
+        tenant = provision_tenant(name="Fresh Gym", contact_email="fresh@local.test")
+        self.assertEqual(
+            Exercise.objects.for_tenant(tenant).count(),
+            len(EXERCISE_CATALOGUE),
+        )
+        self.assertEqual(
+            ExerciseCategory.objects.for_tenant(tenant).filter(slug__in=DEFAULT_CATEGORIES).count(),
+            len(DEFAULT_CATEGORIES),
+        )
+        for exercise in Exercise.objects.for_tenant(tenant):
+            self.assertEqual(exercise.category.tenant_id, tenant.id)
+
+    def test_provision_tenant_seed_opt_out(self) -> None:
+        """Provisioning with seed_exercises=False leaves the library empty."""
+        tenant = provision_tenant(
+            name="Bare Gym",
+            contact_email="bare@local.test",
+            seed_exercises=False,
+        )
+        self.assertEqual(Exercise.objects.for_tenant(tenant).count(), 0)
+        self.assertEqual(ExerciseCategory.objects.for_tenant(tenant).count(), 0)
+
+
 class ExerciseCategoryAPITests(APITestCase):
     """Integration tests for exercise category endpoints."""
 
     def setUp(self) -> None:
         """Create tenant, owner, and auth token."""
-        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test", seed_exercises=False)
         self.owner = create_owner_user(
             tenant=self.tenant,
             email="owner@local.test",
@@ -222,7 +319,7 @@ class ExerciseCategoryAPITests(APITestCase):
 
     def test_category_tenant_isolation(self) -> None:
         """Categories from another tenant are not accessible."""
-        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test", seed_exercises=False)
         other_category = ExerciseCategory.objects.create(
             tenant=other_tenant,
             name="Strength",
@@ -258,7 +355,7 @@ class ExerciseAPITests(APITestCase):
 
     def setUp(self) -> None:
         """Create tenant, owner, category, and auth token."""
-        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test", seed_exercises=False)
         self.owner = create_owner_user(
             tenant=self.tenant,
             email="owner@local.test",
@@ -318,6 +415,52 @@ class ExerciseAPITests(APITestCase):
         self.assertEqual(response.data["name"], "Squat")
         self.assertEqual(response.data["category_name"], "Strength")
         self.assertEqual(response.data["muscle_groups"], ["quadriceps", "glutes"])
+
+    def test_create_exercise_duplicate_name_rejected(self) -> None:
+        """Duplicate exercise names within the tenant are rejected (case-insensitive)."""
+        self._make_exercise(name="Push-Up")
+        response = self.client.post(
+            "/api/v1/exercises/exercises/",
+            {
+                "name": "push-up ",
+                "category": self.category.id,
+                "muscle_groups": ["chest"],
+                "equipment_needed": [],
+                "difficulty": "beginner",
+                "instructions": ["Press"],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already exists", str(response.data))
+
+    def test_create_exercise_name_is_trimmed(self) -> None:
+        """Names are stored trimmed, so whitespace-only duplicates are the same name."""
+        response = self.client.post(
+            "/api/v1/exercises/exercises/",
+            {
+                "name": "  Squat  ",
+                "category": self.category.id,
+                "muscle_groups": ["quadriceps"],
+                "equipment_needed": [],
+                "difficulty": "beginner",
+                "instructions": ["Descend", "Ascend"],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["name"], "Squat")
+
+    def test_update_exercise_keeping_own_name_ok(self) -> None:
+        """Editing an exercise without renaming it is not flagged as a duplicate."""
+        exercise = self._make_exercise(name="Push-Up")
+        response = self.client.patch(
+            f"/api/v1/exercises/exercises/{exercise.id}/",
+            {"name": "Push-Up", "difficulty": "advanced"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["name"], "Push-Up")
 
     def test_retrieve_update_delete_exercise(self) -> None:
         """Owner can retrieve, update, and delete an exercise."""
@@ -407,7 +550,7 @@ class ExerciseAPITests(APITestCase):
 
     def test_exercise_tenant_isolation(self) -> None:
         """Exercises from another tenant are not accessible."""
-        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test", seed_exercises=False)
         other_cat = ExerciseCategory.objects.create(
             tenant=other_tenant,
             name="Strength",
@@ -425,7 +568,7 @@ class ExerciseAPITests(APITestCase):
 
     def test_create_exercise_cross_tenant_category_rejected(self) -> None:
         """Creating an exercise with another tenant's category is rejected."""
-        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test", seed_exercises=False)
         other_cat = ExerciseCategory.objects.create(
             tenant=other_tenant,
             name="Strength",
@@ -451,7 +594,7 @@ class ExercisePermissionTests(APITestCase):
 
     def setUp(self) -> None:
         """Create two tenants, an owner, a customer, and a trainer."""
-        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test", seed_exercises=False)
         self.owner = create_owner_user(
             tenant=self.tenant,
             email="owner@local.test",
@@ -566,7 +709,7 @@ class ExercisePermissionTests(APITestCase):
 
     def test_customer_tenant_isolation_forced_404(self) -> None:
         """Another tenant's exercise returns 404 (never leaks existence)."""
-        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test", seed_exercises=False)
         other_cat = ExerciseCategory.objects.create(
             tenant=other_tenant,
             name="Strength",
@@ -582,3 +725,74 @@ class ExercisePermissionTests(APITestCase):
             f"/api/v1/exercises/exercises/{other_exercise.id}/",
         )
         self.assertEqual(response.status_code, 404)
+
+
+class SeededListingAPITests(APITestCase):
+    """The gym-owner experience in an auto-seeded library (default provisioning)."""
+
+    def setUp(self) -> None:
+        """Create an owner whose tenant got the default catalogue at provisioning."""
+        self.tenant = provision_tenant(name="Hash Fit", contact_email="owner@hashfit.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@hashfit.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Hash Fit Owner",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def test_owner_sees_catalogue_and_creation_appears_in_list(self) -> None:
+        """A provisioned gym lists the catalogue; a created exercise joins the list."""
+        response = self.client.get("/api/v1/exercises/exercises/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], len(EXERCISE_CATALOGUE))
+
+        strength = ExerciseCategory.objects.for_tenant(self.tenant).get(slug="strength")
+        response = self.client.post(
+            "/api/v1/exercises/exercises/",
+            {
+                "name": "Fitness Test Move",
+                "category": strength.id,
+                "muscle_groups": ["chest"],
+                "equipment_needed": [],
+                "difficulty": "beginner",
+                "instructions": ["Step one", "Step two"],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        response = self.client.get("/api/v1/exercises/exercises/")
+        self.assertEqual(response.data["count"], len(EXERCISE_CATALOGUE) + 1)
+        response = self.client.get("/api/v1/exercises/exercises/?search=fitness test")
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["name"], "Fitness Test Move")
+
+    def test_owner_cannot_recreate_catalogue_name(self) -> None:
+        """Creating a catalogue duplicate is rejected even in a seeded library."""
+        strength = ExerciseCategory.objects.for_tenant(self.tenant).get(slug="strength")
+        response = self.client.post(
+            "/api/v1/exercises/exercises/",
+            {
+                "name": "push-up",
+                "category": strength.id,
+                "muscle_groups": ["chest"],
+                "equipment_needed": [],
+                "difficulty": "beginner",
+                "instructions": ["Press"],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already exists", str(response.data))
+
+    def test_owner_can_create_category(self) -> None:
+        """The owner can add custom categories alongside the defaults."""
+        response = self.client.post(
+            "/api/v1/exercises/exercise-categories/",
+            {"name": "Rehab", "slug": "rehab", "description": "Recovery work."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["exercise_count"], 0)

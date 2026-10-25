@@ -23,6 +23,7 @@ def provision_tenant(
     name: str,
     contact_email: str,
     subscription_plan: str = "starter",
+    seed_exercises: bool = True,
     **kwargs: Any,
 ) -> Tenant:
     """Create a new tenant and its settings.
@@ -34,6 +35,8 @@ def provision_tenant(
         name: Display name of the tenant (gym business).
         contact_email: Primary contact email for the tenant. Must be unique globally.
         subscription_plan: One of ``starter``, ``professional``, ``enterprise``.
+        seed_exercises: Populate the common exercise catalogue for the new gym
+            (ticket #75) — idempotent get-or-update, never deletes.
         **kwargs: Additional fields accepted by the ``Tenant`` model. A
             ``features`` mapping is merged OVER the module-flag registry
             defaults (issue #46) so every new gym starts with a fully-populated
@@ -58,6 +61,11 @@ def provision_tenant(
     tenant.config.max_customers = limits["max_customers"]
     tenant.config.max_trainers = limits["max_trainers"]
     tenant.config.save()
+
+    if seed_exercises:
+        from apps.exercises.services import seed_library_for_tenant
+
+        seed_library_for_tenant(tenant)
 
     return tenant
 

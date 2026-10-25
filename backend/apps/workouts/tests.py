@@ -27,13 +27,13 @@ User = get_user_model()
 
 
 def _make_category(tenant, name="Strength", slug="strength") -> ExerciseCategory:
-    """Create an ExerciseCategory for a tenant."""
-    return ExerciseCategory.objects.create(
+    """Create an ExerciseCategory for a tenant (or fetch the seeded default)."""
+    category, _ = ExerciseCategory.objects.get_or_create(
         tenant=tenant,
-        name=name,
-        description="Resistance training.",
         slug=slug,
+        defaults={"name": name, "description": "Resistance training."},
     )
+    return category
 
 
 def _make_exercise(tenant, category, name="Push-Up") -> Exercise:
