@@ -10,6 +10,14 @@ import type { Payment } from "@/types/payment";
 
 const NOW = new Date("2026-10-24T10:00:00Z");
 
+/**
+ * created_at n whole days (+1 min) before the real clock. The component calls
+ * getPendingDays() with its default `now = new Date()`, so rendering tests must
+ * derive timestamps from Date.now() — fixtures frozen at an absolute date flip
+ * at the UTC day boundary and go red overnight (issue #84).
+ */
+const daysAgoIso = (n: number) => new Date(Date.now() - n * 86_400_000 - 60_000).toISOString();
+
 function pendingPayment(overrides: Partial<Payment> = {}): Payment {
   return {
     id: 1,
@@ -56,20 +64,24 @@ describe("PendingPaymentTable helpers (issue #72)", () => {
 describe("PendingPaymentTable rendering", () => {
   it("renders member, phone, amount, plan ref, and days pending", () => {
     render(
-      <PendingPaymentTable payments={[pendingPayment()]} sendingPaymentId={null} onSend={jest.fn()} />,
+      <PendingPaymentTable
+        payments={[pendingPayment({ created_at: daysAgoIso(4) })]}
+        sendingPaymentId={null}
+        onSend={jest.fn()}
+      />,
     );
     expect(screen.getByText("Arjun Kumar")).toBeInTheDocument();
     expect(screen.getByText("+919876543210")).toBeInTheDocument();
     expect(screen.getByText("₹5,000")).toBeInTheDocument();
     expect(screen.getByText("Monthly Pro")).toBeInTheDocument();
-    // 20th → 24th is four days pending.
+    // created_at 4 days (+1 min) ago → four whole days pending.
     expect(screen.getByText(/4 days/)).toBeInTheDocument();
   });
 
   it("labels same-day payments as pending today", () => {
     render(
       <PendingPaymentTable
-        payments={[pendingPayment({ created_at: NOW.toISOString() })]}
+        payments={[pendingPayment({ created_at: new Date().toISOString() })]}
         sendingPaymentId={null}
         onSend={jest.fn()}
       />,
