@@ -303,4 +303,3 @@ def _stamp_sent(payment: Payment) -> None:
     """Record a successful send for the resend-cooldown guard."""
     payment.payment_link_sent_at = timezone.now()
     payment.save(update_fields=["payment_link_sent_at", "updated_at"])
-
