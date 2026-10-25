@@ -53,13 +53,18 @@ class GupshupTransportTests(TestCase):
         self.tenant = provision_tenant(name="Hash Fit", contact_email="hash@local.test", **GUPSHUP)
 
     def test_template_posts_form_encoded_contract(self) -> None:
-        """channel/source/src.name/destination/message + apikey header."""
+        """channel/source/src.name/destination/message + apikey header.
+
+        The invite params mirror the Gupshup template's shape (#85): the 3
+        body variables only — the "Get App" link is a STATIC CTA URL button
+        baked into the template, never a body variable.
+        """
         poster = _ok_poster()
         post_gupshup_template(
             self.tenant,
             "fitnation_app_invite",
             "919900060001",
-            ["Asha Nair", "Hash Fit", "Monthly", "https://app.example.com/g/x"],
+            ["Asha Nair", "Hash Fit", "Monthly"],
             poster=poster,
         )
         args, kwargs = poster.call_args
@@ -74,7 +79,7 @@ class GupshupTransportTests(TestCase):
             {
                 "type": "template",
                 "name": "fitnation_app_invite",
-                "params": ["Asha Nair", "Hash Fit", "Monthly", "https://app.example.com/g/x"],
+                "params": ["Asha Nair", "Hash Fit", "Monthly"],
             },
         )
         self.assertEqual(kwargs["headers"], {"apikey": "gup-key"})
@@ -195,6 +200,49 @@ class SendWhatsappTemplateTests(TestCase):
         self.assertTrue(attempt.sent)
         self.assertEqual(attempt.provider, "gupshup")
         self.assertEqual(attempt.error, "")
+
+    def test_gupshup_params_override_the_gupshup_leg_only(self) -> None:
+        """Per-provider shapes (#85): WATI keeps its own params, Gupshup gets
+        the override (button-shaped template with fewer, positional params)."""
+        import requests
+
+        def _post(url, **kwargs):
+            if "api.wati.io" in url:
+                raise requests.exceptions.ConnectionError("wati down")
+            return MagicMock(status_code=200, raise_for_status=MagicMock())
+
+        poster = MagicMock()
+        poster.side_effect = _post
+        attempt = send_whatsapp_template(
+            self.tenant,
+            "fitnation_app_invite",
+            "919900060001",
+            ["Asha Nair", "Hash Fit", "Monthly", "https://app.example.com/g/x"],
+            gupshup_params=["Asha Nair", "Hash Fit", "Monthly"],
+            poster=poster,
+        )
+        self.assertTrue(attempt.sent)
+        self.assertEqual(attempt.provider, "gupshup")
+        self.assertEqual(poster.call_count, 2)
+        wati_call, gup_call = poster.call_args_list
+        self.assertIn("api.wati.io", wati_call.args[0])
+        self.assertEqual(
+            wati_call.kwargs["json"]["templateParams"],
+            ["Asha Nair", "Hash Fit", "Monthly", "https://app.example.com/g/x"],
+        )
+        self.assertIn("api.gupshup.io", gup_call.args[0])
+        gupshup_message = json.loads(gup_call.kwargs["data"]["message"])
+        self.assertEqual(gupshup_message["params"], ["Asha Nair", "Hash Fit", "Monthly"])
+
+    def test_gupshup_leg_defaults_to_shared_params(self) -> None:
+        """No override → the Gupshup leg still posts template_params."""
+        poster = _ok_poster()
+        send_whatsapp_template(
+            self.tenant, "fitnation_otp", "919900060001", ["123456"], providers=["gupshup"], poster=poster
+        )
+        gup_call = poster.call_args
+        self.assertIn("api.gupshup.io", gup_call.args[0])
+        self.assertEqual(json.loads(gup_call.kwargs["data"]["message"])["params"], ["123456"])
 
     def test_all_providers_down_reports_last_failure(self) -> None:
         """Everything failing → not sent, error from the last leg."""

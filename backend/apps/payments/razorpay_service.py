@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -20,9 +21,45 @@ from apps.payments.models import Payment, PaymentRefund, RazorpayConfig
 if TYPE_CHECKING:
     from apps.tenants.models import Tenant
 
+logger = logging.getLogger(__name__)
+
 
 class RazorpayError(Exception):
     """Raised when Razorpay returns an error or config is missing."""
+
+
+# The fixed prefix of Razorpay Payment Link ``short_url`` values. WhatsApp
+# policy forbids links as body variables (issue #85) — the CTA URL button in
+# the Gupshup fitnation_payment_link template is pinned to the fixed prefix
+# with the opaque token as its variable, so sends must pass only the token
+# (e.g. ``https://rzp.io/i/nxrHnLJ`` → ``nxrHnLJ``). Razorpay's documented
+# example carries exactly this prefix; no live prod link existed to confirm
+# when this shipped (zero payment_link sends in prod), so the helper also
+# warns loudly when a link does not match — the full URL is passed instead
+# (visible in the audit trail) rather than silently garbling the button.
+RAZORPAY_SHORT_URL_PREFIX = "https://rzp.io/i/"
+
+
+def payment_link_button_suffix(link_url: str) -> str:
+    """The part of a Razorpay ``short_url`` that fills the CTA button variable.
+
+    Args:
+        link_url: The Razorpay payment link ``short_url`` (or fallback).
+
+    Returns:
+        The opaque token after ``RAZORPAY_SHORT_URL_PREFIX``; the full URL
+        unchanged when it does not start with the expected prefix (with a
+        loud warning — the fixed-prefix template would otherwise produce a
+        broken button link).
+    """
+    if link_url.lower().startswith(RAZORPAY_SHORT_URL_PREFIX.lower()):
+        return link_url[len(RAZORPAY_SHORT_URL_PREFIX) :]
+    logger.warning(
+        "Razorpay payment link does not start with the expected %s — passing the full URL as the "
+        "Gupshup URL-button variable; check the template prefix (issue #85)",
+        RAZORPAY_SHORT_URL_PREFIX,
+    )
+    return link_url
 
 
 def _build_client(config: RazorpayConfig) -> Any:

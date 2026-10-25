@@ -22,10 +22,23 @@ WATI_TEMPLATE_PATH = "/api/v1/sendTemplateMessage"
 DEFAULT_WATI_BASE = "https://api.wati.io"
 MSG91_FLOW_URL = "https://control.msg91.com/api/v5/flow/"
 GUPSHUP_MSG_URL = "https://api.gupshup.io/wa/api/v1/msg"
-# Template-management list API (issue #74): the only synchronous place where
-# Gupshup reveals whether a template is APPROVED — its /msg send API 202-acks
-# any submit, approved or not, so delivery gates have to ask here first.
-GUPSHUP_TEMPLATE_LIST_URL = "https://api.gupshup.io/sm/api/v1/templates"
+# Template-management list API (issue #74, transport fixed in #85): the only
+# synchronous place where Gupshup reveals whether a template is APPROVED — its
+# /msg send API 202-acks any submit, approved or not, so delivery gates have
+# to ask here first. The URL carries an ``{appname}`` placeholder filled with
+# the tenant's Gupshup app name. Live-found on 2026-10-25: bare
+# ``/sm/api/v1/templates`` 404s, and the per-app list endpoint REJECTS the
+# app's own api key (401 "Portal User Not Found With APIKey") — it wants a
+# PORTAL account key (``GUPSHUP_PORTAL_API_KEY``); without one the status
+# gate falls back to the ``GUPSHUP_APPROVED_TEMPLATES`` env allow-list.
+GUPSHUP_TEMPLATE_LIST_URL = "https://api.gupshup.io/sm/api/v1/template/list/{appname}"
+
+# Portal (platform-level) API key for GUPSHUP_TEMPLATE_LIST_URL (issue #85).
+GUPSHUP_PORTAL_API_KEY = ""
+# Comma-separated template names verifiably APPROVED in Gupshup (issue #85).
+# Ops sets this after console approval; consulted when the portal-key live
+# check cannot run (no key, or the live endpoint still refuses it).
+GUPSHUP_APPROVED_TEMPLATES = ""
 
 # Semantic channels (NotificationLog.channel) and the providers
 # (NotificationLog.provider) that carry them (issue #66). Live here so the
@@ -58,10 +71,12 @@ GUPSHUP_ACCEPTED_STATUS = {"submitted", "success", "accepted"}
 def parse_gupshup_template_status(payload: Any, template_name: str) -> str:
     """Extract one template's approval status from a template-list payload.
 
-    Pure helper (tests / reuse): accepts the documented
-    ``{"templates": [{"name": …, "status": …}, …]}`` shape or a bare list.
-    A name may appear once per language revision — any APPROVED entry wins;
-    otherwise the first non-empty status is reported.
+    Pure helper (tests / reuse): tolerant across every list shape Gupshup has
+    documented or shipped (issue #85) — the wrapper
+    ``{"templates": [{…}, …]}``, a bare list, and entries naming the template
+    either ``name`` or ``elementName`` with the state in ``status`` or
+    ``templateStatus``. A name may appear once per language revision — any
+    APPROVED entry wins; otherwise the first non-empty status is reported.
 
     Args:
         payload: The parsed JSON body of a Gupshup template-list response.
@@ -76,9 +91,12 @@ def parse_gupshup_template_status(payload: Any, template_name: str) -> str:
         return ""
     first_status = ""
     for entry in templates:
-        if not isinstance(entry, dict) or str(entry.get("name", "")) != template_name:
+        if not isinstance(entry, dict):
             continue
-        status = str(entry.get("status", "")).strip().upper()
+        name = str(entry.get("name") or entry.get("elementName") or "")
+        if name != template_name:
+            continue
+        status = str(entry.get("status") or entry.get("templateStatus") or "").strip().upper()
         if not status:
             continue
         if status == "APPROVED":
@@ -88,23 +106,86 @@ def parse_gupshup_template_status(payload: Any, template_name: str) -> str:
     return first_status
 
 
+def approved_template_names_from_env() -> frozenset[str]:
+    """Template names ops has confirmed APPROVED in Gupshup (issue #85).
+
+    Parsed from the ``GUPSHUP_APPROVED_TEMPLATES`` env (comma-separated;
+    whitespace and case tolerated). Used by the delivery gate when the live
+    template-list check cannot run — see :func:`gupshup_template_status`.
+
+    Returns:
+        The upper-cased allow-list of template slugs (empty when unset).
+    """
+    raw = str(getattr(settings, "GUPSHUP_APPROVED_TEMPLATES", "") or "")
+    return frozenset(part.strip().upper() for part in raw.split(",") if part.strip())
+
+
+def _live_template_status(
+    url: str,
+    api_key: str,
+    template_name: str,
+    getter: Callable[..., Any] | None,
+) -> str | None:
+    """One live template-list GET against Gupshup (issue #85).
+
+    Contract: ``GET <url>`` with the ``apikey`` header. The parse verdict is
+    returned whenever the body carries a usable template list — even when the
+    verdict is negative (name absent / PENDING): a working live check is
+    authoritative, so the env allow-list must not override it. Transport, HTTP
+    or unusable-payload trouble yields ``None`` = "did not get a verdict",
+    which callers turn into the next gate in order.
+
+    Args:
+        url: The template-list URL (``{appname}`` already substituted).
+        api_key: The API key header value (portal key for the list endpoint).
+        template_name: The platform template slug to look up.
+        getter: Injectable HTTP get callable (tests).
+
+    Returns:
+        The normalized status word, or ``None`` when unverifiable.
+    """
+    get = getter or requests.get
+    try:
+        response = get(url, headers={"apikey": api_key}, timeout=getattr(settings, "GUPSHUP_TIMEOUT", 10))
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:  # noqa: BLE001 - an unusable status API is "no verdict"
+        return None
+    templates = payload.get("templates") if isinstance(payload, dict) else payload
+    if not isinstance(templates, list):
+        return None
+    return parse_gupshup_template_status(payload, template_name)
+
+
 def gupshup_template_status(
     tenant,
     template_name: str,
     *,
     getter: Callable[..., Any] | None = None,
 ) -> str:
-    """The tenant's Gupshup approval status for one template name (issue #74).
+    """The tenant's Gupshup approval status for one template name (#74, #85).
 
-    Contract: ``GET <GUPSHUP_TEMPLATE_LIST_URL>?offset=0&limit=100`` with the
-    tenant's ``apikey`` header — the same key /msg uses, so the list it
-    scopes is the app the sends ride. Returns the raw template status (e.g.
-    ``APPROVED``); transport, HTTP or parse trouble yields "" — callers that
-    must guarantee delivery treat "" as "cannot prove approval" and fail
-    closed to the next channel rather than trusting a 202 ack.
+    Gate order (fail closed):
+
+    1. Portal-key live check — the list endpoint only answers a PORTAL
+       account key (the app's own api key gets 401 "Portal User Not Found
+       With APIKey"), so ``GUPSHUP_PORTAL_API_KEY`` drives a real GET of
+       ``GUPSHUP_TEMPLATE_LIST_URL`` with ``{appname}`` filled from the
+       tenant's Gupshup app name. A usable response decides outright:
+       ``APPROVED`` or the raw non-approved word (PENDING/REJECTED/absent).
+    2. Approved-names env — when the live check cannot run (no portal key,
+       or the endpoint still refuses/errors), names listed in
+       ``GUPSHUP_APPROVED_TEMPLATES`` are treated as APPROVED (ops flips this
+       on after console approval).
+    3. Fail closed — otherwise "" (callers that must guarantee delivery treat
+       "" as "cannot prove approval" and fall through rather than trusting a
+       202 ack).
+
+    Cache semantics are untouched and live with the senders: only verified
+    APPROVED verdicts get cached, negatives are never cached.
 
     Args:
-        tenant: The tenant whose Gupshup API key scopes the template list.
+        tenant: The tenant whose Gupshup app name scopes the template list.
         template_name: The platform template slug to look up.
         getter: Injectable HTTP get callable (tests).
 
@@ -112,18 +193,16 @@ def gupshup_template_status(
         The normalized status word for the template, "" when unverifiable.
     """
     base = str(getattr(settings, "GUPSHUP_TEMPLATE_LIST_URL", GUPSHUP_TEMPLATE_LIST_URL)).strip().rstrip("/")
-    get = getter or requests.get
-    try:
-        response = get(
-            f"{base}?offset=0&limit=100",
-            headers={"apikey": tenant.gupshup_api_key},
-            timeout=getattr(settings, "GUPSHUP_TIMEOUT", 10),
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except Exception:  # noqa: BLE001 - an unusable status API is "unverifiable"
-        return ""
-    return parse_gupshup_template_status(payload, template_name)
+    appname = (getattr(tenant, "gupshup_app_name", "") or "").strip()
+    url = base.replace("{appname}", appname)
+    portal_key = str(getattr(settings, "GUPSHUP_PORTAL_API_KEY", "") or "").strip()
+    if portal_key:
+        verdict = _live_template_status(url, portal_key, template_name, getter)
+        if verdict is not None:
+            return verdict
+    if template_name.upper() in approved_template_names_from_env():
+        return "APPROVED"
+    return ""
 
 
 def normalize_msisdn(phone: str, country_code: str = "91") -> str:

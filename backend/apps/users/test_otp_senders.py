@@ -14,6 +14,7 @@ import requests
 from apps.notifications.models import NotificationLog
 from apps.notifications.services.channels import (
     GUPSHUP_MSG_URL,
+    approved_template_names_from_env,
     gupshup_template_status,
     parse_gupshup_template_status,
 )
@@ -239,8 +240,13 @@ class GupshupTemplateStatusTests(TestCase):
 
     Gupshup's /msg API 202-acks ANY submit (#73), so the only synchronous
     proof a template send can really deliver is the template-management API
-    listing the name with status APPROVED.
+    listing the name with status APPROVED (#74). Transport (#85): the list
+    endpoint wants a PORTAL account key (the app key is rejected 401), so the
+    gate order is portal-key live check → GUPSHUP_APPROVED_TEMPLATES env →
+    fail closed.
     """
+
+    DEFAULT_URL = "https://api.gupshup.io/sm/api/v1/template/list/hash-fit-app"
 
     def setUp(self) -> None:
         """A tenant with the full Gupshup configuration."""
@@ -275,6 +281,14 @@ class GupshupTemplateStatusTests(TestCase):
             "APPROVED",
         )
 
+    def test_parse_elementname_entry_shape(self) -> None:
+        """Gupshup's other documented entry shape (elementName/templateName
+        keys, wa/app/{id}/template flavour) parses too (#85)."""
+        payload = {"templates": [{"elementName": "fitnation_otp", "status": "APPROVED"}]}
+        self.assertEqual(parse_gupshup_template_status(payload, "fitnation_otp"), "APPROVED")
+        bare = [{"elementName": "fitnation_otp", "templateStatus": "approved"}]
+        self.assertEqual(parse_gupshup_template_status(bare, "fitnation_otp"), "APPROVED")
+
     def test_parse_missing_template_is_empty(self) -> None:
         """A name not in the list → "" (gate treats it as unapproved)."""
         self.assertEqual(
@@ -306,36 +320,106 @@ class GupshupTemplateStatusTests(TestCase):
         self.assertEqual(parse_gupshup_template_status({"templates": "oops"}, "fitnation_otp"), "")
         self.assertEqual(parse_gupshup_template_status([{"status": "APPROVED"}], "fitnation_otp"), "")
 
-    def test_getter_posts_apikey_and_reads_url_from_settings(self) -> None:
-        """The list GET carries the tenant apikey and honours the URL setting."""
+    def test_portal_key_live_check_approves_and_fills_appname(self) -> None:
+        """Portal-key gate: GET carries the portal key and the app name is
+        substituted into the URL; a live APPROVED verdict wins."""
         captured = {}
 
         def getter(url, **kwargs):
             captured.update(kwargs, url=url)
             return self._response({"templates": [{"name": "fitnation_otp", "status": "APPROVED"}]})
 
-        with override_settings(GUPSHUP_TEMPLATE_LIST_URL="https://gupshup.example/sm/api/v1/templates"):
+        with override_settings(GUPSHUP_PORTAL_API_KEY="portal-key", GUPSHUP_APPROVED_TEMPLATES=""):
             status = gupshup_template_status(self.tenant, "fitnation_otp", getter=getter)
         self.assertEqual(status, "APPROVED")
-        self.assertEqual(captured["url"], "https://gupshup.example/sm/api/v1/templates?offset=0&limit=100")
-        self.assertEqual(captured["headers"], {"apikey": "gup-key"})
+        self.assertEqual(captured["url"], self.DEFAULT_URL)
+        self.assertEqual(captured["headers"], {"apikey": "portal-key"})
 
-    def test_transport_failure_is_unverifiable(self) -> None:
-        """HTTP/parse trouble → "" (unverifiable), never a raise."""
+    def test_portal_key_live_check_reports_negative_verdicts(self) -> None:
+        """A usable live response is authoritative even when negative — the
+        env allow-list must never override a working live check."""
+        calls = []
+
         def getter(url, **kwargs):
-            raise requests.ConnectionError("dns down")
+            calls.append(url)
+            return self._response({"templates": [{"name": "fitnation_otp", "status": "PENDING"}]})
 
-        self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", getter=getter), "")
+        with override_settings(GUPSHUP_PORTAL_API_KEY="portal-key", GUPSHUP_APPROVED_TEMPLATES="fitnation_otp"):
+            status = gupshup_template_status(self.tenant, "fitnation_otp", getter=getter)
+        self.assertEqual(status, "PENDING")
+        self.assertEqual(len(calls), 1)
 
-    def test_error_status_is_unverifiable(self) -> None:
-        """A non-2xx list response → "" (unverifiable)."""
+    def test_portal_401_falls_through_to_approved_names_env(self) -> None:
+        """The endpoint still refusing the call → the env allow-list decides."""
+        calls = []
+
         def getter(url, **kwargs):
-            response = MagicMock(status_code=500)
-            response.raise_for_status.side_effect = requests.HTTPError("500")
-            response.json.return_value = {}
+            calls.append(url)
+            raise requests.ConnectionError("unreachable")
+
+        with override_settings(GUPSHUP_PORTAL_API_KEY="portal-key", GUPSHUP_APPROVED_TEMPLATES="fitnation_otp"):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", getter=getter), "APPROVED")
+            self.assertEqual(len(calls), 1)
+
+    def test_portal_401_without_env_name_fails_closed(self) -> None:
+        """Gate order ends in fail closed: unusable live check + unlisted
+        name → "" (#74 semantics preserved)."""
+
+        def getter(url, **kwargs):
+            response = MagicMock(status_code=401)
+            response.raise_for_status.side_effect = requests.HTTPError("401")
+            response.json.return_value = {"message": "Portal User Not Found With APIKey"}
             return response
 
-        self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", getter=getter), "")
+        with override_settings(GUPSHUP_PORTAL_API_KEY="portal-key", GUPSHUP_APPROVED_TEMPLATES="welcome"):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", getter=getter), "")
+
+    def test_portal_junk_2xx_payload_falls_through_to_env(self) -> None:
+        """A 2xx body without a usable template list is "no verdict" — the
+        env allow-list is consulted, then the gate fails closed."""
+
+        def getter(url, **kwargs):
+            return self._response({"status": "error", "message": "boom"})
+
+        with override_settings(GUPSHUP_PORTAL_API_KEY="portal-key", GUPSHUP_APPROVED_TEMPLATES="fitnation_otp"):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", getter=getter), "APPROVED")
+        with override_settings(GUPSHUP_PORTAL_API_KEY="portal-key", GUPSHUP_APPROVED_TEMPLATES=""):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", getter=getter), "")
+
+    def test_no_portal_key_never_calls_the_endpoint(self) -> None:
+        """Without a portal key the list API cannot answer — the gate consults
+        only the env allow-list and must not burn a GET."""
+        getter = MagicMock()
+
+        with override_settings(GUPSHUP_PORTAL_API_KEY="", GUPSHUP_APPROVED_TEMPLATES="fitnation_otp"):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", getter=getter), "APPROVED")
+        with override_settings(GUPSHUP_PORTAL_API_KEY="", GUPSHUP_APPROVED_TEMPLATES="welcome"):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", getter=getter), "")
+        getter.assert_not_called()
+
+    def test_approved_names_env_is_whitespace_and_case_tolerant(self) -> None:
+        """Ops-friendly parsing: spaces, empty segments, mixed case."""
+        with override_settings(GUPSHUP_APPROVED_TEMPLATES=" welcome , , FitNation_OTP "):
+            self.assertEqual(approved_template_names_from_env(), {"WELCOME", "FITNATION_OTP"})
+        with override_settings(GUPSHUP_APPROVED_TEMPLATES=""):
+            self.assertEqual(approved_template_names_from_env(), set())
+
+    def test_url_setting_overrides_the_default_template(self) -> None:
+        """A custom GUPSHUP_TEMPLATE_LIST_URL wins; {appname} is substituted."""
+        captured = {}
+
+        def getter(url, **kwargs):
+            captured.update(kwargs, url=url)
+            return self._response({"templates": [{"name": "fitnation_otp", "status": "APPROVED"}]})
+
+        with override_settings(
+            GUPSHUP_PORTAL_API_KEY="portal-key",
+            GUPSHUP_TEMPLATE_LIST_URL="https://gupshup.example/sm/api/v1/template/list/{appname}",
+        ):
+            status = gupshup_template_status(self.tenant, "fitnation_otp", getter=getter)
+        self.assertEqual(status, "APPROVED")
+        self.assertEqual(captured["url"], "https://gupshup.example/sm/api/v1/template/list/hash-fit-app")
+        self.assertEqual(captured["headers"], {"apikey": "portal-key"})
 
 
 class GupshupOtpSenderTests(TestCase):
@@ -366,17 +450,16 @@ class GupshupOtpSenderTests(TestCase):
         return lambda tenant, name: return_status
 
     def test_send_posts_template_with_apikey_header(self) -> None:
-        """Body carries [code, gym, ttl]; the apikey header is the tenant key."""
+        """Body carries [code] ONLY (Authentication shape, #85 — no gym name,
+        no ttl); the apikey header is the tenant key."""
         poster = self._poster({"status": "submitted", "messageId": "m-1"})
-        sender = GupshupOtpSender(
-            self.tenant, poster=poster, template_getter=self._approved_getter("APPROVED")
-        )
+        sender = GupshupOtpSender(self.tenant, poster=poster, template_getter=self._approved_getter("APPROVED"))
         sender.send_otp("+919900000020", "123456", tenant=self.tenant)
         args, kwargs = poster.call_args
         self.assertEqual(args[0], GUPSHUP_MSG_URL)
         self.assertEqual(
             json.loads(kwargs["data"]["message"]),
-            {"type": "template", "name": "fitnation_otp", "params": ["123456", "Gup Gym", "10"]},
+            {"type": "template", "name": "fitnation_otp", "params": ["123456"]},
         )
         self.assertEqual(kwargs["data"]["destination"], "919900000020")
         self.assertEqual(kwargs["data"]["source"], "911234567890")
@@ -417,9 +500,7 @@ class GupshupOtpSenderTests(TestCase):
     def test_2xx_error_body_raises_provider_error(self) -> None:
         """HTTP 2xx with a Gupshup error body is a failure, not delivery."""
         poster = self._poster({"status": "error", "message": "destination not opted in"})
-        sender = GupshupOtpSender(
-            self.tenant, poster=poster, template_getter=self._approved_getter("APPROVED")
-        )
+        sender = GupshupOtpSender(self.tenant, poster=poster, template_getter=self._approved_getter("APPROVED"))
         with self.assertRaises(OtpDeliveryError) as caught:
             sender.send_otp("+919900000020", "123456", tenant=self.tenant)
         self.assertEqual(caught.exception.reason, "provider_error")
@@ -435,18 +516,16 @@ class GupshupOtpSenderTests(TestCase):
         )
         self.assertFalse(GupshupOtpSender.is_configured_for(half))
         with self.assertRaises(OtpDeliveryError) as caught:
-            GupshupOtpSender(
-                half, poster=self._poster(), template_getter=self._approved_getter("APPROVED")
-            ).send_otp("+919900000020", "123456")
+            GupshupOtpSender(half, poster=self._poster(), template_getter=self._approved_getter("APPROVED")).send_otp(
+                "+919900000020", "123456"
+            )
         self.assertEqual(caught.exception.reason, "not_configured")
 
     def test_transport_failure_raises_delivery_error(self) -> None:
         """Any HTTP failure → OtpDeliveryError (chain falls through)."""
         poster = MagicMock()
         poster.side_effect = RuntimeError("boom")
-        sender = GupshupOtpSender(
-            self.tenant, poster=poster, template_getter=self._approved_getter("APPROVED")
-        )
+        sender = GupshupOtpSender(self.tenant, poster=poster, template_getter=self._approved_getter("APPROVED"))
         with self.assertRaises(OtpDeliveryError) as caught:
             sender.send_otp("+919900000020", "123456", tenant=self.tenant)
         self.assertEqual(caught.exception.reason, "transport_error")
@@ -456,9 +535,7 @@ class GupshupOtpSenderTests(TestCase):
         cap = override_settings(TENANT_WATI_OTP_DAILY_CAP=0)
         cap.enable()
         self.addCleanup(cap.disable)
-        sender = GupshupOtpSender(
-            self.tenant, poster=self._poster(), template_getter=self._approved_getter("APPROVED")
-        )
+        sender = GupshupOtpSender(self.tenant, poster=self._poster(), template_getter=self._approved_getter("APPROVED"))
         with self.assertRaises(OtpDeliveryError) as caught:
             sender.send_otp("+919900000020", "123456", tenant=self.tenant)
         self.assertEqual(caught.exception.reason, "daily_cap_reached")

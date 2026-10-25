@@ -230,15 +230,25 @@ GUPSHUP_TEST_TEMPLATE_NAME = env("GUPSHUP_TEST_TEMPLATE_NAME", default="welcome"
 # Positional {{1}}..{{n}} values for the test template, comma-separated.
 GUPSHUP_TEST_TEMPLATE_PARAMS = env("GUPSHUP_TEST_TEMPLATE_PARAMS", default="")
 
-# Approved-template delivery gate (issue #74). Gupshup's /msg API 202-acks
-# ANY submit — an unapproved template is accepted and silently never
-# delivered — so the OTP chain verifies the template's APPROVED status via
-# the template-management API before trusting a send, and degrades to SMS
-# otherwise. Override the URL only if Gupshup relocates the endpoint.
-GUPSHUP_TEMPLATE_LIST_URL = env("GUPSHUP_TEMPLATE_LIST_URL", default="https://api.gupshup.io/sm/api/v1/templates")
+# Approved-template delivery gate (issue #74, transport fixed in #85).
+# Gupshup's /msg API 202-acks ANY submit — an unapproved template is accepted
+# and silently never delivered — so the send chain verifies the template's
+# APPROVED status before trusting a send, and degrades to SMS otherwise.
+GUPSHUP_TEMPLATE_LIST_URL = env(
+    "GUPSHUP_TEMPLATE_LIST_URL", default="https://api.gupshup.io/sm/api/v1/template/list/{appname}"
+)
 # How long a verified-APPROVED verdict is cached per tenant (avoid a list GET
 # on every send; a newly-approved template flips within this window).
 GUPSHUP_TEMPLATE_CHECK_TTL = 1800
+# PORTAL account key for the template-list endpoint (issue #85): the app's
+# own api key is rejected there (401 "Portal User Not Found With APIKey"),
+# so the live approval check needs the account-level dashboard key. When
+# unusable/absent, GUPSHUP_APPROVED_TEMPLATES below decides instead.
+GUPSHUP_PORTAL_API_KEY = env("GUPSHUP_PORTAL_API_KEY", default="")
+# Comma-separated template names ops has verified APPROVED in the Gupshup
+# console (issue #85) — consulted when the portal-key live check cannot run
+# (no portal key, or the endpoint still refuses it). Case/space tolerant.
+GUPSHUP_APPROVED_TEMPLATES = env("GUPSHUP_APPROVED_TEMPLATES", default="")
 
 # App invite deep link (FBOS-011 §5.4). The web base must host the App-Links
 # verification file; the custom scheme is handled by the Android manifest.

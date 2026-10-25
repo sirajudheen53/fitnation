@@ -211,7 +211,12 @@ def send_payment_link(
     # WhatsApp legs in policy order (WATI → Gupshup) when the member has a
     # phone; every attempted leg that fails leaves its own audit row. The ₹
     # sign sits in the template body ({{2}} carries the raw amount) — BSP
-    # consoles approve plain-text params, not symbols.
+    # consoles approve plain-text params, not symbols. Per issue #85 the two
+    # BSP templates differ in shape: WATI's template inlines the whole link
+    # as its 4th body variable; Gupshup's carries the link only inside the
+    # "Pay Now" CTA URL button (fixed Razorpay prefix), whose positional
+    # params are the 3 body variables + the link suffix. A non-Razorpay-
+    # shaped link passes through whole (loudly warned in the helper).
     whatsapp_error = ""
     if phone:
         template_name = WHATSAPP_TEMPLATE_NAMES["payment_link"]
@@ -221,6 +226,7 @@ def send_payment_link(
             template_name,
             normalize_msisdn(phone),
             params,
+            gupshup_params=[*params[:3], razorpay_service.payment_link_button_suffix(link_url)],
             poster=poster,
         )
         for provider, error in attempt.failures:

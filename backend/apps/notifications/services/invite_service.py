@@ -240,17 +240,26 @@ def send_app_invite(
 
     template_name = WHATSAPP_TEMPLATE_NAMES["app_invite"]
     to = normalize_msisdn(customer.phone or "", getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91"))
+    plan_name = membership.plan.name if membership else "your"
 
     # WhatsApp legs in policy order — WATI (tenant BSP #1), then Gupshup (#2).
     # A ready-but-failing provider falls through to the next leg; a provider
     # that is not fully configured is not attempted at all (the SMS leg
     # carries instead), matching the original WATI-only contract. Every
     # attempted leg is audited, so a failed leg leaves its own row.
+    #
+    # Issue #85: the two BSP templates differ. WATI's deep-link template
+    # inlines the whole web link as its 4th body variable; Gupshup's carries
+    # a STATIC "Get App" Play-Store CTA URL button (WhatsApp policy: links
+    # must not ride body variables), so its positional params are the 3 body
+    # variables and nothing more — the gym anchor resolves in-app via
+    # phone/OTP lookup instead of the web link.
     attempt = send_whatsapp_template(
         tenant,
         template_name,
         to,
-        [customer.name, tenant.name, membership.plan.name if membership else "your", link],
+        [customer.name, tenant.name, plan_name, link],
+        gupshup_params=[customer.name, tenant.name, plan_name],
         poster=poster,
     )
     failure_log: NotificationLog | None = None

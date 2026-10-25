@@ -326,7 +326,11 @@ class GupshupInviteTests(TestCase):
         )
 
     def test_gupshup_only_tenant_sends_whatsapp_invite(self) -> None:
-        """Only Gupshup configured → the invite rides it, audited as gupshup."""
+        """Only Gupshup configured → the invite rides it, audited as gupshup.
+
+        Gupshup shape (#85): the 3 body variables only — the "Get App" link
+        is a STATIC CTA URL button inside the approved template, never a body
+        variable (WhatsApp policy forbids links as body variables)."""
         poster = _ok_poster()
         result = send_app_invite(self.tenant, self.customer, poster=poster)
         self.assertEqual(result.status, "sent")
@@ -334,17 +338,37 @@ class GupshupInviteTests(TestCase):
         self.assertEqual(result.log.provider, "gupshup")
         args, kwargs = poster.call_args
         self.assertIn("api.gupshup.io", args[0])
-        link = build_app_invite_links(self.tenant)["web"]
         message = json.loads(kwargs["data"]["message"])
         self.assertEqual(
             message,
             {
                 "type": "template",
                 "name": "fitnation_app_invite",
-                "params": ["GM", "Gup Gym", "Monthly", link],
+                "params": ["GM", "Gup Gym", "Monthly"],
             },
         )
         self.assertEqual(kwargs["data"]["destination"], "919900060010")
+
+    def test_wati_keeps_deep_link_gupshup_keeps_static_button_params(self) -> None:
+        """The two BSP templates diverge (#85): WATI's deep-link template
+        still gets the full web link as its 4th body variable, while the
+        Gupshup leg gets the 3 body variables and no link."""
+        self.tenant.is_wati_enabled = True
+        self.tenant.wati_api_key = "wati-key"
+        self.tenant.save(update_fields=["is_wati_enabled", "wati_api_key"])
+        poster = _wati_down_poster()
+        result = send_app_invite(self.tenant, self.customer, poster=poster)
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.log.provider, "gupshup")
+        link = build_app_invite_links(self.tenant)["web"]
+        wati_call, gup_call = poster.call_args_list
+        self.assertIn("api.wati.io", wati_call.args[0])
+        self.assertEqual(wati_call.kwargs["json"]["templateParams"], ["GM", "Gup Gym", "Monthly", link])
+        gupshup_message = json.loads(gup_call.kwargs["data"]["message"])
+        self.assertEqual(gupshup_message["params"], ["GM", "Gup Gym", "Monthly"])
+        # The gym anchor is NOT passed to Gupshup at all — it resolves in-app
+        # via phone/OTP lookup behind the static Play Store button.
+        self.assertNotIn(link, gupshup_message["params"])
 
     def test_wati_down_gupshup_carries(self) -> None:
         """WATI failing → the Gupshup leg delivers before SMS is considered."""

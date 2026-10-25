@@ -75,9 +75,12 @@ __all__ = [
 # convention, so ``fitnation_app_invite`` works identically over Gupshup.
 WHATSAPP_TEMPLATE_NAMES: dict[str, str] = {
     "app_invite": "fitnation_app_invite",
-    # Issue #72: pending-payment nudge with a Razorpay payment link. Body:
-    # "Hi {{1}}, your payment of ₹{{2}} for {{3}} is pending. Pay securely
-    # online here: {{4}}" — params (customer_name, amount, gym_name, link).
+    # Issue #72/#85: pending-payment nudge with a Razorpay payment link.
+    # Gupshup template: body "Hi {{1}}, your payment of ₹{{2}} for {{3}} is
+    # pending." + "Pay Now" CTA URL button "https://rzp.io/i/{{1}}" (WhatsApp
+    # policy: links never ride body variables) — Gupshup positional params =
+    # [customer_name, amount, gym_name, short_url_suffix]. WATI's template
+    # inlines the whole link as its 4th body variable instead.
     "payment_link": "fitnation_payment_link",
 }
 
@@ -168,6 +171,7 @@ def send_whatsapp_template(
     to_msisdn: str,
     template_params: list[str],
     *,
+    gupshup_params: list[str] | None = None,
     providers: list[str] | None = None,
     poster: Callable[..., Any] | None = None,
 ) -> WhatsAppAttempt:
@@ -177,11 +181,21 @@ def send_whatsapp_template(
     swallowed and traced on the returned attempt so callers can fall through
     to SMS/email and audit each leg without a raise.
 
+    The two BSP templates of one name can differ in shape (issue #85):
+    Gupshup may only reveal the link inside a CTA URL button (WhatsApp policy
+    forbids bare links as body variables), so its positional params stop at
+    the body variables — the button's URL-variable value is appended at send
+    time per Gupshup's order-of-occurrence rule — while WATI templates inline
+    the whole link as a body variable. Pass ``template_params`` for WATI and
+    ``gupshup_params`` for Gupshup; the Gupshup leg falls back to
+    ``template_params`` when the override is omitted.
+
     Args:
         tenant: The sending tenant (per-provider credentials).
         template_name: The platform-wide approved template slug.
         to_msisdn: Recipient in ``<country_code><number>`` form.
-        template_params: Positional ``{{1}}…{{n}}`` template variables.
+        template_params: Positional ``{{1}}…{{n}}`` template variables (WATI).
+        gupshup_params: Override for the Gupshup leg (button-shaped templates).
         providers: Explicit provider order (tests / forced provider);
             defaults to every fully-configured provider, policy order.
         poster: Injectable HTTP post callable (tests).
@@ -197,7 +211,13 @@ def send_whatsapp_template(
             if provider == PROVIDER_WATI:
                 post_wati_template(tenant, template_name, to_msisdn, template_params, poster=poster)
             elif provider == PROVIDER_GUPSHUP:
-                post_gupshup_template(tenant, template_name, to_msisdn, template_params, poster=poster)
+                post_gupshup_template(
+                    tenant,
+                    template_name,
+                    to_msisdn,
+                    template_params if gupshup_params is None else gupshup_params,
+                    poster=poster,
+                )
             else:  # defensive — unknown provider names never loop forever
                 error = f"unknown WhatsApp provider {provider}"
                 failures.append((provider, error))

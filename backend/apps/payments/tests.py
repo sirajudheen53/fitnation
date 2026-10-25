@@ -537,6 +537,32 @@ class RazorpayConfigModelTests(TestCase):
         self.assertEqual(RazorpayConfig.objects.for_tenant(self.tenant).first().id, self.config.id)
 
 
+class PaymentLinkButtonSuffixTests(TestCase):
+    """The CTA URL-button variable extraction for the Gupshup payment send
+    (issue #85): strip the fixed Razorpay short_url prefix, never garble."""
+
+    def test_short_url_suffix_after_fixed_prefix(self) -> None:
+        """``https://rzp.io/i/<token>`` → ``<token>`` (the button URL variable)."""
+        self.assertEqual(razorpay_service.payment_link_button_suffix("https://rzp.io/i/nxrHnLJ"), "nxrHnLJ")
+        self.assertEqual(
+            razorpay_service.payment_link_button_suffix("https://rzp.io/i/PlNKsh0RtQKxWn"),
+            "PlNKsh0RtQKxWn",
+        )
+
+    def test_non_matching_link_passes_through_with_a_warning(self) -> None:
+        """A link off the fixed prefix passes whole (loudly warned) — the
+        template prefix needs re-checking, the audit copy still has the URL."""
+        with self.assertLogs("apps.payments.razorpay_service", level="WARNING"):
+            self.assertEqual(
+                razorpay_service.payment_link_button_suffix("https://rzp.io/l/oddLink"),
+                "https://rzp.io/l/oddLink",
+            )
+
+    def test_prefix_match_survives_url_casing_drift(self) -> None:
+        """Scheme/host casing drift must not turn a good link into garbage."""
+        self.assertEqual(razorpay_service.payment_link_button_suffix("HTTPS://RZP.IO/i/Token9x"), "Token9x")
+
+
 class RazorpayServiceTests(TestCase):
     """Unit tests for the Razorpay service layer."""
 
@@ -1185,10 +1211,14 @@ class SendPaymentLinkServiceTests(TestCase):
         self.assertEqual(result.payment_link_url, "https://rzp.io/i/s1")
 
         # Template args: approved slug, normalized msisdn, positional params.
+        # Per #85 the two BSP shapes differ: WATI's params carry the whole
+        # link; Gupshup's carry the 3 body variables + the short_url suffix
+        # for the "Pay Now" CTA URL button pinned to https://rzp.io/i/{{1}}.
         args = send_template.call_args
         self.assertEqual(args[0][1], "fitnation_payment_link")
         self.assertEqual(args[0][2], "919876543210")
         self.assertEqual(args[0][3], ["Cust Customer", "1500.00", "Iron Peak", "https://rzp.io/i/s1"])
+        self.assertEqual(args[1]["gupshup_params"], ["Cust Customer", "1500.00", "Iron Peak", "s1"])
 
         self.payment.refresh_from_db()
         self.assertEqual(self.payment.razorpay_payment_link_id, "plink_s1")

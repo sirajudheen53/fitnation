@@ -66,12 +66,17 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "Hi {customer_name}, please verify your email to finish setting up your {gym_name} account: "
         "{verify_link} The link is valid for 24 hours."
     ),
-    # Issue #72: pending-payment nudge with a Razorpay payment link. Sent as
-    # an APPROVED TEMPLATE message (fitnation_payment_link, positional
-    # {{1}}..{{4}} params) like app_invite; this entry renders the audit copy.
+    # Issue #72/#85: pending-payment nudge with a Razorpay payment link.
+    # The WhatsApp send is the approved fitnation_payment_link template —
+    # body {{1}}={{customer_name}}, {{2}}={{amount}}, {{3}}={{gym_name}} plus
+    # a "Pay Now" CTA URL button on the fixed Razorpay prefix (the link
+    # suffix is the button's variable; WATI templates inline the whole link
+    # as their 4th body variable instead). This entry renders the
+    # human-readable audit copy (and the email-leg fallback), which must
+    # still carry the URL.
     "payment_link": (
         "Hi {customer_name}, your payment of ₹{amount} for {gym_name} is pending. "
-        "Pay securely online here: {payment_link}"
+        "Tap Pay Now to pay securely online: {payment_link}"
     ),
 }
 

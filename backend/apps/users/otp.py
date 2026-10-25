@@ -18,6 +18,7 @@ shipping with codes going to logs or API responses is structurally impossible.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import logging
@@ -52,7 +53,10 @@ logger = logging.getLogger(__name__)
 # "{{1}} is your {{2}} login code. Valid for {{3}} minutes. Never share this code."
 WATI_OTP_TEMPLATE_NAME = "fitnation_otp"
 # Gupshup approved template — the same platform-wide slug, approved once in
-# the tenant's Gupshup console (issue #66).
+# the tenant's Gupshup console (issue #66). Shape per issue #85: an
+# Authentication-category body whose only variable is the code, so sends
+# carry params=[code] and nothing else — deliberately diverging from WATI's
+# same-name 3-variable template (see GupshupOtpSender).
 GUPSHUP_OTP_TEMPLATE_NAME = "fitnation_otp"
 
 
@@ -298,11 +302,19 @@ def _count_whatsapp_otp(tenant_pk, provider: str) -> None:
 class GupshupOtpSender(OtpSender):
     """Delivers the OTP over WhatsApp via the tenant's own Gupshup app (#66).
 
-    The second WhatsApp BSP in the delivery chain — same approved template
-    slug as WATI (``fitnation_otp``), same variable map, posted through the
-    Gupshup ``/wa/api/v1/msg`` contract. All three Gupshup credentials (key,
-    source number, app name) must be configured; anything less would fail on
-    the provider side for every send, so the chain skips straight past it.
+    The second WhatsApp BSP in the delivery chain. Template shape (issue #85
+    realignment): the Gupshup console template is an AUTHENTICATION-category
+    template named ``fitnation_otp`` with the strict body — essentially only
+    the code variable, no gym name, no extra wording (WhatsApp rejects gym
+    names/wording inside Authentication bodies, and the OTP is rejected in
+    Utility) — so the send carries ``params=[code]`` and nothing else. Note
+    the deliberate divergence from WATI: WATI's same-name template keeps its
+    3-variable body ([code, gym_name, ttl]) — its shape predates the category
+    rules and must not be broken for WATI tenants.
+
+    All three Gupshup credentials (key, source number, app name) must be
+    configured; anything less would fail on the provider side for every send,
+    so the chain skips straight past it.
 
     Because Gupshup 202-acks EVERY ``/msg`` submit (approved template or
     not — issue #73/#74), a send counts as delivered only when the template
@@ -380,10 +392,8 @@ class GupshupOtpSender(OtpSender):
             status = gupshup_template_status(self.tenant, GUPSHUP_OTP_TEMPLATE_NAME)
         if str(status).strip().upper() != "APPROVED":
             return False
-        try:
+        with contextlib.suppress(Exception):  # accounting must never block delivery
             cache.set(cache_key, True, timeout=getattr(settings, "GUPSHUP_TEMPLATE_CHECK_TTL", 1800))
-        except Exception:  # noqa: BLE001 - accounting must never block delivery
-            pass
         return True
 
     def send_otp(self, phone: str, code: str, tenant=None) -> None:
@@ -420,7 +430,7 @@ class GupshupOtpSender(OtpSender):
                 self.tenant,
                 GUPSHUP_OTP_TEMPLATE_NAME,
                 to,
-                [code, _tenant_gym_name(self.tenant), "10"],
+                [code],  # Authentication-category body: the code is its only variable (#85)
                 poster=self.poster,
             )
         except Exception as exc:
