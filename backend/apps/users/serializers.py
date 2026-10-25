@@ -172,6 +172,24 @@ class OTPVerifySerializer(serializers.Serializer):
     )
 
 
+class FirebaseAuthSerializer(serializers.Serializer):
+    """Firebase phone-auth login (customer app): ID-token exchange.
+
+    The mobile app authenticates the member with Firebase phone OTP in its
+    own Firebase project and POSTs the ID token (plus the same optional gym
+    anchor and device_type as otp request/verify): ``{"id_token": ...,
+    "gym": "<tenant uuid>", "device_type": "android"}``.
+    """
+
+    id_token = serializers.CharField(max_length=8192)
+    gym = serializers.UUIDField(required=False)  # device-bound gym anchor
+    device_type = serializers.ChoiceField(
+        choices=AuthToken.DeviceType.choices,
+        required=False,
+        allow_blank=True,
+    )
+
+
 # ── Trainer serializers ────────────────────────────────────────────────────────
 
 

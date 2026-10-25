@@ -8,6 +8,7 @@ from django.urls import include, path
 from apps.access.adms_views import cdata, devicecmd, getrequest
 from apps.access.debug_views import biometrics_debug
 from apps.core.healthcheck import HealthCheckView
+from apps.users.views import FirebaseAuthView
 from apps.vendors.views import SubscriptionPlanListView
 
 urlpatterns = [
@@ -52,6 +53,9 @@ urlpatterns = [
     path("api/v1/access/", include("apps.access.urls")),  # biometric access control
     path("api/v1/admin/", include("apps.admin_ops.urls")),  # platform admin (Sprint 10)
     path("api/v1/auth/", include("apps.vendors.urls")),
+    # Customer-app Firebase phone-OTP login (mobile contract path — the
+    # Flutter app exchanges its Firebase ID token here for an FBOS session).
+    path("api/v1/auth/firebase/", FirebaseAuthView.as_view(), name="firebase-auth"),
     path(
         "api/v1/subscriptions/plans/",
         SubscriptionPlanListView.as_view(),

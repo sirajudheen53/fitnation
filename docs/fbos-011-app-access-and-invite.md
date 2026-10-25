@@ -303,6 +303,34 @@ def resolve_otp_senders(tenant: Tenant) -> list[OtpSender]
 | `MSG91_AUTH_KEY` / `MSG91_SENDER_ID` / `MSG91_TEMPLATE_ID` | prod env (Secret Manager) | SMS credentials |
 | `TENANT_WATI_OTP_DAILY_CAP` | `base.py` | per-tenant WhatsApp OTP budget, default 200/day |
 
+### 4.4b Firebase phone-auth login (customer app, 2026-10)
+
+The Flutter app signs members in with Firebase phone OTP inside the mobile
+app's own Firebase project (`yougetfitwithus`) and exchanges the resulting
+ID token at `POST /api/v1/auth/firebase/` for the identical OTP-verify
+session payload (same anchor ladder, same convergence — one shared helper in
+`apps/users/views.py`). Backend contract:
+
+| Setting | Where | Purpose |
+|---|---|---|
+| `FIREBASE_CREDENTIALS` | prod env (Secret Manager) — **JSON CONTENT**, not a path | the mobile project's service-account JSON. Verification only reads Google's public certs, so the service account needs no extra IAM roles. Locally a file PATH is also accepted. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | local/dev only | ADC fallback file path when `FIREBASE_CREDENTIALS` is unset |
+| `FIREBASE_PROJECT_ID` | `base.py` env override | defaults to `yougetfitwithus` — the ID-token aud/iss check target |
+| `FIREBASE_VERIFY_DAILY_LIMIT_PER_IP` | `base.py` | per-IP daily cap on FAILED verifications (successes never count), default 50 |
+
+Ops wiring (same SECRET-style pattern as `META_SYSTEM_TOKEN` / `DATABASE_URL`):
+1. In the `yougetfitwithus` Firebase console → Project settings → Service
+   accounts → *Generate new private key* (this is the JSON; it IS a secret —
+   never commit it).
+2. `gcloud secrets create firebase-service-account --data-file=sa.json`
+   (project: the FBOS host project, same as the other provider secrets).
+3. Attach to the Cloud Run dev/prod services as an env var source:
+   `FIREBASE_CREDENTIALS` ← secret `firebase-service-account` (the env var
+   receives the JSON content itself; the code sniffs `{` vs path).
+4. Until steps 1–3 land, the endpoint answers **503
+   `firebase_auth_misconfigured`** (fail closed + CRITICAL log) — correct by
+   design, mobile login stays on the OTP fallback path.
+
 ### 4.5 Rate limits and failure modes
 
 - Existing per-flow limits unchanged: 60 s resend cooldown, 10/phone/day, 50/IP/day (`apps/users/otp.py:98-112`); anchor-lookup throttle 10/10 min (`apps/users/services.py:198-213`).

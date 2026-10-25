@@ -273,6 +273,24 @@ META_GRAPH_TEMPLATE_STATUS_URL = env(
 )
 META_GRAPH_TIMEOUT = 10
 
+# Firebase phone-auth login for the customer app. The Flutter app signs the
+# member in with Firebase phone OTP inside its own Firebase project and
+# exchanges the ID token for an FBOS session at POST /api/v1/auth/firebase/.
+# FIREBASE_CREDENTIALS carries the service-account JSON: either its PATH
+# (local dev) or the JSON CONTENT itself (Cloud Run Secret Manager env
+# injection, the same wiring as DATABASE_URL/SENDGRID_API_KEY). When unset,
+# the Admin SDK falls back to ADC via GOOGLE_APPLICATION_CREDENTIALS. With
+# NEITHER, the endpoint fails closed + loud (ImproperlyConfigured → 503) —
+# mobile login never silently degrades to a wrong project's tokens.
+FIREBASE_CREDENTIALS = env("FIREBASE_CREDENTIALS", default="")
+# The mobile app's Firebase project — ID-token aud/iss are checked against it
+# (forced onto the SDK app so host-project ADC can never accept cross-project
+# tokens).
+FIREBASE_PROJECT_ID = env("FIREBASE_PROJECT_ID", default="yougetfitwithus")
+# Per-IP daily cap on FAILED Firebase verifications (mirror of the OTP
+# per-IP cap; successes never count). Best-effort cache counter, fail-open.
+FIREBASE_VERIFY_DAILY_LIMIT_PER_IP = 50
+
 # App invite deep link (FBOS-011 §5.4). The web base must host the App-Links
 # verification file; the custom scheme is handled by the Android manifest.
 APP_INVITE_WEB_BASE = env("APP_INVITE_WEB_BASE", default="https://app.yougetfitwithus.com")

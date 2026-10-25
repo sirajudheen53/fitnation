@@ -1,9 +1,11 @@
 """User and authentication API views."""
 
 import logging
+from collections.abc import Callable
 from typing import ClassVar
 
 from django.contrib.auth import authenticate, get_user_model
+from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.decorators import action
@@ -23,6 +25,13 @@ from apps.tenants.models import Tenant
 from apps.tenants.permissions import IsTenantMember
 from apps.users.auth import AuthToken
 from apps.users.authentication import TenantTokenAuthentication
+from apps.users.firebase_auth import (
+    FirebaseRateLimited,
+    FirebaseTokenError,
+    FirebaseVerifierUnavailableError,
+    firebase_verify_phone,
+    throttle_failed_verification,
+)
 from apps.users.models import EmailVerificationToken
 from apps.users.otp import (
     OtpDeliveryError,
@@ -34,6 +43,7 @@ from apps.users.otp import (
 )
 from apps.users.selectors import user_get_by_id, user_list
 from apps.users.serializers import (
+    FirebaseAuthSerializer,
     LoginSerializer,
     OTPRequestSerializer,
     OTPVerifySerializer,
@@ -233,6 +243,65 @@ def _client_ip(request: Request) -> str | None:
     return forwarded.split(",")[0].strip() or request.META.get("REMOTE_ADDR") or None
 
 
+def _phone_login_session_response(
+    phone: str,
+    gym_anchor,
+    device_type: str,
+    ip: str | None,
+    tenant_gate: Callable[[Tenant], Response | None] | None = None,
+) -> Response:
+    """The ONE convergence path for phone-keyed customer logins (FBOS-011 §3).
+
+    Tenant resolution → optional per-route credential gate → identity
+    convergence → token issuance → the mobile response payload. Both
+    ``POST /auth/otp/verify/`` and ``POST /auth/firebase/`` funnel through
+    here so the anchor ladder, the auto-provision cap and the response
+    contract (token / user / effective permissions / entitlement — never
+    revealing registration state) cannot drift between the two routes.
+
+    Args:
+        phone: The verified phone number in E.164.
+        gym_anchor: Optional device-bound gym anchor (tenant uuid).
+        device_type: ``AuthToken.DeviceType`` value for the issued session.
+        ip: Client IP for the anchor rate limit.
+        tenant_gate: Optional route-specific credential check run once the
+            tenant is resolved — returns a ``Response`` to short-circuit
+            (e.g. a wrong OTP code → 400) or ``None`` to continue. The
+            Firebase route has already verified its ID token and passes
+            nothing.
+
+    Returns:
+        The DRF ``Response``: the success payload, the 200 disambiguation
+        payload (phone registered at several gyms), or the mapped 4xx
+        resolution / auto-provision error.
+    """
+    try:
+        tenant, disambiguation = resolve_tenant_for_otp(phone, gym_anchor, ip=ip)
+    except TenantResolutionError as exc:
+        return Response(exc.detail, status=exc.status_code)
+    if disambiguation is not None:
+        return Response(disambiguation, status=200)
+
+    if tenant_gate is not None:
+        gate_response = tenant_gate(tenant)
+        if gate_response is not None:
+            return gate_response
+
+    try:
+        user = get_or_create_customer_by_phone(phone, tenant)
+    except AutoProvisionLimitReached as exc:
+        return Response(exc.detail, status=exc.status_code)
+    token = issue_token(user, tenant, device_type=device_type)
+    return Response(
+        {
+            "token": token.key,
+            "user": UserSerializer(user).data,
+            "permissions": get_effective_permissions(user, tenant),
+            "entitlement": build_entitlement_payload(user, tenant),
+        }
+    )
+
+
 class OTPRequestView(APIView):
     """Request a real OTP (gym anchors + real delivery chain, FBOS-011 §4)."""
 
@@ -323,38 +392,86 @@ class OTPVerifyView(APIView):
         serializer = OTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        phone = data["phone"]
-        gym_anchor = data.get("gym")
+
+        def check_otp_code(tenant: Tenant) -> Response | None:
+            """Consume the code against the resolved tenant (400 on mismatch)."""
+            try:
+                verify_otp(data["phone"], data["otp"], tenant=tenant)
+            except OtpError as exc:
+                return Response({"detail": str(exc)}, status=400)
+            return None
+
+        return _phone_login_session_response(
+            data["phone"],
+            data.get("gym"),
+            data.get("device_type", AuthToken.DeviceType.ANDROID),
+            _client_ip(request),
+            tenant_gate=check_otp_code,
+        )
+
+
+class FirebaseAuthView(APIView):
+    """Exchange a Firebase ID token for a session (customer-app phone login).
+
+    The Flutter app signs the member in with Firebase phone OTP inside the
+    mobile app's own Firebase project (``yougetfitwithus``) and swaps the
+    resulting ID token here. Beyond the token check, convergence is byte-for-
+    byte the OTP-verify path (:func:`_phone_login_session_response`): the
+    same anchor ladder, the same identity convergence, and the identical
+    response JSON — token, user, effective permissions and the entitlement
+    object, including the never-reveal-registration-state rule (entitlement
+    ``none`` → the app shows "ask your gym for access", never an error).
+
+    Verdict mapping (fail closed):
+
+    * invalid/expired/unverifiable token → 401, after counting the failure
+      against a per-IP daily cap that answers 429 once exceeded (successes
+      never count);
+    * verifier broken at runtime (transport/backend) → 503;
+    * credentials/project misconfigured → loud 503 naming the missing piece
+      after CRITICAL logging (ops action) — never a silent fallback that
+      could accept a wrong project's tokens.
+    """
+
+    authentication_classes: ClassVar[list] = []
+    permission_classes: ClassVar[list] = [AllowAny]
+
+    def post(self, request: Request) -> Response:
+        """Verify the ID token, then converge exactly like OTP verify."""
+        serializer = FirebaseAuthSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
         ip = _client_ip(request)
 
         try:
-            tenant, disambiguation = resolve_tenant_for_otp(phone, gym_anchor, ip=ip)
-        except TenantResolutionError as exc:
-            return Response(exc.detail, status=exc.status_code)
-        if disambiguation is not None:
-            return Response(disambiguation, status=200)
+            phone = firebase_verify_phone(data["id_token"])
+        except ImproperlyConfigured as exc:
+            logger.critical("Firebase auth misconfigured — failing closed: %s", exc)
+            return Response(
+                {"detail": str(exc), "code": "firebase_auth_misconfigured"},
+                status=503,
+            )
+        except FirebaseVerifierUnavailableError as exc:
+            logger.error("Firebase verification unavailable — 503 returned: %s", exc)
+            return Response(
+                {
+                    "detail": "Phone login is temporarily unavailable — please try again.",
+                    "code": "firebase_auth_unavailable",
+                },
+                status=503,
+            )
+        except FirebaseTokenError as exc:
+            try:
+                throttle_failed_verification(ip)
+            except FirebaseRateLimited:
+                return Response({"detail": "Too many requests. Try again later."}, status=429)
+            return Response({"detail": str(exc)}, status=401)
 
-        try:
-            verify_otp(phone, data["otp"], tenant=tenant)
-        except OtpError as exc:
-            return Response({"detail": str(exc)}, status=400)
-
-        try:
-            user = get_or_create_customer_by_phone(phone, tenant)
-        except AutoProvisionLimitReached as exc:
-            return Response(exc.detail, status=exc.status_code)
-        token = issue_token(
-            user,
-            tenant,
-            device_type=data.get("device_type", AuthToken.DeviceType.ANDROID),
-        )
-        return Response(
-            {
-                "token": token.key,
-                "user": UserSerializer(user).data,
-                "permissions": get_effective_permissions(user, tenant),
-                "entitlement": build_entitlement_payload(user, tenant),
-            }
+        return _phone_login_session_response(
+            phone,
+            data.get("gym"),
+            data.get("device_type", AuthToken.DeviceType.ANDROID),
+            ip,
         )
 
 

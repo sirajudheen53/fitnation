@@ -50,3 +50,7 @@ cryptography>=44.0,<51.0
 
 # Email (SendGrid)
 sendgrid>=6.0,<7.0
+
+# Firebase Admin (customer-app phone-auth login: ID-token verification at
+# POST /api/v1/auth/firebase/)
+firebase-admin>=7.0,<8.0
