@@ -249,6 +249,29 @@ GUPSHUP_PORTAL_API_KEY = env("GUPSHUP_PORTAL_API_KEY", default="")
 # console (issue #85) — consulted when the portal-key live check cannot run
 # (no portal key, or the endpoint still refuses it). Case/space tolerant.
 GUPSHUP_APPROVED_TEMPLATES = env("GUPSHUP_APPROVED_TEMPLATES", default="")
+# Send-param shape for the Gupshup auth OTP template (issue #86). Meta's
+# AUTHENTICATION rules force a copy-code button on the recreated
+# fitnation_otp template, and Gupshup fills positional params in order of
+# occurrence: code_twice (default) = [code, code] (body var + button code);
+# code_once = [code] (body-var-only shape, pre-button templates). Ops flips
+# this after checking the console template preview — no deploy needed.
+GUPSHUP_OTP_PARAM_MODE = env("GUPSHUP_OTP_PARAM_MODE", default="code_twice")
+
+# Meta Graph API template-status verification (issue #86): the platform
+# system-user token + WABA id let the approved-template delivery gate read
+# status DIRECTLY from Meta — the source of truth Gupshup's console
+# templates resolve to, and a working check where Gupshup's own list
+# endpoint stays portal-key blocked (401). SECRET-style wiring: values live
+# in gcloud secrets the coordinator attaches to the service env; the code
+# only reads env. Unset → the gate falls back to the Gupshup portal-key
+# live check → GUPSHUP_APPROVED_TEMPLATES → fail closed. Read-only token.
+META_SYSTEM_TOKEN = env("META_SYSTEM_TOKEN", default="")
+META_WABA_ID = env("META_WABA_ID", default="")
+META_GRAPH_TEMPLATE_STATUS_URL = env(
+    "META_GRAPH_TEMPLATE_STATUS_URL",
+    default="https://graph.facebook.com/v21.0/{waba_id}/message_templates",
+)
+META_GRAPH_TIMEOUT = 10
 
 # App invite deep link (FBOS-011 §5.4). The web base must host the App-Links
 # verification file; the custom scheme is handled by the Android manifest.

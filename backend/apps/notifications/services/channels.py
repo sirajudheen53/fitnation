@@ -33,6 +33,22 @@ GUPSHUP_MSG_URL = "https://api.gupshup.io/wa/api/v1/msg"
 # gate falls back to the ``GUPSHUP_APPROVED_TEMPLATES`` env allow-list.
 GUPSHUP_TEMPLATE_LIST_URL = "https://api.gupshup.io/sm/api/v1/template/list/{appname}"
 
+# Meta Cloud API template-status verification (issue #86): the platform system
+# user token + WABA id let the backend read template approval DIRECTLY from
+# Meta's Graph API — the source of truth Gupshup's console templates resolve
+# to, and a working check where the Gupshup list endpoint stays portal-key
+# blocked (401). The URL carries a ``{waba_id}`` placeholder; the platform
+# template slugs below are the names whose status is derived from Meta (they
+# live in the platform WABA; other template names keep the Gupshup-only gate).
+META_GRAPH_TEMPLATE_STATUS_URL = "https://graph.facebook.com/v21.0/{waba_id}/message_templates"
+META_PLATFORM_TEMPLATE_NAMES = frozenset(
+    {
+        "FITNATION_OTP",
+        "FITNATION_PAYMENT_LINK",
+        "FITNATION_APP_INVITE",
+    }
+)
+
 # Portal (platform-level) API key for GUPSHUP_TEMPLATE_LIST_URL (issue #85).
 GUPSHUP_PORTAL_API_KEY = ""
 # Comma-separated template names verifiably APPROVED in Gupshup (issue #85).
@@ -157,29 +173,116 @@ def _live_template_status(
     return parse_gupshup_template_status(payload, template_name)
 
 
+def parse_meta_template_status(payload: Any, template_name: str) -> str:
+    """Extract one template's status from a Graph API ``message_templates`` payload.
+
+    Pure helper (tests / reuse): Meta answers
+    ``{"data": [{"name": …, "status": …}, …], "paging": {…}}`` (issue #86).
+    Entry parsing is shared with the Gupshup parser (name + status keys, any
+    APPROVED entry wins, otherwise the first non-empty status) — only the
+    Meta-specific ``data`` wrapper differs. Statuses seen in the wild:
+    ``PENDING`` / ``APPROVED`` / ``REJECTED`` / ``PAUSED`` / ``DISABLED``.
+
+    Args:
+        payload: The parsed JSON body of a Graph API template-list response.
+        template_name: The template slug to look up.
+
+    Returns:
+        The normalized status word, or "" when the name is absent or the
+        payload is unusable.
+    """
+    if not isinstance(payload, dict):
+        return ""
+    data = payload.get("data")
+    if not isinstance(data, list):
+        return ""
+    return parse_gupshup_template_status(data, template_name)
+
+
+def _meta_template_status(
+    template_name: str,
+    *,
+    getter: Callable[..., Any] | None,
+) -> str | None:
+    """One live template-status GET against the Meta Graph API (issue #86).
+
+    Contract: ``GET META_GRAPH_TEMPLATE_STATUS_URL`` (``{waba_id}`` already
+    substituted) with ``fields=name,status`` and the platform system-user
+    token as a ``Bearer`` authorization header. Requires BOTH
+    ``META_SYSTEM_TOKEN`` and ``META_WABA_ID`` — platform-level secrets wired
+    to the service env by the coordinator; without either the check cannot
+    run. The parse verdict is returned whenever the body carries a usable
+    ``data`` list — even when the verdict is negative (name absent /
+    PENDING): a working live check is authoritative, so the Gupshup checks
+    and the env allow-list must not override it. Transport, HTTP (4xx/5xx)
+    or unusable-payload trouble yields ``None`` = "did not get a verdict",
+    which the gate turns into the next check in order.
+
+    Args:
+        template_name: The platform template slug to look up.
+        getter: Injectable HTTP get callable (tests).
+
+    Returns:
+        The normalized status word, or ``None`` when unverifiable.
+    """
+    token = str(getattr(settings, "META_SYSTEM_TOKEN", "") or "").strip()
+    waba_id = str(getattr(settings, "META_WABA_ID", "") or "").strip()
+    if not token or not waba_id:
+        return None
+    base = str(getattr(settings, "META_GRAPH_TEMPLATE_STATUS_URL", META_GRAPH_TEMPLATE_STATUS_URL)).strip().rstrip("/")
+    get = getter or requests.get
+    try:
+        response = get(
+            base.replace("{waba_id}", waba_id),
+            params={"fields": "name,status"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=getattr(settings, "META_GRAPH_TIMEOUT", 10),
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:  # noqa: BLE001 - an unusable status API is "no verdict"
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        return None
+    return parse_meta_template_status(payload, template_name)
+
+
 def gupshup_template_status(
     tenant,
     template_name: str,
     *,
     getter: Callable[..., Any] | None = None,
+    meta_getter: Callable[..., Any] | None = None,
 ) -> str:
-    """The tenant's Gupshup approval status for one template name (#74, #85).
+    """The platform approval status for one template name (#74, #85, #86).
 
     Gate order (fail closed):
 
-    1. Portal-key live check — the list endpoint only answers a PORTAL
+    1. Meta Graph check (#86) — when ``META_SYSTEM_TOKEN`` +
+       ``META_WABA_ID`` are set and the name is one of the platform template
+       slugs (:data:`META_PLATFORM_TEMPLATE_NAMES`), the status is read
+       DIRECTLY from Meta, the source of truth Gupshup's console templates
+       resolve to. A usable response decides outright: ``APPROVED`` or the
+       raw non-approved word (PENDING/REJECTED/PAUSED/absent).
+    2. Portal-key Gupshup live check — only when Meta cannot run or verify
+       (#86 precedence): the Gupshup list endpoint only answers a PORTAL
        account key (the app's own api key gets 401 "Portal User Not Found
        With APIKey"), so ``GUPSHUP_PORTAL_API_KEY`` drives a real GET of
        ``GUPSHUP_TEMPLATE_LIST_URL`` with ``{appname}`` filled from the
        tenant's Gupshup app name. A usable response decides outright:
        ``APPROVED`` or the raw non-approved word (PENDING/REJECTED/absent).
-    2. Approved-names env — when the live check cannot run (no portal key,
-       or the endpoint still refuses/errors), names listed in
+    3. Approved-names env — when the live checks cannot run (no keys, or
+       the endpoints still refuse/error), names listed in
        ``GUPSHUP_APPROVED_TEMPLATES`` are treated as APPROVED (ops flips this
        on after console approval).
-    3. Fail closed — otherwise "" (callers that must guarantee delivery treat
+    4. Fail closed — otherwise "" (callers that must guarantee delivery treat
        "" as "cannot prove approval" and fall through rather than trusting a
        202 ack).
+
+    Every live verdict here is authoritative — neither the env allow-list nor
+    a weaker check overrides a usable response from a stronger one; transport
+    trouble (any exception/HTTP error/unusable body) is "no verdict" and
+    moves on to the next gate.
 
     Cache semantics are untouched and live with the senders: only verified
     APPROVED verdicts get cached, negatives are never cached.
@@ -187,11 +290,16 @@ def gupshup_template_status(
     Args:
         tenant: The tenant whose Gupshup app name scopes the template list.
         template_name: The platform template slug to look up.
-        getter: Injectable HTTP get callable (tests).
+        getter: Injectable Gupshup HTTP get callable (tests).
+        meta_getter: Injectable Meta Graph HTTP get callable (tests).
 
     Returns:
         The normalized status word for the template, "" when unverifiable.
     """
+    if template_name.upper() in META_PLATFORM_TEMPLATE_NAMES:
+        verdict = _meta_template_status(template_name, getter=meta_getter)
+        if verdict is not None:
+            return verdict
     base = str(getattr(settings, "GUPSHUP_TEMPLATE_LIST_URL", GUPSHUP_TEMPLATE_LIST_URL)).strip().rstrip("/")
     appname = (getattr(tenant, "gupshup_app_name", "") or "").strip()
     url = base.replace("{appname}", appname)

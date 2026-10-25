@@ -53,11 +53,52 @@ logger = logging.getLogger(__name__)
 # "{{1}} is your {{2}} login code. Valid for {{3}} minutes. Never share this code."
 WATI_OTP_TEMPLATE_NAME = "fitnation_otp"
 # Gupshup approved template — the same platform-wide slug, approved once in
-# the tenant's Gupshup console (issue #66). Shape per issue #85: an
-# Authentication-category body whose only variable is the code, so sends
-# carry params=[code] and nothing else — deliberately diverging from WATI's
-# same-name 3-variable template (see GupshupOtpSender).
+# the tenant's Gupshup console (issue #66). Shape per issues #85/#86: an
+# AUTHENTICATION-category template whose only body variable is the code.
+# Meta's auth rules require exactly one OTP-type button (copy_code) on such
+# templates, and Gupshup maps positional send params in order of occurrence
+# (body var first, button payload second) — so the button-aware send is
+# ``[code, code]`` (:func:`gupshup_otp_params`); the pre-button bare ``[code]``
+# shape stays reachable via ``GUPSHUP_OTP_PARAM_MODE=code_once``. Deliberately
+# divergent from WATI's same-name 3-variable template (see GupshupOtpSender).
 GUPSHUP_OTP_TEMPLATE_NAME = "fitnation_otp"
+
+GUPSHUP_OTP_PARAM_MODES = ("code_once", "code_twice")
+
+
+def gupshup_otp_params(code: str) -> list[str]:
+    """Send params for the tenant's Gupshup ``fitnation_otp`` auth template (#86).
+
+    Siju recreates the template through Gupshup's OTP-category flow, which
+    produces a copy-code-button authentication template (Meta rejects auth
+    creates without exactly one OTP-type button). Gupshup fills positional
+    ``params`` across the template in order of occurrence, so the code must
+    ride BOTH the body variable and the button payload: ``[code, code]``
+    (``GUPSHUP_OTP_PARAM_MODE=code_twice``, the default). If the console
+    template preview shows the code appearing only once (body-var-only
+    shape), ops flips ``GUPSHUP_OTP_PARAM_MODE=code_once`` for ``[code]`` —
+    no deploy needed. Anything else is a config error raised loudly rather
+    than silently sending the wrong param count (the provider would reject
+    it at send time anyway).
+
+    Args:
+        code: The 6-digit OTP (same value for body and button).
+
+    Returns:
+        The positional params list for :func:`post_gupshup_template`.
+
+    Raises:
+        ImproperlyConfigured: When ``GUPSHUP_OTP_PARAM_MODE`` is not one of
+            :data:`GUPSHUP_OTP_PARAM_MODES`.
+    """
+    mode = str(getattr(settings, "GUPSHUP_OTP_PARAM_MODE", "code_twice") or "").strip().lower()
+    if mode not in GUPSHUP_OTP_PARAM_MODES:
+        raise ImproperlyConfigured(
+            f"Unknown GUPSHUP_OTP_PARAM_MODE: {mode!r} — expected one of {GUPSHUP_OTP_PARAM_MODES}."
+        )
+    if mode == "code_once":
+        return [code]
+    return [code, code]
 
 
 class OtpError(Exception):
@@ -302,15 +343,17 @@ def _count_whatsapp_otp(tenant_pk, provider: str) -> None:
 class GupshupOtpSender(OtpSender):
     """Delivers the OTP over WhatsApp via the tenant's own Gupshup app (#66).
 
-    The second WhatsApp BSP in the delivery chain. Template shape (issue #85
-    realignment): the Gupshup console template is an AUTHENTICATION-category
-    template named ``fitnation_otp`` with the strict body — essentially only
-    the code variable, no gym name, no extra wording (WhatsApp rejects gym
-    names/wording inside Authentication bodies, and the OTP is rejected in
-    Utility) — so the send carries ``params=[code]`` and nothing else. Note
-    the deliberate divergence from WATI: WATI's same-name template keeps its
-    3-variable body ([code, gym_name, ttl]) — its shape predates the category
-    rules and must not be broken for WATI tenants.
+    The second WhatsApp BSP in the delivery chain. Template shape (issues
+    #85/#86): the Gupshup console template is an AUTHENTICATION-category
+    template named ``fitnation_otp`` whose only body variable is the code —
+    no gym name, no extra wording (WhatsApp rejects gym names/wording inside
+    Authentication bodies, and the OTP is rejected in Utility) — and, since
+    Siju's console recreation rides Meta's auth rules, a copy-code button,
+    so the send carries ``[code, code]`` (body var + button param; see
+    :func:`gupshup_otp_params` for the ``GUPSHUP_OTP_PARAM_MODE`` switch).
+    Note the deliberate divergence from WATI: WATI's same-name template kept
+    its 3-variable body ([code, gym_name, ttl]) — its shape predates the
+    category rules and must not be broken for WATI tenants.
 
     All three Gupshup credentials (key, source number, app name) must be
     configured; anything less would fail on the provider side for every send,
@@ -425,12 +468,15 @@ class GupshupOtpSender(OtpSender):
             )
 
         to = normalize_msisdn(phone, getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91"))
+        # Outside the transport try: a bad GUPSHUP_OTP_PARAM_MODE is a config
+        # error that must fail loudly, not masquerade as a provider failure.
+        params = gupshup_otp_params(code)
         try:
             response = post_gupshup_template(
                 self.tenant,
                 GUPSHUP_OTP_TEMPLATE_NAME,
                 to,
-                [code],  # Authentication-category body: the code is its only variable (#85)
+                params,  # button-aware auth shape (#86): [code, code] by default
                 poster=self.poster,
             )
         except Exception as exc:

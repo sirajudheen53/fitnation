@@ -3,7 +3,7 @@ WATI/Gupshup/MSG91 contracts, prod-safety blocks, caps, audit logging, and
 the machine-readable failure diagnostics (issues #59, #66)."""
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
@@ -14,9 +14,11 @@ import requests
 from apps.notifications.models import NotificationLog
 from apps.notifications.services.channels import (
     GUPSHUP_MSG_URL,
+    _meta_template_status,
     approved_template_names_from_env,
     gupshup_template_status,
     parse_gupshup_template_status,
+    parse_meta_template_status,
 )
 from apps.tenants.services import provision_tenant
 from apps.users.otp import (
@@ -28,6 +30,7 @@ from apps.users.otp import (
     StubOtpSender,
     WatiOtpSender,
     get_otp_sender,
+    gupshup_otp_params,
     issue_otp,
     normalize_msisdn,
     resolve_otp_senders,
@@ -46,6 +49,8 @@ GUPSHUP_CONFIG = {
     "gupshup_source": "911234567890",
     "gupshup_app_name": "hash-fit-app",
 }
+
+META_SETTINGS = {"META_SYSTEM_TOKEN": "meta-system-token", "META_WABA_ID": "meta-waba-123"}
 
 
 class SenderResolutionTests(TestCase):
@@ -422,6 +427,246 @@ class GupshupTemplateStatusTests(TestCase):
         self.assertEqual(captured["headers"], {"apikey": "portal-key"})
 
 
+class MetaTemplateStatusParseTests(TestCase):
+    """parse_meta_template_status: the Graph API ``{"data": [...]}`` wrapper (#86).
+
+    Entry parsing is shared with the Gupshup parser — Meta only adds its
+    ``data`` wrapper and its own status vocabulary."""
+
+    def test_parse_data_wrapper_shape(self) -> None:
+        """Meta's documented shape parses by name; extra keys are ignored."""
+        payload = {"data": [{"id": "42", "name": "fitnation_otp", "status": "APPROVED"}], "paging": {"cursors": {}}}
+        self.assertEqual(parse_meta_template_status(payload, "fitnation_otp"), "APPROVED")
+
+    def test_parse_reports_pending(self) -> None:
+        """PENDING/PAUSED report verbatim — negative, not silent."""
+        self.assertEqual(
+            parse_meta_template_status({"data": [{"name": "fitnation_otp", "status": "PENDING"}]}, "fitnation_otp"),
+            "PENDING",
+        )
+        self.assertEqual(
+            parse_meta_template_status({"data": [{"name": "fitnation_otp", "status": "PAUSED"}]}, "fitnation_otp"),
+            "PAUSED",
+        )
+
+    def test_parse_missing_template_is_empty(self) -> None:
+        """A name not in the WABA's list → "" (the gate treats it as
+        unapproved; the template may not be recreated yet)."""
+        self.assertEqual(
+            parse_meta_template_status(
+                {"data": [{"name": "fitnation_payment_link", "status": "APPROVED"}]}, "fitnation_otp"
+            ),
+            "",
+        )
+        self.assertEqual(parse_meta_template_status({"data": []}, "fitnation_otp"), "")
+
+    def test_parse_normalizes_status(self) -> None:
+        """Status words are case/space normalized."""
+        self.assertEqual(
+            parse_meta_template_status({"data": [{"name": "fitnation_otp", "status": " Approved "}]}, "fitnation_otp"),
+            "APPROVED",
+        )
+
+    def test_parse_any_approved_entry_wins(self) -> None:
+        """Duplicate name entries (revisions): the APPROVED one is the verdict."""
+        payload = {
+            "data": [
+                {"name": "fitnation_otp", "status": "PAUSED"},
+                {"name": "fitnation_otp", "status": "APPROVED"},
+            ]
+        }
+        self.assertEqual(parse_meta_template_status(payload, "fitnation_otp"), "APPROVED")
+
+    def test_parse_unusable_payloads_are_empty(self) -> None:
+        """None / missing data / junk shapes parse to "" — never raise."""
+        for payload in (None, {}, {"error": {"message": "boom"}}, {"data": "oops"}, []):
+            self.assertEqual(parse_meta_template_status(payload, "fitnation_otp"), "")
+
+
+class MetaGraphStatusGateTests(TestCase):
+    """The #86 Meta Graph template-status leg.
+
+    Transport contract (system-token Bearer GET, ``fields=name,status``) and
+    the extended gate precedence: Meta → Gupshup portal-key live check →
+    GUPSHUP_APPROVED_TEMPLATES env → fail closed. A usable Meta response is
+    authoritative even when negative (mirrors the Gupshup live leg); any
+    transport/HTTP/payload trouble is "no verdict" and moves down the chain."""
+
+    DEFAULT_URL = "https://graph.facebook.com/v21.0/meta-waba-123/message_templates"
+
+    def setUp(self) -> None:
+        """A tenant with the full Gupshup configuration."""
+        self.tenant = provision_tenant(name="Meta Gym", contact_email="meta@local.test", **GUPSHUP_CONFIG)
+
+    @staticmethod
+    def _meta_response(payload) -> MagicMock:
+        """A fake 2xx Graph API response carrying ``payload`` as JSON."""
+        response = MagicMock(status_code=200)
+        response.json.return_value = payload
+        return response
+
+    @staticmethod
+    def _approved_data() -> dict:
+        """A usable Graph API payload naming fitnation_otp APPROVED."""
+        return {"data": [{"name": "fitnation_otp", "status": "APPROVED"}]}
+
+    def test_transport_contract_url_fields_and_bearer_header(self) -> None:
+        """GET carries the {waba_id}-substituted URL, the fields param and
+        the system token as a Bearer authorization header."""
+        captured = {}
+
+        def meta_getter(url, **kwargs):
+            captured.update(kwargs, url=url)
+            return self._meta_response(self._approved_data())
+
+        with override_settings(**META_SETTINGS):
+            self.assertEqual(_meta_template_status("fitnation_otp", getter=meta_getter), "APPROVED")
+        self.assertEqual(captured["url"], self.DEFAULT_URL)
+        self.assertEqual(captured["params"], {"fields": "name,status"})
+        self.assertEqual(captured["headers"], {"Authorization": "Bearer meta-system-token"})
+
+    def test_custom_graph_url_setting_is_honoured(self) -> None:
+        """A custom META_GRAPH_TEMPLATE_STATUS_URL wins; {waba_id} is filled."""
+        captured = {}
+
+        def meta_getter(url, **kwargs):
+            captured["url"] = url
+            return self._meta_response(self._approved_data())
+
+        with override_settings(
+            **META_SETTINGS,
+            META_GRAPH_TEMPLATE_STATUS_URL="https://graph.example/v21.0/{waba_id}/message_templates",
+        ):
+            self.assertEqual(_meta_template_status("fitnation_otp", getter=meta_getter), "APPROVED")
+        self.assertEqual(captured["url"], "https://graph.example/v21.0/meta-waba-123/message_templates")
+
+    def test_missing_token_or_waba_skips_the_graph_leg(self) -> None:
+        """Both META_SYSTEM_TOKEN and META_WABA_ID are required — anything
+        less means the check cannot run ("no verdict"), never a bad call."""
+        meta_getter = MagicMock()
+        with override_settings(META_SYSTEM_TOKEN="", META_WABA_ID=""):
+            self.assertIsNone(_meta_template_status("fitnation_otp", getter=meta_getter))
+        with override_settings(META_SYSTEM_TOKEN="tok", META_WABA_ID=""):
+            self.assertIsNone(_meta_template_status("fitnation_otp", getter=meta_getter))
+        with override_settings(META_SYSTEM_TOKEN="", META_WABA_ID="waba"):
+            self.assertIsNone(_meta_template_status("fitnation_otp", getter=meta_getter))
+        meta_getter.assert_not_called()
+
+    def test_http_4xx_is_no_verdict(self) -> None:
+        """A 401 (e.g. expired token) or 4xx of any kind yields "no verdict"
+        so the gate can fall back — a transport failure is not a rejection."""
+        response = MagicMock(status_code=401)
+        response.raise_for_status.side_effect = requests.HTTPError("401", response=response)
+        with override_settings(**META_SETTINGS):
+            self.assertIsNone(_meta_template_status("fitnation_otp", getter=MagicMock(return_value=response)))
+
+    def test_error_body_is_no_verdict(self) -> None:
+        """A 2xx without a usable ``data`` list is "no verdict" too."""
+        with override_settings(**META_SETTINGS):
+            self.assertIsNone(
+                _meta_template_status(
+                    "fitnation_otp", getter=lambda *a, **k: self._meta_response({"error": {"message": "boom"}})
+                )
+            )
+
+    def test_meta_approval_wins_over_gupshup_and_env(self) -> None:
+        """Gate precedence: a working Meta check decides outright and the
+        Gupshup list endpoint is never burned."""
+        gupshup_getter = MagicMock()
+
+        with override_settings(**META_SETTINGS, GUPSHUP_PORTAL_API_KEY="portal-key"):
+            status = gupshup_template_status(
+                self.tenant,
+                "fitnation_otp",
+                getter=gupshup_getter,
+                meta_getter=lambda *a, **k: self._meta_response(self._approved_data()),
+            )
+        self.assertEqual(status, "APPROVED")
+        gupshup_getter.assert_not_called()
+
+    def test_meta_negative_verdict_is_authoritative(self) -> None:
+        """PENDING stays PENDING even when the env allow-list names the
+        template — a working live check cannot be overridden by env ops."""
+
+        def meta_getter(url, **kwargs):
+            return self._meta_response({"data": [{"name": "fitnation_otp", "status": "PENDING"}]})
+
+        with override_settings(**META_SETTINGS, GUPSHUP_APPROVED_TEMPLATES="fitnation_otp"):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", meta_getter=meta_getter), "PENDING")
+
+    def test_meta_absent_name_is_authoritative_negative(self) -> None:
+        """The template not yet recreated in the platform WABA → fail closed
+        (""), never an env-allowlist override pretending it is approved."""
+
+        def meta_getter(url, **kwargs):
+            return self._meta_response({"data": [{"name": "fitnation_payment_link", "status": "APPROVED"}]})
+
+        with override_settings(**META_SETTINGS, GUPSHUP_APPROVED_TEMPLATES="fitnation_otp"):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", meta_getter=meta_getter), "")
+
+    def test_meta_401_falls_back_to_gupshup_checks(self) -> None:
+        """Fallback order: Meta 401 → the portal-key Gupshup live check,
+        which then decides."""
+        calls = []
+
+        def meta_getter(url, **kwargs):
+            calls.append("meta")
+            response = MagicMock(status_code=401)
+            response.raise_for_status.side_effect = requests.HTTPError("401")
+            return response
+
+        def gupshup_getter(url, **kwargs):
+            calls.append("gupshup")
+            response = MagicMock(status_code=200)
+            response.json.return_value = {"templates": [{"name": "fitnation_otp", "status": "APPROVED"}]}
+            return response
+
+        with override_settings(**META_SETTINGS, GUPSHUP_PORTAL_API_KEY="portal-key"):
+            status = gupshup_template_status(
+                self.tenant, "fitnation_otp", getter=gupshup_getter, meta_getter=meta_getter
+            )
+        self.assertEqual(status, "APPROVED")
+        self.assertEqual(calls, ["meta", "gupshup"])
+
+    def test_meta_transport_error_falls_back_to_env(self) -> None:
+        """Meta unreachable → the env allow-list decides (and fails closed
+        when the name is unlisted)."""
+
+        def meta_getter(url, **kwargs):
+            raise requests.ConnectionError("unreachable")
+
+        with override_settings(**META_SETTINGS, GUPSHUP_APPROVED_TEMPLATES="fitnation_otp"):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", meta_getter=meta_getter), "APPROVED")
+        with override_settings(**META_SETTINGS, GUPSHUP_APPROVED_TEMPLATES="welcome"):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", meta_getter=meta_getter), "")
+
+    def test_env_allowlist_still_gates_without_meta_creds(self) -> None:
+        """META_SYSTEM_TOKEN/META_WABA_ID unset → the #85 chain is untouched
+        and the Graph API is never called."""
+        meta_getter = MagicMock()
+        with override_settings(META_SYSTEM_TOKEN="", META_WABA_ID="", GUPSHUP_APPROVED_TEMPLATES="FITNATION_OTP"):
+            self.assertEqual(gupshup_template_status(self.tenant, "fitnation_otp", meta_getter=meta_getter), "APPROVED")
+        meta_getter.assert_not_called()
+
+    def test_non_platform_names_never_consult_meta(self) -> None:
+        """Only the platform slugs live in the platform WABA — any other
+        template (e.g. the settings-page test-send "welcome") keeps the
+        Gupshup-only gate and must not be answered by Meta's list."""
+        meta_getter = MagicMock()
+
+        def gupshup_getter(url, **kwargs):
+            response = MagicMock(status_code=200)
+            response.json.return_value = {"templates": [{"name": "welcome", "status": "APPROVED"}]}
+            return response
+
+        with override_settings(**META_SETTINGS, GUPSHUP_PORTAL_API_KEY="portal-key"):
+            self.assertEqual(
+                gupshup_template_status(self.tenant, "welcome", getter=gupshup_getter, meta_getter=meta_getter),
+                "APPROVED",
+            )
+        meta_getter.assert_not_called()
+
+
 class GupshupOtpSenderTests(TestCase):
     """The Gupshup WhatsApp OTP contract (issue #66) — second BSP, same
     template variable map, /wa/api/v1/msg transport — plus the #74
@@ -450,8 +695,9 @@ class GupshupOtpSenderTests(TestCase):
         return lambda tenant, name: return_status
 
     def test_send_posts_template_with_apikey_header(self) -> None:
-        """Body carries [code] ONLY (Authentication shape, #85 — no gym name,
-        no ttl); the apikey header is the tenant key."""
+        """Button-aware default (#86): params [code, code] (body var +
+        copy-code button payload share the value); apikey header is the
+        tenant key."""
         poster = self._poster({"status": "submitted", "messageId": "m-1"})
         sender = GupshupOtpSender(self.tenant, poster=poster, template_getter=self._approved_getter("APPROVED"))
         sender.send_otp("+919900000020", "123456", tenant=self.tenant)
@@ -459,11 +705,79 @@ class GupshupOtpSenderTests(TestCase):
         self.assertEqual(args[0], GUPSHUP_MSG_URL)
         self.assertEqual(
             json.loads(kwargs["data"]["message"]),
-            {"type": "template", "name": "fitnation_otp", "params": ["123456"]},
+            {"type": "template", "name": "fitnation_otp", "params": ["123456", "123456"]},
         )
         self.assertEqual(kwargs["data"]["destination"], "919900000020")
         self.assertEqual(kwargs["data"]["source"], "911234567890")
         self.assertEqual(kwargs["headers"], {"apikey": "gup-key"})
+
+    def test_code_once_mode_sends_bare_code(self) -> None:
+        """GUPSHUP_OTP_PARAM_MODE=code_once → [code] only (pre-button shape,
+        flipped by ops after checking the console template preview)."""
+        poster = self._poster({"status": "submitted", "messageId": "m-1"})
+        with override_settings(GUPSHUP_OTP_PARAM_MODE="code_once"):
+            sender = GupshupOtpSender(self.tenant, poster=poster, template_getter=self._approved_getter("APPROVED"))
+            sender.send_otp("+919900000020", "123456", tenant=self.tenant)
+        self.assertEqual(
+            json.loads(poster.call_args.kwargs["data"]["message"]),
+            {"type": "template", "name": "fitnation_otp", "params": ["123456"]},
+        )
+
+    def test_unknown_param_mode_is_a_loud_config_error(self) -> None:
+        """A bad GUPSHUP_OTP_PARAM_MODE never POSTs — it surfaces as
+        ImproperlyConfigured instead of masquerading as a provider error."""
+        poster = self._poster({"status": "submitted"})
+        sender = GupshupOtpSender(self.tenant, poster=poster, template_getter=self._approved_getter("APPROVED"))
+        with override_settings(GUPSHUP_OTP_PARAM_MODE="code-thrice"), self.assertRaises(ImproperlyConfigured):
+            sender.send_otp("+919900000020", "123456", tenant=self.tenant)
+        poster.assert_not_called()
+
+    def test_gupshup_otp_params_modes(self) -> None:
+        """The helper: default → [code, code]; code_once → [code]; the
+        param mode is whitespace/case tolerant."""
+        code = "654321"
+        self.assertEqual(gupshup_otp_params(code), [code, code])
+        with override_settings(GUPSHUP_OTP_PARAM_MODE=" Code_Once "):
+            self.assertEqual(gupshup_otp_params(code), [code])
+
+    def test_meta_verified_template_lets_the_default_gate_through(self) -> None:
+        """Sender end-to-end without an injected getter: the #86 Meta Graph
+        check (mocked transport) alone proves APPROVED → the send proceeds."""
+        graph_payload = {"data": [{"name": "fitnation_otp", "status": "APPROVED"}]}
+        poster = self._poster({"status": "submitted", "messageId": "m-9"})
+        sender = GupshupOtpSender(self.tenant, poster=poster)  # no template_getter: the real gate runs
+        with (
+            override_settings(**META_SETTINGS),
+            patch(
+                "apps.notifications.services.channels.requests.get",
+                return_value=MagicMock(
+                    status_code=200, json=MagicMock(return_value=graph_payload), raise_for_status=MagicMock()
+                ),
+            ),
+        ):
+            sender.send_otp("+919900000020", "123456", tenant=self.tenant)
+        message = json.loads(poster.call_args.kwargs["data"]["message"])
+        self.assertEqual(message["params"], ["123456", "123456"])
+
+    def test_meta_pending_blocks_the_default_gate(self) -> None:
+        """The same end-to-end path with Meta reporting PENDING → the send is
+        gated (template_not_approved) and the chain degrades to SMS."""
+        graph_payload = {"data": [{"name": "fitnation_otp", "status": "PENDING"}]}
+        poster = self._poster({"status": "submitted"})
+        sender = GupshupOtpSender(self.tenant, poster=poster)
+        with (
+            override_settings(**META_SETTINGS),
+            patch(
+                "apps.notifications.services.channels.requests.get",
+                return_value=MagicMock(
+                    status_code=200, json=MagicMock(return_value=graph_payload), raise_for_status=MagicMock()
+                ),
+            ),
+        ):
+            with self.assertRaises(OtpDeliveryError) as caught:
+                sender.send_otp("+919900000020", "123456", tenant=self.tenant)
+        self.assertEqual(caught.exception.reason, "template_not_approved")
+        poster.assert_not_called()
 
     def test_unapproved_template_gates_the_send(self) -> None:
         """A PENDING/missing template never POSTs — 202 ≠ delivery (#74)."""
