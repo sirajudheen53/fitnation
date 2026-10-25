@@ -26,9 +26,7 @@ def seed_library_for_tenant(tenant: Tenant) -> dict[str, int]:
     """
     result = {"categories_created": 0, "exercises_created": 0, "exercises_updated": 0}
     with transaction.atomic():
-        categories = {
-            c.slug: c for c in ExerciseCategory.objects.filter(tenant=tenant, slug__in=DEFAULT_CATEGORIES)
-        }
+        categories = {c.slug: c for c in ExerciseCategory.objects.filter(tenant=tenant, slug__in=DEFAULT_CATEGORIES)}
         for slug, data in DEFAULT_CATEGORIES.items():
             if slug not in categories:
                 category, _ = ExerciseCategory.objects.get_or_create(
@@ -64,11 +62,7 @@ def seed_library_for_tenant(tenant: Tenant) -> dict[str, int]:
             if exercise is None:
                 to_create.append(Exercise(tenant=tenant, name=item["name"], **fields))
                 continue
-            changed = [
-                field
-                for field, value in fields.items()
-                if getattr(exercise, field) != value
-            ]
+            changed = [field for field, value in fields.items() if getattr(exercise, field) != value]
             if changed:
                 for field in changed:
                     setattr(exercise, field, fields[field])
