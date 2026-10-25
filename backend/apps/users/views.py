@@ -242,9 +242,14 @@ class OTPRequestView(APIView):
     def post(self, request: Request) -> Response:
         """Resolve the gym anchor, then issue + deliver a hashed 6-digit OTP.
 
-        Delivery walks the per-tenant sender chain (WATI → SMS); total chain
-        failure is a loud 503 — never a silent log-file drop. The code is
-        echoed in the response ONLY behind DEBUG with the stub sender.
+        Delivery walks the per-tenant sender chain (WATI → Gupshup → SMS);
+        total chain failure is a loud 503 — never a silent log-file drop,
+        and a WhatsApp leg whose template is unapproved degrades to SMS
+        instead of trusting Gupshup's 202 ack (#74). The 200 body's
+        ``delivery`` channel tells the app which way the code went
+        (sent-ok over WhatsApp vs degraded to SMS) — it is never a
+        registration signal. The code is echoed in the response ONLY behind
+        DEBUG with the stub sender.
         """
         serializer = OTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -261,7 +266,7 @@ class OTPRequestView(APIView):
 
         senders = resolve_otp_senders(tenant)
         try:
-            expires_in = issue_otp(phone, tenant, ip=ip, sender=senders)
+            result = issue_otp(phone, tenant, ip=ip, sender=senders)
         except OtpRateLimited as exc:
             return Response({"detail": str(exc)}, status=429)
         except OtpError as exc:
@@ -277,14 +282,22 @@ class OTPRequestView(APIView):
                     "detail": "OTP delivery is temporarily unavailable — please contact the gym.",
                     "code": "otp_delivery_unavailable",
                     # Machine-readable per-leg reasons (not_configured /
-                    # http_<status>/…) so the app + operator can see WHY.
-                    # No secrets, no provider detail beyond the reason codes.
+                    # template_not_approved / provider_error / http_<status>/…)
+                    # so the app + operator can see WHY. No secrets, no
+                    # provider detail beyond the reason codes.
                     "channels": exc.channels,
                 },
                 status=503,
             )
 
-        data = {"phone": phone, "expires_in": expires_in, "sent": True}
+        data = {
+            "phone": phone,
+            "expires_in": result.expires_in,
+            "sent": True,
+            # Semantic channel that carried the code: whatsapp = sent-ok,
+            # sms = degraded — the app can prompt "check your messages" (#74).
+            "delivery": result.channel,
+        }
         stub = next((s for s in senders if getattr(s, "name", "") == "stub"), None)
         if stub is not None:  # DEBUG/test only — never in production
             data["otp"] = getattr(stub, "code", None)

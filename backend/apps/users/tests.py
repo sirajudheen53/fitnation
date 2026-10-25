@@ -14,7 +14,7 @@ from apps.customers.models import Customer
 from apps.permissions.models import UserRoleAssignment
 from apps.tenants.services import provision_tenant
 from apps.users.models import Trainer, TrainerCustomerAssignment, TrainerSchedule
-from apps.users.otp import OtpDeliveryError
+from apps.users.otp import GupshupOtpSender, Msg91OtpSender, OtpDeliveryError
 from apps.users.services import (
     create_owner_user,
     create_user,
@@ -1288,6 +1288,128 @@ class OtpDeliveryUnavailableViewTests(APITestCase):
             response.data["channels"],
             [
                 {"channel": "wati", "reason": "http_500"},
+                {"channel": "sms", "reason": "transport_error"},
+            ],
+        )
+        self.assertNotIn("otp", response.data)
+
+
+def _gupshup_poster(payload):
+    """A fake Gupshup HTTP post returning a canned JSON body."""
+    poster = MagicMock()
+    poster.return_value = MagicMock(status_code=202, json=MagicMock(return_value=payload), raise_for_status=MagicMock())
+    return poster
+
+
+def _msg91_poster():
+    """A fake MSG91 HTTP post returning a success body."""
+    poster = MagicMock()
+    poster.return_value = MagicMock(
+        status_code=200, json=MagicMock(return_value={"type": "success"}), raise_for_status=MagicMock()
+    )
+    return poster
+
+
+class OtpDeliveryOutcomeViewTests(APITestCase):
+    """The 200 body tells WhatsApp-ok from degraded-to-SMS (#74).
+
+    ``delivery`` is a semantic channel (whatsapp | sms | stub/console in
+    DEBUG) — never provider internals and never a registration signal: the
+    request/verify ladder stays non-enumerating, a degraded delivery only
+    hints the member to check their SMS inbox.
+    """
+
+    def setUp(self) -> None:
+        """A Gupshup-configured tenant with MSG91 available, prod settings."""
+        # Rolled-back test rows replay pks while the locmem approval-verdict
+        # cache persists across the run — clear it for gate determinism.
+        from django.core.cache import cache
+
+        cache.clear()
+        self.tenant = provision_tenant(
+            name="Outcome Gym",
+            contact_email="outcome@local.test",
+            is_gupshup_enabled=True,
+            gupshup_api_key="gup-key",
+            gupshup_source="911234567890",
+            gupshup_app_name="hash-fit-app",
+        )
+        self.phone = "+9199000000110"
+        User.objects.create_user(
+            email="member@outcome.local",
+            password="x",
+            first_name="Mem",
+            last_name="Ber",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+            phone=self.phone,
+        )
+        overrides = override_settings(
+            DEBUG=False,
+            OTP_SENDER="auto",
+            OTP_RESEND_COOLDOWN_SECONDS=0,
+            SMS_PROVIDER="msg91",
+            MSG91_AUTH_KEY="test-auth-key",
+            MSG91_TEMPLATE_ID="dlt-otp-template",
+            CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+        )
+        overrides.enable()
+        self.addCleanup(overrides.disable)
+
+    def test_unapproved_gupshup_template_degrades_to_sms(self) -> None:
+        """#74 end-to-end: unapproved template → the OTP still lands via SMS."""
+        gup_poster = _gupshup_poster({"status": "submitted"})  # must never fire
+        chain = [
+            GupshupOtpSender(self.tenant, poster=gup_poster, template_getter=lambda t, n: "PENDING"),
+            Msg91OtpSender(poster=_msg91_poster()),
+        ]
+        with patch("apps.users.views.resolve_otp_senders", return_value=chain):
+            response = self.client.post("/api/v1/users/auth/otp/request/", {"phone": self.phone}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["sent"], True)
+        self.assertEqual(response.data["delivery"], "sms")
+        self.assertEqual(response.data["expires_in"], 600)
+        gup_poster.assert_not_called()
+
+    def test_approved_gupshup_template_reports_whatsapp(self) -> None:
+        """A delivered-over-WhatsApp OTP surfaces as delivery=whatsapp."""
+        chain = [
+            GupshupOtpSender(
+                self.tenant,
+                poster=_gupshup_poster({"status": "submitted", "messageId": "m-1"}),
+                template_getter=lambda t, n: "APPROVED",
+            ),
+            Msg91OtpSender(poster=_msg91_poster()),
+        ]
+        with patch("apps.users.views.resolve_otp_senders", return_value=chain):
+            response = self.client.post("/api/v1/users/auth/otp/request/", {"phone": self.phone}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["delivery"], "whatsapp")
+        self.assertEqual(response.data["sent"], True)
+
+    def test_total_failure_still_503s_loudly(self) -> None:
+        """WhatsApp gate + SMS both failing → the diagnosable 503, not a lie."""
+        failing_sms = MagicMock()
+        failing_sms.name = "sms"
+        failing_sms.send_otp.side_effect = OtpDeliveryError(
+            "SMS delivery failed: carrier down", reason="transport_error"
+        )
+        chain = [
+            GupshupOtpSender(
+                self.tenant,
+                poster=_gupshup_poster({"status": "submitted"}),
+                template_getter=lambda t, n: "PENDING",
+            ),
+            failing_sms,
+        ]
+        with patch("apps.users.views.resolve_otp_senders", return_value=chain):
+            response = self.client.post("/api/v1/users/auth/otp/request/", {"phone": self.phone}, format="json")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["code"], "otp_delivery_unavailable")
+        self.assertEqual(
+            response.data["channels"],
+            [
+                {"channel": "gupshup", "reason": "template_not_approved"},
                 {"channel": "sms", "reason": "transport_error"},
             ],
         )

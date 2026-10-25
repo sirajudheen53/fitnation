@@ -230,6 +230,16 @@ GUPSHUP_TEST_TEMPLATE_NAME = env("GUPSHUP_TEST_TEMPLATE_NAME", default="welcome"
 # Positional {{1}}..{{n}} values for the test template, comma-separated.
 GUPSHUP_TEST_TEMPLATE_PARAMS = env("GUPSHUP_TEST_TEMPLATE_PARAMS", default="")
 
+# Approved-template delivery gate (issue #74). Gupshup's /msg API 202-acks
+# ANY submit — an unapproved template is accepted and silently never
+# delivered — so the OTP chain verifies the template's APPROVED status via
+# the template-management API before trusting a send, and degrades to SMS
+# otherwise. Override the URL only if Gupshup relocates the endpoint.
+GUPSHUP_TEMPLATE_LIST_URL = env("GUPSHUP_TEMPLATE_LIST_URL", default="https://api.gupshup.io/sm/api/v1/templates")
+# How long a verified-APPROVED verdict is cached per tenant (avoid a list GET
+# on every send; a newly-approved template flips within this window).
+GUPSHUP_TEMPLATE_CHECK_TTL = 1800
+
 # App invite deep link (FBOS-011 §5.4). The web base must host the App-Links
 # verification file; the custom scheme is handled by the Android manifest.
 APP_INVITE_WEB_BASE = env("APP_INVITE_WEB_BASE", default="https://app.yougetfitwithus.com")

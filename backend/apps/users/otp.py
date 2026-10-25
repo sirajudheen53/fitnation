@@ -6,10 +6,14 @@ daily caps, and phone↔code binding.
 
 Delivery is a per-tenant sender chain (FBOS-011 §4.2, issue #66): WATI
 WhatsApp template (tenant config) → Gupshup WhatsApp template (tenant
-config) → MSG91 SMS (platform config) → loud failure (503). The
-response-returning ``stub`` and the ``console`` logger survive ONLY behind
-DEBUG — ``resolve_otp_senders`` refuses both in production, so shipping with
-codes going to logs or API responses is structurally impossible.
+config) → MSG91 SMS (platform config) → loud failure (503). Gupshup's /msg
+API 202-acks ANY submit (issue #73), so its leg carries an approved-template
+delivery gate (issue #74): the template-management API must show
+``fitnation_otp`` APPROVED before a send is trusted — otherwise (and for any
+provider-side rejection) the leg raises and the chain propagates to SMS.
+The response-returning ``stub`` and the ``console`` logger survive ONLY
+behind DEBUG — ``resolve_otp_senders`` refuses both in production, so
+shipping with codes going to logs or API responses is structurally impossible.
 """
 
 from __future__ import annotations
@@ -19,7 +23,10 @@ import hmac
 import logging
 import secrets
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, timedelta
+from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -28,6 +35,8 @@ from django.utils import timezone
 import requests
 
 from apps.notifications.services.channels import (
+    GUPSHUP_ACCEPTED_STATUS,
+    gupshup_template_status,
     normalize_msisdn,
     post_gupshup_template,
     post_msg91_flow,
@@ -60,16 +69,34 @@ class OtpDeliveryError(Exception):
 
     Surfaced as a loud 503 with generic copy — never a silent log-file drop.
     ``reason`` is a short machine-readable code (``not_configured``,
-    ``daily_cap_reached``, ``http_<status>``, ``transport_error``) and
-    ``channels`` the per-leg failure map — both flow into the 503 body so the
-    mobile app / operator can see WHY delivery is down. Never carries secrets
-    or provider credentials.
+    ``daily_cap_reached``, ``template_not_approved``, ``provider_error``,
+    ``http_<status>``, ``transport_error``) and ``channels`` the per-leg
+    failure map — both flow into the 503 body so the mobile app / operator
+    can see WHY delivery is down. Never carries secrets or provider
+    credentials.
     """
 
     def __init__(self, message: str, *, reason: str = "error", channels: list[dict] | None = None) -> None:
         super().__init__(message)
         self.reason = reason
         self.channels = channels if channels is not None else []
+
+
+@dataclass(frozen=True)
+class OtpIssueResult:
+    """Outcome of a successful OTP issuance (issue #74).
+
+    Attributes:
+        expires_in: Seconds until the issued code expires.
+        channel: The semantic channel that carried the code — ``whatsapp``
+            (sent-ok) or ``sms`` (degraded) for real chains, ``console`` /
+            ``stub`` in DEBUG. Exposed to the requesting app so it can hint
+            "check your messages" on degradation; it is NOT a registration
+            signal — the anchor resolution ladder stays non-enumerating.
+    """
+
+    expires_in: int
+    channel: str
 
 
 def _http_failure_reason(exc: Exception) -> str:
@@ -276,19 +303,37 @@ class GupshupOtpSender(OtpSender):
     Gupshup ``/wa/api/v1/msg`` contract. All three Gupshup credentials (key,
     source number, app name) must be configured; anything less would fail on
     the provider side for every send, so the chain skips straight past it.
+
+    Because Gupshup 202-acks EVERY ``/msg`` submit (approved template or
+    not — issue #73/#74), a send counts as delivered only when the template
+    is verified APPROVED in the tenant's app first
+    (:func:`apps.notifications.services.channels.gupshup_template_status`);
+    unverifiable or unapproved → :class:`OtpDeliveryError` with reason
+    ``template_not_approved`` and the chain propagates to SMS instead of
+    silently dropping the login code. A 2xx body outside the accepted-status
+    family (``provider_error``) fails the leg the same way.
     """
 
     name = "gupshup"
 
-    def __init__(self, tenant, *, poster=None) -> None:
+    def __init__(
+        self,
+        tenant,
+        *,
+        poster: Callable[..., Any] | None = None,
+        template_getter: Callable[[Any, str], str] | None = None,
+    ) -> None:
         """Bind the sender to one tenant's Gupshup configuration.
 
         Args:
             tenant: The tenant whose Gupshup credentials are used.
             poster: Injectable HTTP post callable (tests).
+            template_getter: Injectable approval-status lookup (tests);
+                defaults to the channels-module template-list GET.
         """
         self.tenant = tenant
         self.poster = poster or requests.post
+        self.template_getter = template_getter
 
     @staticmethod
     def is_configured_for(tenant) -> bool:
@@ -310,8 +355,42 @@ class GupshupOtpSender(OtpSender):
         """Increment today's per-tenant Gupshup OTP counter (best-effort)."""
         _count_whatsapp_otp(self.tenant.pk, self.name)
 
+    def _template_is_approved(self) -> bool:
+        """Whether ``fitnation_otp`` is verifiably APPROVED for this app.
+
+        A verified APPROVED verdict is cached (``GUPSHUP_TEMPLATE_CHECK_TTL``,
+        best-effort) so steady-state sends don't pay a template-list GET;
+        non-approved and unverifiable verdicts are never cached — approving
+        the template in the console flips delivery on the very next request.
+
+        Returns:
+            ``True`` only for a live APPROVED status (possibly cached).
+        """
+        from django.core.cache import cache
+
+        cache_key = f"gupshup-tpl:{self.tenant.pk}:{GUPSHUP_OTP_TEMPLATE_NAME}"
+        try:
+            if cache.get(cache_key):
+                return True
+        except Exception:  # noqa: BLE001 - cache trouble must not block sends
+            pass
+        if self.template_getter is not None:
+            status = self.template_getter(self.tenant, GUPSHUP_OTP_TEMPLATE_NAME)
+        else:
+            status = gupshup_template_status(self.tenant, GUPSHUP_OTP_TEMPLATE_NAME)
+        if str(status).strip().upper() != "APPROVED":
+            return False
+        try:
+            cache.set(cache_key, True, timeout=getattr(settings, "GUPSHUP_TEMPLATE_CHECK_TTL", 1800))
+        except Exception:  # noqa: BLE001 - accounting must never block delivery
+            pass
+        return True
+
     def send_otp(self, phone: str, code: str, tenant=None) -> None:
         """POST the template message; raise ``OtpDeliveryError`` on any failure.
+
+        Any failure here propagates the chain to the next channel (SMS) —
+        including the approved-template gate's ``template_not_approved``.
 
         Args:
             phone: The member's phone number.
@@ -323,10 +402,21 @@ class GupshupOtpSender(OtpSender):
             raise OtpDeliveryError("Gupshup is not configured for this tenant", reason="not_configured")
         if not self._under_daily_budget():
             raise OtpDeliveryError("Tenant Gupshup OTP daily cap reached", reason="daily_cap_reached")
+        if not self._template_is_approved():
+            logger.warning(
+                "Gupshup OTP template %s is not APPROVED for tenant %s — skipping to the next channel",
+                GUPSHUP_OTP_TEMPLATE_NAME,
+                getattr(self.tenant, "pk", None),
+            )
+            raise OtpDeliveryError(
+                f"Gupshup template '{GUPSHUP_OTP_TEMPLATE_NAME}' is not approved for this app — "
+                "the provider accepts but would never deliver the message",
+                reason="template_not_approved",
+            )
 
         to = normalize_msisdn(phone, getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91"))
         try:
-            post_gupshup_template(
+            response = post_gupshup_template(
                 self.tenant,
                 GUPSHUP_OTP_TEMPLATE_NAME,
                 to,
@@ -335,6 +425,16 @@ class GupshupOtpSender(OtpSender):
             )
         except Exception as exc:
             raise OtpDeliveryError(f"Gupshup delivery failed: {exc}", reason=_http_failure_reason(exc)) from exc
+        try:
+            body = response.json() if hasattr(response, "json") else {}
+        except ValueError:  # non-JSON 2xx body — trust the HTTP success
+            body = {}
+        status_word = str(body.get("status", "")).strip().lower() if isinstance(body, dict) else ""
+        if status_word and status_word not in GUPSHUP_ACCEPTED_STATUS:
+            raise OtpDeliveryError(
+                f"Gupshup did not accept the template message: {body.get('message') or status_word}",
+                reason="provider_error",
+            )
         self._count_sent()
 
 
@@ -390,13 +490,26 @@ class Msg91OtpSender(OtpSender):
             "GYM": _tenant_gym_name(tenant),
         }
         try:
-            post_msg91_flow(
+            response = post_msg91_flow(
                 [recipient],
                 settings.MSG91_TEMPLATE_ID,
                 poster=self.poster,
             )
         except Exception as exc:
             raise OtpDeliveryError(f"SMS delivery failed: {exc}", reason=_http_failure_reason(exc)) from exc
+        try:
+            body = response.json() if hasattr(response, "json") else {}
+        except ValueError:  # non-JSON 2xx body — trust the HTTP success
+            body = {}
+        if isinstance(body, dict):
+            msg_type = str(body.get("type", "")).strip().lower()
+            if msg_type and msg_type != "success":
+                # e.g. {"type": "error", "title": "Insufficient Balance"} can
+                # ride HTTP 2xx — that is a carrier rejection, not delivery.
+                raise OtpDeliveryError(
+                    f"SMS provider rejected the send: {body.get('title') or body.get('message') or msg_type}",
+                    reason="provider_error",
+                )
 
 
 def resolve_otp_senders(tenant) -> list[OtpSender]:
@@ -542,12 +655,15 @@ def issue_otp(
     tenant,
     ip: str | None = None,
     sender: OtpSender | list[OtpSender] | None = None,
-) -> int:
+) -> OtpIssueResult:
     """Generate, store and deliver an OTP for ``phone``.
 
     Enforces the resend cooldown and the per-phone + per-IP daily caps, then
     walks the delivery chain — the first sender that doesn't raise wins; all
-    raising → :class:`OtpDeliveryError` (the view returns a loud 503).
+    raising → :class:`OtpDeliveryError` (the view returns a loud 503). Every
+    real-channel attempt (failed legs included, issue #74) is audited in
+    ``NotificationLog`` so an operator can see the WhatsApp leg's failure
+    that pushed a delivery onto SMS.
 
     Args:
         phone: Phone number used for OTP login.
@@ -557,7 +673,7 @@ def issue_otp(
             :func:`resolve_otp_senders`.
 
     Returns:
-        Seconds until the code expires.
+        The :class:`OtpIssueResult` (ttl + the channel that delivered).
 
     Raises:
         OtpRateLimited: A rate limit was exceeded.
@@ -618,9 +734,13 @@ def issue_otp(
             last_error = exc
             failures.append({"channel": chain_sender.name, "reason": exc.reason})
             logger.warning("OTP delivery via %s failed: %s", chain_sender.name, exc)
+            # Issue #74: audit EVERY failed leg as it happens — a degraded
+            # delivery (WhatsApp leg failed, SMS carried) must show both rows.
+            _log_otp_delivery(tenant, chain_sender.name, False, str(exc))
             continue
         _log_otp_delivery(tenant, chain_sender.name, True, "")
-        return ttl
+        semantic_channel = OTP_CHANNEL_BY_SENDER.get(chain_sender.name, (chain_sender.name, ""))[0]
+        return OtpIssueResult(expires_in=ttl, channel=semantic_channel)
 
     logger.critical(
         "OTP delivery failed for %s via all channels (%s): %s",
@@ -628,7 +748,6 @@ def issue_otp(
         [s.name for s in senders],
         last_error,
     )
-    _log_otp_delivery(tenant, senders[-1].name, False, str(last_error or ""))
     raise OtpDeliveryError(
         str(last_error) if last_error else "OTP delivery failed.",
         reason="all_channels_failed",

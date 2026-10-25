@@ -22,6 +22,10 @@ WATI_TEMPLATE_PATH = "/api/v1/sendTemplateMessage"
 DEFAULT_WATI_BASE = "https://api.wati.io"
 MSG91_FLOW_URL = "https://control.msg91.com/api/v5/flow/"
 GUPSHUP_MSG_URL = "https://api.gupshup.io/wa/api/v1/msg"
+# Template-management list API (issue #74): the only synchronous place where
+# Gupshup reveals whether a template is APPROVED — its /msg send API 202-acks
+# any submit, approved or not, so delivery gates have to ask here first.
+GUPSHUP_TEMPLATE_LIST_URL = "https://api.gupshup.io/sm/api/v1/templates"
 
 # Semantic channels (NotificationLog.channel) and the providers
 # (NotificationLog.provider) that carry them (issue #66). Live here so the
@@ -43,6 +47,83 @@ OTP_CHANNEL_BY_SENDER: dict[str, tuple[str, str]] = {
     PROVIDER_GUPSHUP: (CHANNEL_WHATSAPP, PROVIDER_GUPSHUP),
     "sms": (CHANNEL_SMS, PROVIDER_MSG91),
 }
+
+# Sync /msg bodies that mean Gupshup ACCEPTED the submit (issue #74). An
+# accepted-anything response never proves delivery — an unapproved template
+# is 202-acked ("submitted") and silently dropped upstream — so senders that
+# must guarantee delivery gate on template approval instead of trusting this.
+GUPSHUP_ACCEPTED_STATUS = {"submitted", "success", "accepted"}
+
+
+def parse_gupshup_template_status(payload: Any, template_name: str) -> str:
+    """Extract one template's approval status from a template-list payload.
+
+    Pure helper (tests / reuse): accepts the documented
+    ``{"templates": [{"name": …, "status": …}, …]}`` shape or a bare list.
+    A name may appear once per language revision — any APPROVED entry wins;
+    otherwise the first non-empty status is reported.
+
+    Args:
+        payload: The parsed JSON body of a Gupshup template-list response.
+        template_name: The template slug to look up.
+
+    Returns:
+        The normalized status word (e.g. ``APPROVED``, ``PENDING``), or ""
+        when the name is absent or the payload is unusable.
+    """
+    templates = payload.get("templates") if isinstance(payload, dict) else payload
+    if not isinstance(templates, list):
+        return ""
+    first_status = ""
+    for entry in templates:
+        if not isinstance(entry, dict) or str(entry.get("name", "")) != template_name:
+            continue
+        status = str(entry.get("status", "")).strip().upper()
+        if not status:
+            continue
+        if status == "APPROVED":
+            return status
+        if not first_status:
+            first_status = status
+    return first_status
+
+
+def gupshup_template_status(
+    tenant,
+    template_name: str,
+    *,
+    getter: Callable[..., Any] | None = None,
+) -> str:
+    """The tenant's Gupshup approval status for one template name (issue #74).
+
+    Contract: ``GET <GUPSHUP_TEMPLATE_LIST_URL>?offset=0&limit=100`` with the
+    tenant's ``apikey`` header — the same key /msg uses, so the list it
+    scopes is the app the sends ride. Returns the raw template status (e.g.
+    ``APPROVED``); transport, HTTP or parse trouble yields "" — callers that
+    must guarantee delivery treat "" as "cannot prove approval" and fail
+    closed to the next channel rather than trusting a 202 ack.
+
+    Args:
+        tenant: The tenant whose Gupshup API key scopes the template list.
+        template_name: The platform template slug to look up.
+        getter: Injectable HTTP get callable (tests).
+
+    Returns:
+        The normalized status word for the template, "" when unverifiable.
+    """
+    base = str(getattr(settings, "GUPSHUP_TEMPLATE_LIST_URL", GUPSHUP_TEMPLATE_LIST_URL)).strip().rstrip("/")
+    get = getter or requests.get
+    try:
+        response = get(
+            f"{base}?offset=0&limit=100",
+            headers={"apikey": tenant.gupshup_api_key},
+            timeout=getattr(settings, "GUPSHUP_TIMEOUT", 10),
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:  # noqa: BLE001 - an unusable status API is "unverifiable"
+        return ""
+    return parse_gupshup_template_status(payload, template_name)
 
 
 def normalize_msisdn(phone: str, country_code: str = "91") -> str:
