@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactElement } from "react";
 import TrainersPage from "@/app/trainers/page";
 import TrainerProfilePage from "@/app/trainers/[id]/page";
 import { TrainerFormDialog } from "@/features/trainers/components/TrainerFormDialog";
@@ -112,6 +114,14 @@ beforeEach(() => {
     sampleAssignment({ id: 102, customer: 502, customer_name: "Old Client", is_active: false }),
   ]);
 });
+
+/** The profile's Schedule tab fetches through React Query (issue #80). */
+function renderWithQueryClient(ui: ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
 
 describe("TrainersPage — list", () => {
   it("renders trainer rows with clients, rating and status", async () => {
@@ -284,7 +294,7 @@ describe("TrainerProfilePage — tabs", () => {
   });
 
   it("renders the overview with rating and client count", async () => {
-    render(<TrainerProfilePage />);
+    renderWithQueryClient(<TrainerProfilePage />);
 
     expect(await screen.findByText("Asha Menon")).toBeInTheDocument();
     expect(screen.getByTestId("rating")).toHaveTextContent("4.5");
@@ -292,7 +302,7 @@ describe("TrainerProfilePage — tabs", () => {
   });
 
   it("shows assigned customers with links on the Customers tab", async () => {
-    render(<TrainerProfilePage />);
+    renderWithQueryClient(<TrainerProfilePage />);
     await screen.findByText("Asha Menon");
 
     fireEvent.click(screen.getByRole("button", { name: "Customers" }));
@@ -307,7 +317,7 @@ describe("TrainerProfilePage — tabs", () => {
   });
 
   it("renders the weekly schedule on the Schedule tab", async () => {
-    render(<TrainerProfilePage />);
+    renderWithQueryClient(<TrainerProfilePage />);
     await screen.findByText("Asha Menon");
 
     fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
@@ -319,7 +329,7 @@ describe("TrainerProfilePage — tabs", () => {
 
   it("shows the empty schedule state", async () => {
     (fetchTrainerSchedule as jest.Mock).mockResolvedValue([]);
-    render(<TrainerProfilePage />);
+    renderWithQueryClient(<TrainerProfilePage />);
     await screen.findByText("Asha Menon");
 
     fireEvent.click(screen.getByRole("button", { name: "Schedule" }));

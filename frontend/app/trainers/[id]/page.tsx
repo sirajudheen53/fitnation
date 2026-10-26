@@ -11,13 +11,13 @@ import {
   errorMessage,
   fetchTrainer,
   fetchTrainerAssignments,
-  fetchTrainerSchedule,
   updateTrainer,
 } from "@/lib/api";
 import { getToken, getStoredUser } from "@/lib/auth";
 import { canAccessRoute, hasPermission } from "@/lib/permissions";
 import { ConfirmDialog } from "@/features/admin/components/ConfirmDialog";
 import { TrainerFormDialog } from "@/features/trainers/components/TrainerFormDialog";
+import { TrainerScheduleSection } from "@/features/trainers/components/TrainerScheduleSection";
 import {
   certificationLabel,
   formatRating,
@@ -25,15 +25,9 @@ import {
   trainerInitials,
   trainerName,
 } from "@/features/trainers/components/trainers-shared";
-import {
-  formatDayLabel,
-  formatTimeRange,
-} from "@/features/trainers/components/scheduleHelpers";
 import type {
   BranchTrainerAssignment,
-  DayOfWeek,
   Trainer,
-  TrainerScheduleSlot,
 } from "@/types/trainer";
 
 type ProfileTab = "overview" | "customers" | "schedule";
@@ -44,17 +38,6 @@ const TABS: { key: ProfileTab; label: string }[] = [
   { key: "schedule", label: "Schedule" },
 ];
 
-/** Schedule rows grouped by weekday, Monday→Sunday (backend sends string days). */
-function groupScheduleByDay(slots: TrainerScheduleSlot[]): Map<DayOfWeek, TrainerScheduleSlot[]> {
-  const grouped = new Map<DayOfWeek, TrainerScheduleSlot[]>();
-  for (const slot of slots) {
-    const list = grouped.get(slot.day_of_week) ?? [];
-    list.push(slot);
-    grouped.set(slot.day_of_week, list);
-  }
-  return grouped;
-}
-
 export default function TrainerProfilePage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -62,7 +45,6 @@ export default function TrainerProfilePage() {
 
   const [trainer, setTrainer] = useState<Trainer | null>(null);
   const [assignments, setAssignments] = useState<BranchTrainerAssignment[]>([]);
-  const [schedule, setSchedule] = useState<TrainerScheduleSlot[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
@@ -105,16 +87,6 @@ export default function TrainerProfilePage() {
     void load();
   }, [id, router, user]);
 
-  // Schedule loads lazily on first Schedule-tab visit.
-  useEffect(() => {
-    if (activeTab !== "schedule" || schedule !== null || !trainer) return;
-    const token = getToken();
-    if (!token) return;
-    fetchTrainerSchedule(id, token)
-      .then(setSchedule)
-      .catch(() => setSchedule([]));
-  }, [activeTab, schedule, trainer, id]);
-
   const trainerAssignments = useMemo(
     () => assignments.filter((a) => a.trainer === Number(id)),
     [assignments, id],
@@ -131,8 +103,6 @@ export default function TrainerProfilePage() {
   );
 
   const activeClientCount = trainerAssignments.filter((a) => a.is_active).length;
-
-  const groupedSchedule = useMemo(() => groupScheduleByDay(schedule ?? []), [schedule]);
 
   const replaceTrainer = useCallback((updated: Trainer) => {
     setTrainer(updated);
@@ -415,63 +385,7 @@ export default function TrainerProfilePage() {
           )}
 
           {activeTab === "schedule" && (
-            <Card>
-              <CardHeader>
-                <h3 className="text-lg font-semibold text-gray-900">Weekly availability</h3>
-                <p className="text-sm text-gray-500">
-                  Recurring weekly slots from the trainer schedule.
-                </p>
-              </CardHeader>
-              <CardBody>
-                {schedule === null ? (
-                  <div className="flex justify-center py-8">
-                    <Spinner />
-                  </div>
-                ) : schedule.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-gray-500">
-                    No weekly schedule configured for this trainer yet.
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as DayOfWeek[]).map(
-                      (day) => {
-                        const daySlots = groupedSchedule.get(day) ?? [];
-                        return (
-                          <div
-                            key={day}
-                            className="rounded-xl border border-gray-200 p-3"
-                            data-testid={`schedule-day-${day}`}
-                          >
-                            <p className="mb-2 text-sm font-semibold text-gray-900">
-                              {formatDayLabel(day)}
-                            </p>
-                            {daySlots.length === 0 ? (
-                              <p className="text-xs text-gray-400">—</p>
-                            ) : (
-                              <ul className="space-y-1.5">
-                                {daySlots.map((slot) => (
-                                  <li
-                                    key={slot.id}
-                                    className="flex items-center justify-between rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-700"
-                                  >
-                                    <span>{formatTimeRange(slot.start_time, slot.end_time)}</span>
-                                    {slot.is_available ? (
-                                      <Badge variant="success">available</Badge>
-                                    ) : (
-                                      <Badge variant="default">off</Badge>
-                                    )}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        );
-                      },
-                    )}
-                  </div>
-                )}
-              </CardBody>
-            </Card>
+            <TrainerScheduleSection trainerId={id} canManage={canEdit} />
           )}
         </div>
       )}

@@ -739,6 +739,7 @@ import {
   TrainerCreatePayload,
   TrainerListParams,
   TrainerScheduleSlot,
+  TrainerScheduleSlotPayload,
   TrainerSession,
   TrainerUpdatePayload,
 } from "@/types/trainer";
@@ -908,6 +909,42 @@ export function fetchTrainerSchedule(
     `/trainer-schedules/?trainer=${encodeURIComponent(String(trainerId))}`,
     { token },
   ).then(unwrapList);
+}
+
+/** Create a weekly availability slot — one per weekday; a duplicate day 400s. */
+export function createTrainerScheduleSlot(
+  data: TrainerScheduleSlotPayload,
+  token: string,
+): Promise<TrainerScheduleSlot> {
+  return request<TrainerScheduleSlot>("/trainer-schedules/", {
+    method: "POST",
+    body: data,
+    token,
+  });
+}
+
+/** Patch a slot's day/window/availability (trainer is fixed per slot). */
+export function updateTrainerScheduleSlot(
+  id: number,
+  data: TrainerScheduleSlotPayload,
+  token: string,
+): Promise<TrainerScheduleSlot> {
+  return request<TrainerScheduleSlot>(`/trainer-schedules/${id}/`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+/** Delete a weekly availability slot. */
+export function deleteTrainerScheduleSlot(
+  id: number,
+  token: string,
+): Promise<void> {
+  return request<void>(`/trainer-schedules/${id}/`, {
+    method: "DELETE",
+    token,
+  });
 }
 
 /* ── Dashboard ────────────────────────────────────────────────── */

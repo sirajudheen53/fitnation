@@ -33,6 +33,22 @@ export interface TrainerScheduleSlot {
   updated_at: string;
 }
 
+/**
+ * POST/PATCH /trainer-schedules/ — the backend keeps exactly one row per
+ * (trainer, day_of_week), so a "slot" is the availability window for a day.
+ */
+export interface TrainerScheduleSlotPayload {
+  trainer: number;
+  day_of_week: DayOfWeek;
+  /** "HH:MM" 24-hour. */
+  start_time: string;
+  end_time: string;
+  is_available: boolean;
+}
+
+/** Payload minus trainer — forms/hooks bind the trainer contextually. */
+export type ScheduleSlotInput = Omit<TrainerScheduleSlotPayload, "trainer">;
+
 /** Trainer profile as returned by /users/trainers/ (and /trainers/). */
 export interface Trainer {
   id: number;
