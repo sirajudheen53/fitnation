@@ -2,6 +2,7 @@
 
 from typing import ClassVar
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
@@ -30,6 +31,7 @@ from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.trainers.selectors import get_pt_entitlement
 from apps.users.authentication import TenantTokenAuthentication
+from apps.users.models import User
 
 
 class CustomerViewSet(ModelViewSet):
@@ -106,6 +108,23 @@ class CustomerViewSet(ModelViewSet):
         """Partially update a customer."""
         self.required_permission = "customers.edit_customer"
         return super().partial_update(request, *args, **kwargs)
+
+    def perform_destroy(self, instance: Customer) -> None:
+        """Delete the customer and its linked customer-role portal user.
+
+        The default destroy would leave the OneToOne portal identity behind:
+        its globally-unique email and phone then block re-adding the same
+        person (issue #72) — a phone-only payload collides on the
+        deterministic synthetic email, and a real-email identity trips the
+        ADR-002 ``phone_already_registered`` guard. Only a customer-role user
+        is removed; a profile deliberately linked to a staff account leaves
+        that account untouched.
+        """
+        user = instance.user
+        with transaction.atomic():
+            instance.delete()
+            if user is not None and user.role == User.Role.CUSTOMER:
+                user.delete()
 
     @action(detail=True, methods=["get", "put", "patch"], url_path="health-profile")
     def health_profile(self, request: Request, pk: int) -> Response:

@@ -171,6 +171,13 @@ class CustomerSerializer(serializers.ModelSerializer):
         → link + adopt the real email; a different real email → 400
         ``phone_already_registered``). A phone-only payload links the
         synthetic identity as-is — there is no email to adopt.
+
+        An orphaned identity — a customer-role user whose customer row was
+        deleted (issue #72) — is linked too, real email or not: there is no
+        live account behind the phone. A contradicting payload email still
+        rejects (the orphan's real email is never silently replaced); the
+        same email or a phone-only payload adopts cleanly.
+
         No phone or no match → blessed provisioning flow; a phone-only
         payload provisions the portal user under the synthetic OTP email
         while ``Customer.email`` stays NULL.
@@ -184,26 +191,37 @@ class CustomerSerializer(serializers.ModelSerializer):
         if user is None and phone:
             match = self._phone_identity_match(tenant, phone)
             if match is not None:
+                profile = Customer.objects.filter(user=match).first()
                 if not self._is_synthetic_identity(match):
-                    raise serializers.ValidationError(
-                        {
-                            "phone": [
-                                serializers.ErrorDetail(
-                                    "This phone is already registered to a different " "account. Resolve manually.",
-                                    code="phone_already_registered",
-                                )
-                            ]
-                        },
-                    )
-                # ADR-002 rule 1: LINK the synthetic phone-keyed identity and
-                # adopt the real email (no-op for a phone-only payload). Its
-                # OTP-provisioned customer row is adopted too (OneToOne
-                # forbids a second profile).
+                    # A real-email identity is a live account — unless it is
+                    # an orphaned customer-role user (issue #72: the customer
+                    # row is gone), whose phone is adoptable when the payload
+                    # does not contradict its real email.
+                    orphan = profile is None and match.role == User.Role.CUSTOMER
+                    payload_email = (validated_data.get("email") or "").strip().lower()
+                    email_conflicts = bool(payload_email) and payload_email != (match.email or "").strip().lower()
+                    if not orphan or email_conflicts:
+                        raise serializers.ValidationError(
+                            {
+                                "phone": [
+                                    serializers.ErrorDetail(
+                                        "This phone is already registered to a different " "account. Resolve manually.",
+                                        code="phone_already_registered",
+                                    )
+                                ]
+                            },
+                        )
+                # ADR-002 rule 1: LINK the phone-keyed identity — a synthetic
+                # OTP account or an orphaned one (issue #72) — and adopt the
+                # real email (no-op for a phone-only payload). Its
+                # OTP-provisioned customer row is adopted (OneToOne forbids a
+                # second profile); an orphan gets a fresh profile on the SAME
+                # user — never a second identity.
                 self._converge_phone_identity(match, validated_data)
                 validated_data["user"] = match
-                profile = Customer.objects.filter(user=match).first()
                 if profile is not None:
                     return self._adopt_customer_profile(profile, validated_data)
+                return super().create(validated_data)
 
         if user is None:
             user = self._provision_portal_user(validated_data, tenant, first_name, last_name)

@@ -9,6 +9,7 @@ from django.core.files.storage import FileSystemStorage, default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
+from rest_framework.response import Response
 from rest_framework.test import APITestCase
 
 from PIL import Image, features
@@ -2228,6 +2229,206 @@ class ADR002CustomerIdentityTests(APITestCase):
             verify_response.data.get("user", {}).get("id"),
             customer.user.id,  # SAME user — never a second identity
         )
+
+
+class PostDeleteReAddCustomerTests(APITestCase):
+    """Issue #72: add-customer must work after a customer was deleted.
+
+    The ERP delete is ``DELETE /customers/{id}/`` (DRF destroy). Before the
+    fix it hard-deleted the Customer row but left the linked portal User —
+    its globally-unique email and phone then broke the re-add: a phone-only
+    payload collided on the deterministic synthetic email (``400 email``),
+    and a real-email identity tripped the ADR-002 ``phone_already_registered``
+    guard (``400 phone``).
+    """
+
+    def setUp(self) -> None:
+        """Tenant, owner, branch, and owner auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.branch = Branch.objects.create(
+            tenant=self.tenant,
+            name="Main Branch",
+            address_line1="MG Road",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def _add_customer(self, **payload) -> Response:
+        """POST the ERP add-customer shape (no ``user``, no ``name``)."""
+        payload.setdefault("first_name", "Asha")
+        payload.setdefault("last_name", "Nair")
+        payload.setdefault("branch", self.branch.id)
+        return self.client.post("/api/v1/customers/customers/", payload, format="json")
+
+    def _delete_customer(self, customer_id: int) -> Response:
+        """The ERP delete path — DRF destroy on the customer viewset."""
+        return self.client.delete(f"/api/v1/customers/customers/{customer_id}/")
+
+    def test_delete_removes_linked_portal_user(self) -> None:
+        """Deleting a customer also removes its customer-role portal user."""
+        create_response = self._add_customer(phone="+919999000001", email="asha@local.test")
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        customer_id = create_response.data["id"]
+        user_id = create_response.data["user"]
+
+        delete_response = self._delete_customer(customer_id)
+        self.assertEqual(delete_response.status_code, 204)
+
+        self.assertFalse(User.objects.filter(pk=user_id).exists())
+        # The phone is freed — no identity left holding it.
+        self.assertFalse(User.objects.filter(tenant=self.tenant, phone="+919999000001").exists())
+        self.assertFalse(Customer.objects.filter(pk=customer_id).exists())
+
+    def test_readd_same_phone_with_email_after_delete(self) -> None:
+        """Delete, then re-add the SAME phone with an email → 201."""
+        create_response = self._add_customer(phone="+919999000002", email="asha@local.test")
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        self.assertEqual(self._delete_customer(create_response.data["id"]).status_code, 204)
+
+        readd_response = self._add_customer(phone="+919999000002", email="asha@local.test")
+        self.assertEqual(readd_response.status_code, 201, str(readd_response.data))
+        self.assertEqual(readd_response.data["phone"], "+919999000002")
+        self.assertEqual(Customer.objects.filter(tenant=self.tenant, phone="+919999000002").count(), 1)
+
+    def test_readd_same_phone_phone_only_after_delete(self) -> None:
+        """Delete, then re-add the SAME phone with no email → 201.
+
+        Regression for the exact Siju report: the phone-only payload used to
+        collide on the deterministic synthetic email of the orphaned user.
+        """
+        create_response = self._add_customer(phone="+919999000003")
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        self.assertEqual(self._delete_customer(create_response.data["id"]).status_code, 204)
+
+        readd_response = self._add_customer(phone="+919999000003")
+        self.assertEqual(readd_response.status_code, 201, str(readd_response.data))
+        self.assertEqual(readd_response.data["email"], None)  # phone-only shape
+        self.assertEqual(Customer.objects.filter(tenant=self.tenant, phone="+919999000003").count(), 1)
+
+    def test_readd_different_phone_after_delete(self) -> None:
+        """Delete, then add a DIFFERENT phone → 201 (control, was already OK)."""
+        create_response = self._add_customer(phone="+919999000004")
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        self.assertEqual(self._delete_customer(create_response.data["id"]).status_code, 204)
+
+        other_response = self._add_customer(phone="+919999000005", email="other@local.test")
+        self.assertEqual(other_response.status_code, 201, str(other_response.data))
+
+    def test_delete_keeps_non_customer_user_linked_to_profile(self) -> None:
+        """A profile deliberately linked to a staff user: the user survives."""
+        manager = User.objects.create_user(
+            email="manager@local.test",
+            password="F1tNati0n!",
+            first_name="Manny",
+            last_name="Ger",
+            role=User.Role.MANAGER,
+            tenant=self.tenant,
+            phone="+919999000006",
+        )
+        customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=manager,
+            name="Manny Ger",
+            phone="+919999000006",
+        )
+
+        delete_response = self._delete_customer(customer.id)
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertTrue(User.objects.filter(pk=manager.pk).exists())  # staff stays
+        self.assertFalse(Customer.objects.filter(pk=customer.id).exists())
+
+    def test_readd_adopts_orphaned_synthetic_identity(self) -> None:
+        """A pre-fix orphan (synthetic user, no customer row) is re-linked.
+
+        Production rows created before the delete fix keep their orphaned
+        portal users; re-adding the same phone must LINK that identity (no
+        second user, no synthetic-email IntegrityError).
+        """
+        from apps.users.services import synthetic_otp_email
+
+        orphan = User.objects.create_user(
+            email=synthetic_otp_email("+919999000007", self.tenant),
+            password=None,
+            first_name="Customer",
+            last_name="+919999000007",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+            phone="+919999000007",
+        )
+        users_before = User.objects.count()
+
+        readd_response = self._add_customer(phone="+919999000007")
+        self.assertEqual(readd_response.status_code, 201, str(readd_response.data))
+        self.assertEqual(readd_response.data["user"], orphan.id)  # SAME identity
+        self.assertEqual(User.objects.count(), users_before)  # no second user
+        self.assertTrue(Customer.objects.filter(user=orphan, tenant=self.tenant).exists())
+
+    def test_readd_adopts_orphaned_real_email_identity(self) -> None:
+        """A pre-fix orphan holding a REAL email is re-linked for its owner.
+
+        An orphaned customer-role identity has no live account behind it, so
+        the phone is adoptable — unlike a live account, which still 400s
+        (covered by ``ADR002CustomerIdentityTests``).
+        """
+        orphan = User.objects.create_user(
+            email="orphan@local.test",
+            password=None,
+            first_name="Orphan",
+            last_name="Ash",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+            phone="+919999000008",
+        )
+
+        readd_response = self._add_customer(phone="+919999000008", email="orphan@local.test")
+        self.assertEqual(readd_response.status_code, 201, str(readd_response.data))
+        self.assertEqual(readd_response.data["user"], orphan.id)  # SAME identity
+        self.assertTrue(Customer.objects.filter(user=orphan, tenant=self.tenant).exists())
+
+    def test_orphan_contradicting_email_still_400(self) -> None:
+        """An orphan is NOT adopted when the payload contradicts its email.
+
+        A different real email on a phone match stays a manual-resolution
+        case — the orphan's email is never silently replaced.
+        """
+        User.objects.create_user(
+            email="orphan2@local.test",
+            password=None,
+            first_name="Orphan",
+            last_name="Two",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+            phone="+919999000010",
+        )
+
+        readd_response = self._add_customer(phone="+919999000010", email="someoneelse@local.test")
+        self.assertEqual(readd_response.status_code, 400)
+        self.assertIn("phone", readd_response.data)
+        self.assertEqual(User.objects.filter(email="someoneelse@local.test").count(), 0)  # no mutation
+
+    def test_orphaned_phone_with_staff_role_still_400(self) -> None:
+        """A phone held by a NON-customer user without a profile still 400s."""
+        trainer_user = User.objects.create_user(
+            email="staff@local.test",
+            password="F1tNati0n!",
+            first_name="Staft",
+            last_name="User",
+            role=User.Role.TRAINER,
+            tenant=self.tenant,
+            phone="+919999000009",
+        )
+
+        readd_response = self._add_customer(phone="+919999000009")
+        self.assertEqual(readd_response.status_code, 400)
+        self.assertIn("phone", readd_response.data)
+        trainer_user.refresh_from_db()
+        self.assertEqual(trainer_user.phone, "+919999000009")  # never mutated
 
 
 class OptionalContactCustomerTests(APITestCase):
