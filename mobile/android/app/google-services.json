@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "35318880783",
+    "project_id": "yougetfitwithus",
+    "storage_bucket": "yougetfitwithus.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:35318880783:android:aa2ecfa5999e006359a17a",
+        "android_client_info": {
+          "package_name": "com.getfitwithus.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBNooGVKZrNBFhbicMW6R9a-UPup0wg-1g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:35318880783:android:bc3e260af30b583359a17a",
+        "android_client_info": {
+          "package_name": "com.getfitwithus.biodebug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBNooGVKZrNBFhbicMW6R9a-UPup0wg-1g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

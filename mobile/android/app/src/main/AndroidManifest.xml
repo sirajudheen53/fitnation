@@ -1,10 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Android 13+ asks the user for notification permission at runtime
-         (FBOS-011 §7.4). The app degrades to "push disabled" when it is
-         denied. -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Release builds need an explicit INTERNET permission — only the
+         debug/profile Flutter template manifests add it implicitly. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-
     <application
         android:label="FitNation"
         android:name="${applicationName}"
@@ -30,45 +27,26 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-
-            <!-- App Link: https://app.yougetfitwithus.com/g/{tenant-uuid}
-                 (FBOS-011 D7). The host must serve assetlinks.json for the
-                 app to open directly; until then Android falls back to the
-                 browser, and the custom scheme below still works. -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https" android:host="app.yougetfitwithus.com"/>
-            </intent-filter>
-
-            <!-- Custom scheme: fitnation://g/{tenant-uuid}. The fallback that
-                 works without App-Links verification. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="fitnation"/>
-            </intent-filter>
         </activity>
-
-        <!-- Firebase Cloud Messaging: receives pushes while the app is in
-             the background and routes taps to the deep-link handler
-             (FBOS-011 §7.4). The service is a no-op in builds without
-             google-services.json. -->
-        <service
-            android:name="io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
-            </intent-filter>
-        </service>
-
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- WhatsApp zero-tap authentication: WhatsApp broadcasts the OTP code
+             to this receiver (action per Meta's OTP Android SDK) after the app
+             has started a handshake. Exported is required — the broadcast
+             originates from the WhatsApp client.
+             https://developers.facebook.com/docs/whatsapp/business-management-api/authentication-templates/zero-tap-authentication-templates -->
+        <receiver
+            android:name=".otp.WhatsAppOtpCodeReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.whatsapp.otp.OTP_RETRIEVED"/>
+            </intent-filter>
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -80,5 +58,10 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Package visibility for the WhatsApp OTP handshake (see receiver above):
+             handshake support is detected by querying the WhatsApp clients'
+             OTP_REQUESTED receivers. -->
+        <package android:name="com.whatsapp"/>
+        <package android:name="com.whatsapp.w4b"/>
     </queries>
 </manifest>

@@ -2,8 +2,8 @@ import 'package:dio/dio.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/failures.dart';
+import '../firebase_error_mapper.dart';
 import '../models/auth_response.dart';
-import '../models/entitlement.dart';
 
 /// Remote data source for authentication (OTP flow).
 class AuthRemoteDataSource {
@@ -13,39 +13,47 @@ class AuthRemoteDataSource {
 
   /// Requests an OTP to be sent to [phone].
   ///
-  /// POST /api/v1/users/auth/otp/request/
-  /// Body: `{ "phone": "+919876543210", "gym": "<tenant-uuid>"? }`
-  ///
-  /// [gymAnchor] is the effective gym anchor (runtime link anchor wins over
-  /// the build-time dart-define — see `AnchorStore` docs).
-  Future<void> requestOtp(String phone, {String? gymAnchor}) async {
+  /// POST /api/v1/auth/otp/request/
+  /// Body: { "phone": "+919876543210" }
+  Future<void> requestOtp(String phone) async {
     try {
-      await _dio.post(
-        AppConstants.otpRequestEndpoint,
-        data: {
-          'phone': phone,
-          if (gymAnchor != null && gymAnchor.isNotEmpty) 'gym': gymAnchor,
-        },
-      );
+      await _dio.post(AppConstants.otpRequestEndpoint, data: {'phone': phone});
     } on DioException catch (e) {
       throw _mapDioError(e);
     }
   }
 
-  /// Verifies the OTP and returns the auth response.
+  /// Exchanges a Firebase ID token for an app session.
   ///
-  /// POST /api/v1/users/auth/otp/verify/
-  /// Body: { "phone", "otp", "gym"?, "device_type", "device_id"?, "user_agent"? }
+  /// POST /api/v1/auth/firebase/
+  /// Body: `{"id_token": "...", "gym": optional, "device_type": optional}`
+  /// Response: same shape as /auth/otp/verify/ → AuthResponse.
+  Future<AuthResponse> firebaseLogin({
+    required String idToken,
+    required String deviceType,
+    String? gym,
+  }) async {
+    try {
+      final response = await _dio.post(
+        AppConstants.firebaseAuthEndpoint,
+        data: {'id_token': idToken, 'device_type': deviceType, 'gym': ?gym},
+      );
+      return AuthResponse.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _mapFirebaseDioError(e);
+    }
+  }
+
+  /// Verifies the OTP and returns the auth response (token + user + permissions).
   ///
-  /// The anchor is sent on verify too (FBOS-011 correction #6) so a member of
-  /// two gyms is pinned to the gym whose link they installed from.
+  /// POST /api/v1/auth/otp/verify/
+  /// Body: { "phone": "+919876543210", "otp": "123456", "device_type": "android" }
   Future<AuthResponse> verifyOtp({
     required String phone,
     required String otp,
     required String deviceType,
     String? deviceId,
     String? userAgent,
-    String? gymAnchor,
   }) async {
     try {
       final response = await _dio.post(
@@ -56,23 +64,9 @@ class AuthRemoteDataSource {
           'device_type': deviceType,
           'device_id': ?deviceId,
           'user_agent': ?userAgent,
-          if (gymAnchor != null && gymAnchor.isNotEmpty) 'gym': gymAnchor,
         },
       );
       return AuthResponse.fromJson(response.data as Map<String, dynamic>);
-    } on DioException catch (e) {
-      throw _mapDioError(e);
-    }
-  }
-
-  /// Live app-access entitlement (FBOS-011 §2.3c).
-  ///
-  /// GET /api/v1/users/auth/entitlement/ — called on app resume and after a
-  /// 403 `app_access_*` to re-derive the gate state from the server.
-  Future<Entitlement> fetchEntitlement() async {
-    try {
-      final response = await _dio.get(AppConstants.entitlementEndpoint);
-      return Entitlement.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw _mapDioError(e);
     }
@@ -100,6 +94,27 @@ class AuthRemoteDataSource {
     }
   }
 
+  /// Maps a DioException from POST /auth/firebase/ per the endpoint contract.
+  Failure _mapFirebaseDioError(DioException e) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.connectionError:
+        return const NetworkFailure();
+      case DioExceptionType.badResponse:
+        return mapFirebaseBackendFailure(
+          e.response?.statusCode,
+          e.response?.data,
+        );
+      case DioExceptionType.cancel:
+      case DioExceptionType.badCertificate:
+      case DioExceptionType.transformTimeout:
+      case DioExceptionType.unknown:
+        return UnknownFailure(message: e.message ?? 'Unknown error');
+    }
+  }
+
   /// Maps a DioException to a Failure.
   Failure _mapDioError(DioException e) {
     switch (e.type) {
@@ -113,21 +128,27 @@ class AuthRemoteDataSource {
         final data = e.response?.data;
 
         if (statusCode == 401 || statusCode == 403) {
-          final message = (data is Map ? data['detail'] : null) ?? 'Authentication failed';
-          return AuthFailure(message: message.toString(), statusCode: statusCode);
+          final message =
+              (data is Map ? data['detail'] : null) ?? 'Authentication failed';
+          return AuthFailure(
+            message: message.toString(),
+            statusCode: statusCode,
+          );
         }
 
         if (statusCode == 400 && data is Map<String, dynamic>) {
-          final detail = (data['detail'] ?? data['gym'] ?? data.values.firstOrNull?.firstOrNull ?? 'Validation error').toString();
           return ValidationFailure(
-            message: detail,
+            message: 'Validation error',
             errors: data,
             statusCode: statusCode,
           );
         }
 
         final message = (data is Map ? data['detail'] : null) ?? 'Server error';
-        return ServerFailure(message: message.toString(), statusCode: statusCode);
+        return ServerFailure(
+          message: message.toString(),
+          statusCode: statusCode,
+        );
 
       case DioExceptionType.cancel:
       case DioExceptionType.badCertificate:

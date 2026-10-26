@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:hive/hive.dart';
 
-import '../models/entitlement.dart';
 import '../models/user_model.dart';
 
 /// Local data source for persisting auth state (token + user profile).
@@ -11,7 +10,6 @@ class AuthLocalDataSource {
   static const String _tokenKey = 'auth_token';
   static const String _userKey = 'user_profile';
   static const String _permissionsKey = 'permissions';
-  static const String _entitlementKey = 'entitlement';
 
   late Box<dynamic> _box;
 
@@ -48,23 +46,11 @@ class AuthLocalDataSource {
     return (jsonDecode(json) as List).cast<String>();
   }
 
-  /// Saves the app-access entitlement (FBOS-011 §7.2).
-  Future<void> saveEntitlement(Entitlement entitlement) =>
-      _box.put(_entitlementKey, jsonEncode(entitlement.toJson()));
-
-  /// Gets the stored entitlement, or null (staff / legacy backend).
-  Entitlement? getEntitlement() {
-    final json = _box.get(_entitlementKey) as String?;
-    if (json == null) return null;
-    return Entitlement.fromJson(jsonDecode(json) as Map<String, dynamic>);
-  }
-
   /// Clears all stored auth data (logout).
   Future<void> clear() async {
     await _box.delete(_tokenKey);
     await _box.delete(_userKey);
     await _box.delete(_permissionsKey);
-    await _box.delete(_entitlementKey);
   }
 
   /// Whether a token is stored (user is authenticated).

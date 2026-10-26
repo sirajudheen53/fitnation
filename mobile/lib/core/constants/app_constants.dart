@@ -1,79 +1,51 @@
-/// Core constants for the FitNation app.
-library;
+// Core constants for the FitNation app.
 
-import '../config/app_config.dart';
+/// Which login backend the app uses.
+enum AuthMode {
+  /// Firebase phone-OTP login (SMS code verified by Firebase, then the
+  /// Firebase ID token is exchanged for a session via POST /auth/firebase/).
+  firebase,
+
+  /// Legacy backend OTP login (POST /auth/otp/request/ + /auth/otp/verify/).
+  /// Kept as the rollback path — do not delete.
+  backendOtp,
+}
 
 class AppConstants {
   AppConstants._();
 
-  /// Base URL for the FBOS API, resolved per build flavor.
-  ///
-  /// Delegates to [AppEnvironment.apiBaseUrl] so `--dart-define=SERVER=prod`
-  /// (and friends) actually switch hosts; an explicit
-  /// `--dart-define=API_BASE_URL=<url>` still wins (FBOS-011 correction #7).
-  static String get apiBaseUrl => AppEnvironment.apiBaseUrl;
+  /// Auth mode. Compile-time switchable:
+  /// `flutter run --dart-define=FBOS_USE_FIREBASE_AUTH=false` rolls back to
+  /// the backend-OTP flow without a code change.
+  static const bool _useFirebaseAuth = bool.fromEnvironment(
+    'FBOS_USE_FIREBASE_AUTH',
+    defaultValue: true,
+  );
+
+  /// Test-only override for [authMode]; null (the default) keeps the
+  /// compile-time behaviour. Never set outside test code.
+  static AuthMode? debugAuthModeOverride;
+
+  static AuthMode get authMode =>
+      debugAuthModeOverride ??
+      (_useFirebaseAuth ? AuthMode.firebase : AuthMode.backendOtp);
+
+  /// Base URL for the FBOS API.
+  /// Override for real devices / other environments with:
+  /// `flutter run --dart-define=FBOS_API_BASE=https://<real-server>`
+  /// Default keeps the Android emulator loopback so `flutter run` works as-is.
+  static const String apiBaseUrl = String.fromEnvironment(
+    'FBOS_API_BASE',
+    defaultValue: 'http://10.0.2.2:8000', // Android emulator -> host localhost
+  );
   static const String apiPrefix = '/api/v1';
 
   /// API endpoints.
-  static const String otpRequestEndpoint = '/users/auth/otp/request/';
-  static const String otpVerifyEndpoint = '/users/auth/otp/verify/';
-  static const String logoutEndpoint = '/users/auth/logout/';
-  static const String meEndpoint = '/users/auth/me/';
-  static const String entitlementEndpoint = '/users/auth/entitlement/';
-  static const String deviceTokensEndpoint = '/notifications/device-tokens/';
-
-  /// Unauthenticated gym lookup by code (FBOS-011 B9 / FBOS-011 §7.1).
-  ///
-  /// `GET /api/v1/tenants/lookup/?code=CODE` → `{uuid, name}`. Public by
-  /// necessity, so the backend throttles it and answers an unknown code
-  /// with a generic 404.
-  static const String tenantLookupEndpoint = '/tenants/lookup/';
-
-
-  // Customer
-  static const String customerProfileEndpoint = '/customers/customers/';
-  static const String customerHealthProfileEndpoint = '/customers/customers/{id}/health-profile/';
-  static const String customerFitnessGoalsEndpoint = '/customers/customers/{id}/fitness-goals/';
-  static const String customerMeasurementsEndpoint = '/customers/customers/{id}/measurements/';
-
-  // Exercise library
-  static const String exercisesEndpoint = '/exercises/exercises/';
-
-  // Workouts
-  static const String workoutAssignmentsEndpoint = '/workouts/workout-assignments/';
-  static const String workoutPlansEndpoint = '/workouts/workout-plans/';
-  static const String workoutLogsEndpoint = '/workouts/workout-logs/';
-
-  // Diet
-  static const String dietAssignmentsEndpoint = '/diet-assignments/';
-  static const String dietPlansEndpoint = '/diet-plans/';
-  static const String dietMealsEndpoint = '/diet-meals/';
-
-  // Attendance
-  static const String attendanceRecordsEndpoint = '/attendance/attendance/';
-  static const String attendanceCheckInEndpoint = '/attendance/check-in/';
-
-  // Membership
-  static const String membershipsEndpoint = '/memberships/memberships/';
-
-  // Feedback
-  static const String feedbackEndpoint = '/feedback/feedback/';
-
-  // AI Coach
-  static const String aiCoachChatEndpoint = '/ai/coach/chat/';
-  static const String aiCoachConversationsEndpoint = '/ai/coach/conversations/';
-  static const String aiCoachMessagesEndpoint = '/ai/coach/conversations/{id}/messages/';
-
-  // Body Analysis
-  static const String bodyAnalysisEndpoint = '/ai/body/analyses/';
-  static const String bodyAnalysisUploadEndpoint = '/ai/body/analyses/upload/';
-  static const String bodyAnalysisProgressEndpoint = '/ai/body/progress/';
-
-  // AI Nutrition
-  static const String nutritionMealPlansEndpoint = '/ai/nutrition/meal-plan/';
-  static const String nutritionGenerateEndpoint = '/ai/nutrition/meal-plan/generate/';
-  static const String nutritionShoppingListEndpoint = '/ai/nutrition/shopping-list/';
-  static const String nutritionMacrosEndpoint = '/ai/nutrition/track/';
+  static const String otpRequestEndpoint = '/auth/otp/request/';
+  static const String otpVerifyEndpoint = '/auth/otp/verify/';
+  static const String firebaseAuthEndpoint = '/auth/firebase/';
+  static const String logoutEndpoint = '/auth/logout/';
+  static const String meEndpoint = '/auth/me/';
 
   /// Storage keys.
   static const String authTokenKey = 'auth_token';
@@ -88,4 +60,7 @@ class AppConstants {
   /// Phone validation.
   static const int phoneMinLength = 10;
   static const int phoneMaxLength = 15;
+
+  /// Firebase phone verification timeout (auto-SMS-retrieval window).
+  static const Duration phoneVerificationTimeout = Duration(seconds: 60);
 }

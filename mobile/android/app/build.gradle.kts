@@ -3,6 +3,9 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
+    // START: FlutterFire Configuration
+    id("com.google.gms.google-services")
+    // END: FlutterFire Configuration
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -21,7 +24,10 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.getfitwithus.app"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // NDK line disabled: pure-Dart app needs no NDK, and the 750MB NDK download
+    // was impractically slow on this connection. Restore if you ever add a plugin
+    // with native C/C++ code (AGP will then ask for an NDK).
+    // ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -29,6 +35,7 @@ android {
     }
 
     defaultConfig {
+        // Released Play Store identity — immutable after first upload (mobile report 2026-10-25).
         applicationId = "com.getfitwithus.app"
         minSdk = flutter.minSdkVersion
         // Play requires new apps to target API 36+. Pinned explicitly so the
@@ -92,4 +99,11 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // WhatsApp zero-tap authentication (OTP Android SDK):
+    // https://developers.facebook.com/docs/whatsapp/business-management-api/authentication-templates/zero-tap-authentication-templates
+    implementation("com.whatsapp.otp:whatsapp-otp-android-sdk:1.0.0")
+    testImplementation("junit:junit:4.13.2")
 }
