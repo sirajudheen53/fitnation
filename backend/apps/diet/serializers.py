@@ -14,8 +14,29 @@ from apps.diet.models import (
 )
 
 
+class VisibleFoodItemField(serializers.PrimaryKeyRelatedField):
+    """Food-item FK limited to the global catalogue plus the request tenant.
+
+    Prevents diet meals from referencing another tenant's custom dishes while
+    keeping every global catalogue entry selectable.
+    """
+
+    def get_queryset(self) -> FoodItem:
+        """Return visible food items for the requesting tenant.
+
+        Returns:
+            Queryset of global items plus the request tenant's customs; global
+            only when no tenant is resolvable from the request.
+        """
+        request = self.context.get("request")
+        tenant = getattr(request, "tenant", None)
+        return FoodItem.visible_to(tenant)
+
+
 class FoodItemSerializer(serializers.ModelSerializer):
-    """Serialize a global food catalog item."""
+    """Serialize a global or tenant-custom food catalog item."""
+
+    tenant = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
 
     class Meta:
         """Serializer metadata."""
@@ -24,6 +45,7 @@ class FoodItemSerializer(serializers.ModelSerializer):
         fields: ClassVar[list[str]] = [
             "id",
             "name",
+            "tenant",
             "serving_size",
             "calories",
             "protein",
@@ -32,15 +54,46 @@ class FoodItemSerializer(serializers.ModelSerializer):
             "fiber",
             "glycemic_index",
             "food_group",
+            "meal_type",
+            "is_dish",
             "is_veg",
             "created_at",
         ]
-        read_only_fields: ClassVar[list[str]] = ["id", "created_at"]
+        read_only_fields: ClassVar[list[str]] = ["id", "tenant", "created_at"]
+
+    def validate_name(self, value: str) -> str:
+        """Reject names colliding within the caller's visible catalogue.
+
+        The check is case-insensitive and covers global entries plus the
+        request tenant's custom dishes; on update the instance itself is
+        excluded.
+
+        Args:
+            value: The submitted item name.
+
+        Returns:
+            The trimmed name.
+
+        Raises:
+            serializers.ValidationError: If the name already exists in scope.
+        """
+        name = value.strip()
+        request = self.context.get("request")
+        tenant = getattr(request, "tenant", None)
+        queryset = FoodItem.visible_to(tenant).filter(name__iexact=name)
+        if self.instance is not None:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError(
+                "A food item or dish with this name already exists.",
+            )
+        return name
 
 
 class DietMealSerializer(serializers.ModelSerializer):
     """Serialize a meal entry with auto-calculated nutrition."""
 
+    food_item = VisibleFoodItemField()
     food_item_name = serializers.CharField(
         source="food_item.name",
         read_only=True,

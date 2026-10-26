@@ -21,6 +21,9 @@ export type FoodGroup =
   | "snack"
   | "beverage";
 
+/** Natural meal-slot tag on dishes (ticket #89). */
+export type DishMealType = "breakfast" | "lunch" | "snack" | "dinner";
+
 export interface FoodItem {
   id: number;
   name: string;
@@ -32,6 +35,8 @@ export interface FoodItem {
   fiber: number;
   glycemic_index: number | null;
   food_group: FoodGroup;
+  meal_type?: DishMealType | null;
+  is_dish?: boolean;
   is_veg: boolean;
   created_at: string;
 }
@@ -46,6 +51,8 @@ export interface FoodItemFormData {
   fiber: number;
   glycemic_index?: number | null;
   food_group: FoodGroup;
+  meal_type?: DishMealType | null;
+  is_dish?: boolean;
   is_veg: boolean;
 }
 

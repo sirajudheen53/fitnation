@@ -66,8 +66,9 @@ class DietRolePermission(RolePermission):
         if not request.user.is_authenticated or request.user.is_superuser:
             return True
 
-        # Cross-tenant guard (mirrors RolePermission).
-        if hasattr(obj, "tenant_id") and obj.tenant_id != request.user.tenant_id:
+        # Cross-tenant guard (mirrors RolePermission). Global catalogue rows
+        # (tenant NULL, ticket #89) are shared and never cross-tenant.
+        if hasattr(obj, "tenant_id") and obj.tenant_id is not None and obj.tenant_id != request.user.tenant_id:
             return False
 
         if request.user.role != "customer":
@@ -124,7 +125,12 @@ class DietRolePermission(RolePermission):
 
 
 class FoodItemViewSet(ModelViewSet):
-    """CRUD for the global food catalog with search and filters."""
+    """CRUD for the food catalog (global seeds + tenant customs) with filters.
+
+    Ticket #89: reads return the global catalogue plus the request tenant's
+    custom dishes; creates attach ``request.tenant`` so new dishes stay
+    tenant-scoped.
+    """
 
     permission_classes: ClassVar[list] = [IsAuthenticated]
     required_permission = "diets.view_diet"
@@ -137,8 +143,13 @@ class FoodItemViewSet(ModelViewSet):
     queryset = FoodItem.objects.all()
 
     def get_queryset(self) -> FoodItem:
-        """Return food items filtered by food_group and is_veg query params."""
-        queryset = FoodItem.objects.all()
+        """Return visible food items filtered by query params.
+
+        Visibility is the global catalogue plus the request tenant's custom
+        dishes; supports ``food_group``, ``is_veg``, ``meal_type`` and
+        ``is_dish`` filters.
+        """
+        queryset = FoodItem.visible_to(self.request.tenant)
         food_group = self.request.query_params.get("food_group")
         if food_group:
             queryset = queryset.filter(food_group=food_group)
@@ -147,20 +158,32 @@ class FoodItemViewSet(ModelViewSet):
             queryset = queryset.filter(
                 is_veg=is_veg.lower() in {"true", "1"},
             )
+        meal_type = self.request.query_params.get("meal_type")
+        if meal_type:
+            queryset = queryset.filter(meal_type=meal_type)
+        is_dish = self.request.query_params.get("is_dish")
+        if is_dish is not None and is_dish.lower() in {"true", "false", "1", "0"}:
+            queryset = queryset.filter(
+                is_dish=is_dish.lower() in {"true", "1"},
+            )
         return queryset
 
     def get_permissions(self) -> list:
-        """Return read permissions for all, edit permissions for staff roles."""
+        """Return tenant-checked permissions for reads, staff edit for writes.
+
+        ``IsTenantMember`` also resolves ``request.tenant`` post-authentication,
+        which the visible-scope queryset depends on.
+        """
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsAuthenticated(), IsTenantMember(), DietRolePermission()]
-        return [IsAuthenticated()]
+        return [IsAuthenticated(), IsTenantMember()]
 
     def create(self, request: Request) -> Response:
-        """Create a food item."""
+        """Create a food item or custom dish scoped to the request tenant."""
         self.required_permission = "diets.create_diet"
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        food = serializer.save()
+        food = serializer.save(tenant=request.tenant)
         return Response(
             FoodItemSerializer(food).data,
             status=status.HTTP_201_CREATED,

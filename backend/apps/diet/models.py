@@ -7,17 +7,21 @@ the underlying food item and the serving quantity multiplier.
 
 from typing import ClassVar
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.db.models.functions import Lower
 from django.utils import timezone
 
-from apps.tenants.models import TenantModelMixin
+from apps.tenants.models import Tenant, TenantModelMixin
 
 
 class FoodItem(models.Model):
-    """A global (non-tenant-scoped) food catalog entry with nutrition data.
+    """A food catalog entry with nutrition data.
 
-    Food items are universal — the same rice, dal or egg is nutritionally
-    identical across every gym tenant — so they are intentionally shared.
+    Ticket #89 scoping: seeded catalogue rows are **global** (``tenant`` NULL)
+    and shared by every tenant; dishes created through the API by tenant staff
+    are **tenant-scoped** custom dishes (``tenant`` set) visible only to their
+    owning tenant. Visibility is always *global ∪ own tenant*.
     """
 
     class FoodGroup(models.TextChoices):
@@ -32,7 +36,24 @@ class FoodItem(models.Model):
         SNACK = "snack", "Snack"
         BEVERAGE = "beverage", "Beverage"
 
-    name = models.CharField(max_length=200, unique=True, db_index=True)
+    class MealType(models.TextChoices):
+        """Natural meal-slot tag for dishes (#89)."""
+
+        BREAKFAST = "breakfast", "Breakfast"
+        LUNCH = "lunch", "Lunch"
+        SNACK = "snack", "Snack"
+        DINNER = "dinner", "Dinner"
+
+    name = models.CharField(max_length=200, db_index=True)
+    tenant = models.ForeignKey(
+        "tenants.Tenant",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="custom_food_items",
+        db_index=True,
+        help_text="NULL = global platform catalogue (seeds); set = tenant-created custom dish.",
+    )
     serving_size = models.CharField(
         max_length=100,
         default="100g",
@@ -41,32 +62,49 @@ class FoodItem(models.Model):
     calories = models.FloatField(
         default=0,
         help_text="Calories (kcal) per serving size.",
+        validators=[MinValueValidator(0), MaxValueValidator(3000)],
     )
     protein = models.FloatField(
         default=0,
         help_text="Protein (g) per serving size.",
+        validators=[MinValueValidator(0), MaxValueValidator(300)],
     )
     carbs = models.FloatField(
         default=0,
         help_text="Carbohydrates (g) per serving size.",
+        validators=[MinValueValidator(0), MaxValueValidator(500)],
     )
     fat = models.FloatField(
         default=0,
         help_text="Fat (g) per serving size.",
+        validators=[MinValueValidator(0), MaxValueValidator(300)],
     )
     fiber = models.FloatField(
         default=0,
         help_text="Dietary fiber (g) per serving size.",
+        validators=[MinValueValidator(0), MaxValueValidator(200)],
     )
     glycemic_index = models.IntegerField(
         null=True,
         blank=True,
         help_text="Glycemic index (optional).",
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
     )
     food_group = models.CharField(
         max_length=20,
         choices=FoodGroup.choices,
         default=FoodGroup.GRAINS,
+    )
+    meal_type = models.CharField(
+        max_length=20,
+        choices=MealType.choices,
+        null=True,
+        blank=True,
+        help_text="Natural meal slot for dishes (breakfast/lunch/snack/dinner); NULL for ingredients.",
+    )
+    is_dish = models.BooleanField(
+        default=False,
+        help_text="True for prepared dishes/meals (incl. all seeded dishes); False for raw ingredients.",
     )
     is_veg = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -80,10 +118,41 @@ class FoodItem(models.Model):
             models.Index(fields=["food_group"]),
             models.Index(fields=["is_veg"]),
         ]
+        constraints: ClassVar[list] = [
+            # Global names must be unique among global rows...
+            models.UniqueConstraint(
+                Lower("name"),
+                condition=models.Q(tenant__isnull=True),
+                name="uq_fooditem_name_global",
+            ),
+            # ...and custom names unique within each tenant (case-insensitive).
+            models.UniqueConstraint(
+                Lower("name"),
+                "tenant",
+                condition=models.Q(tenant__isnull=False),
+                name="uq_fooditem_name_tenant",
+            ),
+        ]
 
     def __str__(self) -> str:
         """Return a human-readable food item label."""
         return f"{self.name} ({self.serving_size})"
+
+    @classmethod
+    def visible_to(cls, tenant: "Tenant | None") -> models.QuerySet:
+        """Return items visible to the given tenant: global + its customs.
+
+        Args:
+            tenant: The requesting tenant, or ``None`` for platform-level
+                access (global catalogue only).
+
+        Returns:
+            The filtered queryset.
+        """
+        queryset = cls.objects.all()
+        if tenant is None:
+            return queryset.filter(tenant__isnull=True)
+        return queryset.filter(models.Q(tenant__isnull=True) | models.Q(tenant=tenant))
 
 
 class DietPlan(TenantModelMixin):

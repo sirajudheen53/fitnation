@@ -78,9 +78,10 @@ def seed_base(skip_catalogs: bool = False, reset_passwords: bool = True, echo=pr
 
     if not skip_catalogs:
         call_command("seed_food_items")
+        call_command("seed_dishes")
         call_command("seed_permissions")
         call_command("seed_exercises", tenant=tenant.id)
         call_command("seed_marketplace", tenant=tenant.id)
-        echo("  catalogs: food items, permissions, exercises, marketplace")
+        echo("  catalogs: food items, dishes, permissions, exercises, marketplace")
 
     return tenant, branch

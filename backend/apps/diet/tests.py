@@ -1,8 +1,10 @@
 """Tests for the diet app: models, serializers, APIs, permissions, and isolation."""
 
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APITestCase
 
@@ -898,3 +900,432 @@ class SeedFoodItemsCommandTests(TestCase):
             ),
         )
         self.assertGreaterEqual(FoodItem.objects.count(), 100)
+
+
+class FoodItemScopingModelTests(TestCase):
+    """Ticket #89: global seed catalogue plus per-tenant custom dishes."""
+
+    def setUp(self) -> None:
+        """Create two tenants for scoping checks."""
+        self.tenant_a = provision_tenant("Gym A", contact_email="a@scope.test")
+        self.tenant_b = provision_tenant("Gym B", contact_email="b@scope.test")
+
+    def test_global_item_has_no_tenant(self) -> None:
+        """Seeded catalogue rows are global (tenant NULL)."""
+        food = _make_food()
+        self.assertIsNone(food.tenant_id)
+
+    def test_custom_dish_can_be_tenant_scoped(self) -> None:
+        """A tenant-created dish persists with its owning tenant."""
+        dish = FoodItem.objects.create(
+            tenant=self.tenant_a,
+            name="Gym Mass Bowl",
+            serving_size="1 bowl",
+            calories=620,
+            protein=38,
+            carbs=78,
+            fat=14,
+            food_group=FoodItem.FoodGroup.PROTEIN,
+        )
+        self.assertEqual(dish.tenant_id, self.tenant_a.id)
+
+    def test_same_custom_name_allowed_across_tenants(self) -> None:
+        """Two tenants may each own a custom dish with the same name."""
+        FoodItem.objects.create(
+            tenant=self.tenant_a,
+            name="Protein Laddoo",
+            serving_size="1 piece",
+            calories=120,
+            food_group=FoodItem.FoodGroup.SNACK,
+        )
+        other = FoodItem.objects.create(
+            tenant=self.tenant_b,
+            name="Protein Laddoo",
+            serving_size="1 piece",
+            calories=130,
+            food_group=FoodItem.FoodGroup.SNACK,
+        )
+        self.assertEqual(other.tenant_id, self.tenant_b.id)
+
+    def test_same_custom_name_rejected_within_tenant(self) -> None:
+        """A tenant cannot own two custom dishes with the same name."""
+        FoodItem.objects.create(
+            tenant=self.tenant_a,
+            name="Protein Laddoo",
+            serving_size="1 piece",
+            calories=120,
+            food_group=FoodItem.FoodGroup.SNACK,
+        )
+        with self.assertRaises(Exception):  # noqa: B017 — IntegrityError by constraint design
+            FoodItem.objects.create(
+                tenant=self.tenant_a,
+                name="protein laddoo",
+                serving_size="1 piece",
+                calories=120,
+                food_group=FoodItem.FoodGroup.SNACK,
+            )
+
+    def test_meal_type_tag_persists(self) -> None:
+        """A dish can carry a natural meal-type tag."""
+        dish = FoodItem.objects.create(
+            name="Masala Dosa",
+            serving_size="1 piece",
+            calories=290,
+            protein=6,
+            carbs=38,
+            fat=13,
+            food_group=FoodItem.FoodGroup.GRAINS,
+            meal_type=FoodItem.MealType.BREAKFAST,
+            is_dish=True,
+        )
+        dish.refresh_from_db()
+        self.assertEqual(dish.meal_type, FoodItem.MealType.BREAKFAST)
+
+    def test_meal_type_nullable_by_default(self) -> None:
+        """Ingredients and all-time dishes have no meal-type tag."""
+        food = _make_food()
+        self.assertIsNone(food.meal_type)
+        self.assertFalse(food.is_dish)
+
+
+class FoodItemValidationTests(TestCase):
+    """Ticket #89: dup-name and macro numeric-bound validation."""
+
+    def setUp(self) -> None:
+        """Create a tenant and a valid create payload."""
+        self.tenant = provision_tenant("Gym V", contact_email="v@valid.test")
+
+    def _context(self, tenant: object) -> dict:
+        """Return serializer context carrying the given tenant via request."""
+        return {"request": SimpleNamespace(tenant=tenant)}
+
+    def _payload(self, **overrides: object) -> dict:
+        """Return a valid food-item payload with optional overrides."""
+        payload = {
+            "name": "Mass Gainer Bowl",
+            "serving_size": "1 bowl",
+            "calories": 620,
+            "protein": 38,
+            "carbs": 78,
+            "fat": 14,
+            "fiber": 8,
+            "food_group": "protein",
+            "is_veg": True,
+        }
+        payload.update(overrides)
+        return payload
+
+    def _assert_field_error(self, serializer: FoodItemSerializer, field: str) -> None:
+        """Assert the serializer is invalid with an error on the given field."""
+        self.assertFalse(serializer.is_valid())
+        self.assertIn(field, serializer.errors)
+
+    def test_negative_calories_rejected(self) -> None:
+        """Calories cannot be negative."""
+        serializer = FoodItemSerializer(
+            data=self._payload(calories=-1),
+            context=self._context(self.tenant),
+        )
+        self._assert_field_error(serializer, "calories")
+
+    def test_negative_protein_rejected(self) -> None:
+        """Protein cannot be negative."""
+        serializer = FoodItemSerializer(
+            data=self._payload(protein=-5),
+            context=self._context(self.tenant),
+        )
+        self._assert_field_error(serializer, "protein")
+
+    def test_negative_fat_rejected(self) -> None:
+        """Fat cannot be negative."""
+        serializer = FoodItemSerializer(
+            data=self._payload(fat=-2),
+            context=self._context(self.tenant),
+        )
+        self._assert_field_error(serializer, "fat")
+
+    def test_negative_carbs_rejected(self) -> None:
+        """Carbs cannot be negative."""
+        serializer = FoodItemSerializer(
+            data=self._payload(carbs=-3),
+            context=self._context(self.tenant),
+        )
+        self._assert_field_error(serializer, "carbs")
+
+    def test_calories_upper_bound_rejected(self) -> None:
+        """Calories above the sanity cap are rejected."""
+        serializer = FoodItemSerializer(
+            data=self._payload(calories=5000),
+            context=self._context(self.tenant),
+        )
+        self._assert_field_error(serializer, "calories")
+
+    def test_glycemic_index_out_of_range_rejected(self) -> None:
+        """Glycemic index must stay within 0-100."""
+        serializer = FoodItemSerializer(
+            data=self._payload(glycemic_index=150),
+            context=self._context(self.tenant),
+        )
+        self._assert_field_error(serializer, "glycemic_index")
+
+    def test_duplicate_name_rejected_case_insensitive(self) -> None:
+        """A name colliding with a visible catalogue entry is rejected."""
+        FoodItem.objects.create(name="Oats Porridge", serving_size="1 bowl", food_group="grains")
+        serializer = FoodItemSerializer(
+            data=self._payload(name="oats porridge"),
+            context=self._context(self.tenant),
+        )
+        self._assert_field_error(serializer, "name")
+
+    def test_duplicate_name_excludes_self_on_update(self) -> None:
+        """Updating an item keeps its own name acceptable."""
+        food = FoodItem.objects.create(name="Oats Porridge", serving_size="1 bowl", food_group="grains")
+        serializer = FoodItemSerializer(
+            food,
+            data=self._payload(name="Oats Porridge", calories=220),
+            context=self._context(self.tenant),
+            partial=True,
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_same_name_free_in_other_tenant(self) -> None:
+        """A custom dish owned by another tenant does not block this tenant."""
+        other = provision_tenant("Gym W", contact_email="w@valid.test")
+        FoodItem.objects.create(
+            tenant=other,
+            name="Gym Mass Shake",
+            serving_size="1 glass",
+            calories=300,
+            food_group="protein",
+        )
+        serializer = FoodItemSerializer(
+            data=self._payload(name="Gym Mass Shake"),
+            context=self._context(self.tenant),
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_name_whitespace_stripped(self) -> None:
+        """Names are trimmed of surrounding whitespace."""
+        serializer = FoodItemSerializer(
+            data=self._payload(name="  Mass Gainer Bowl  "),
+            context=self._context(self.tenant),
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["name"], "Mass Gainer Bowl")
+
+
+class FoodItemDishAPITests(DietAPIBase):
+    """Ticket #89: create-dish flow and catalogue visibility via API."""
+
+    _DISH_PAYLOAD = {
+        "name": "Gym Mass Gainer Bowl",
+        "serving_size": "1 bowl",
+        "calories": 620,
+        "protein": 38,
+        "carbs": 78,
+        "fat": 14,
+        "fiber": 8,
+        "food_group": "protein",
+        "is_veg": True,
+        "meal_type": "breakfast",
+        "is_dish": True,
+    }
+
+    def _login_other_tenant_owner(self) -> None:
+        """Authenticate the client as an owner of a second tenant."""
+        other = provision_tenant("Other Gym", contact_email="other@dish.test")
+        other_owner = create_owner_user(
+            tenant=other,
+            email="other@dish.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Other Owner",
+        )
+        token = issue_token(other_owner, other)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def test_create_dish_attaches_request_tenant(self) -> None:
+        """A dish created via the API is scoped to the requesting tenant."""
+        response = self.client.post(
+            "/api/v1/food-items/",
+            self._DISH_PAYLOAD,
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        dish = FoodItem.objects.get(name="Gym Mass Gainer Bowl")
+        self.assertEqual(dish.tenant_id, self.tenant.id)
+        self.assertTrue(dish.is_dish)
+        self.assertEqual(dish.meal_type, "breakfast")
+
+    def test_custom_dish_hidden_from_other_tenant(self) -> None:
+        """Another tenant cannot see or fetch this tenant's custom dish."""
+        response = self.client.post("/api/v1/food-items/", self._DISH_PAYLOAD, format="json")
+        self.assertEqual(response.status_code, 201)
+        dish = FoodItem.objects.get(name="Gym Mass Gainer Bowl")
+
+        self._login_other_tenant_owner()
+        response = self.client.get("/api/v1/food-items/")
+        names = [item["name"] for item in response.data["results"]]
+        self.assertNotIn("Gym Mass Gainer Bowl", names)
+        response = self.client.get(f"/api/v1/food-items/{dish.id}/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_global_catalogue_visible_to_all_tenants(self) -> None:
+        """Global catalogue rows remain visible to every tenant."""
+        self._login_other_tenant_owner()
+        response = self.client.get("/api/v1/food-items/")
+        names = [item["name"] for item in response.data["results"]]
+        self.assertIn("White Rice", names)
+
+    def test_duplicate_name_returns_400(self) -> None:
+        """Creating a dish with a colliding visible name returns 400."""
+        self.client.post("/api/v1/food-items/", self._DISH_PAYLOAD, format="json")
+        response = self.client.post(
+            "/api/v1/food-items/",
+            {**self._DISH_PAYLOAD, "name": "gym mass gainer bowl"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("name", response.data)
+
+    def test_negative_macros_return_400(self) -> None:
+        """Negative macros are rejected with a 400."""
+        response = self.client.post(
+            "/api/v1/food-items/",
+            {**self._DISH_PAYLOAD, "protein": -10},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("protein", response.data)
+
+    def test_meal_type_filter(self) -> None:
+        """The catalogue can be filtered by meal type."""
+        self.client.post("/api/v1/food-items/", self._DISH_PAYLOAD, format="json")
+        response = self.client.get("/api/v1/food-items/?meal_type=breakfast")
+        names = [item["name"] for item in response.data["results"]]
+        self.assertIn("Gym Mass Gainer Bowl", names)
+        response = self.client.get("/api/v1/food-items/?meal_type=dinner")
+        names = [item["name"] for item in response.data["results"]]
+        self.assertNotIn("Gym Mass Gainer Bowl", names)
+
+    def test_is_dish_filter(self) -> None:
+        """The catalogue can be filtered to dishes only."""
+        self.client.post("/api/v1/food-items/", self._DISH_PAYLOAD, format="json")
+        response = self.client.get("/api/v1/food-items/?is_dish=true")
+        names = [item["name"] for item in response.data["results"]]
+        self.assertIn("Gym Mass Gainer Bowl", names)
+        self.assertNotIn("White Rice", names)
+
+    def test_invalid_meal_type_returns_400(self) -> None:
+        """An unknown meal-type tag is rejected."""
+        response = self.client.post(
+            "/api/v1/food-items/",
+            {**self._DISH_PAYLOAD, "meal_type": "brunch"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("meal_type", response.data)
+
+
+class DietMealCrossTenantDishTests(DietAPIBase):
+    """Ticket #89: meals cannot reference another tenant's custom dish."""
+
+    def test_meal_cannot_reference_other_tenant_dish(self) -> None:
+        """A meal referencing another tenant's custom dish is rejected."""
+        other = provision_tenant("Other Gym", contact_email="meal@cross.test")
+        other_dish = FoodItem.objects.create(
+            tenant=other,
+            name="Secret Mass Shake",
+            serving_size="1 glass",
+            calories=400,
+            protein=30,
+            carbs=40,
+            fat=8,
+            food_group=FoodItem.FoodGroup.PROTEIN,
+        )
+        response = self.client.post(
+            "/api/v1/diet-meals/",
+            {
+                "diet_day": self.day.id,
+                "meal_type": "breakfast",
+                "food_item": other_dish.id,
+                "quantity": 1.0,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_meal_can_reference_global_dish(self) -> None:
+        """Meals keep working with global catalogue entries."""
+        response = self.client.post(
+            "/api/v1/diet-meals/",
+            {
+                "diet_day": self.day.id,
+                "meal_type": "lunch",
+                "food_item": self.food.id,
+                "quantity": 1.0,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+
+
+class SeedDishesCommandTests(TestCase):
+    """Ticket #89: idempotent dish/meal catalogue seed."""
+
+    def test_seed_dishes_creates_global_catalogue(self) -> None:
+        """Seeding creates 100+ global dishes with tags and macros."""
+        call_command("seed_dishes")
+        dishes = FoodItem.objects.filter(is_dish=True)
+        self.assertGreaterEqual(dishes.count(), 100)
+        self.assertEqual(dishes.filter(tenant__isnull=False).count(), 0)
+        self.assertEqual(dishes.filter(meal_type__isnull=True).count(), 0)
+
+    def test_seed_dishes_meal_type_coverage(self) -> None:
+        """Every meal-type tag has natural examples, incl. non-veg dishes."""
+        call_command("seed_dishes")
+        for meal_type in (
+            FoodItem.MealType.BREAKFAST,
+            FoodItem.MealType.LUNCH,
+            FoodItem.MealType.SNACK,
+            FoodItem.MealType.DINNER,
+        ):
+            self.assertGreater(
+                FoodItem.objects.filter(is_dish=True, meal_type=meal_type).count(),
+                5,
+                f"Too few dishes tagged {meal_type}",
+            )
+        butter_chicken = FoodItem.objects.get(name="Butter Chicken")
+        self.assertEqual(butter_chicken.meal_type, FoodItem.MealType.DINNER)
+        self.assertFalse(butter_chicken.is_veg)
+        self.assertGreater(butter_chicken.calories, 0)
+        dosa = FoodItem.objects.get(name="Masala Dosa")
+        self.assertEqual(dosa.meal_type, FoodItem.MealType.BREAKFAST)
+
+    def test_seed_dishes_idempotent(self) -> None:
+        """Re-running the seed creates no duplicates."""
+        call_command("seed_dishes")
+        first_count = FoodItem.objects.count()
+        call_command("seed_dishes")
+        self.assertEqual(FoodItem.objects.count(), first_count)
+
+    def test_seed_dishes_leaves_custom_items_alone(self) -> None:
+        """A tenant's custom dish survives re-seeding."""
+        call_command("seed_dishes")
+        FoodItem.objects.create(
+            tenant=provision_tenant("Gym S", contact_email="s@seed.test"),
+            name="Chef Special",
+            serving_size="1 plate",
+            calories=500,
+            food_group=FoodItem.FoodGroup.PROTEIN,
+            is_dish=True,
+        )
+        call_command("seed_dishes")
+        self.assertTrue(FoodItem.objects.filter(name="Chef Special").exists())
+
+    def test_seed_dishes_data_has_no_name_collisions(self) -> None:
+        """Dish names are unique case-insensitively, incl. vs ingredient seed."""
+        from apps.diet.management.commands.seed_dishes import _DISH_DATA
+
+        dish_names = [row[0].lower() for row in _DISH_DATA]
+        self.assertEqual(len(dish_names), len(set(dish_names)))
+        self.assertGreaterEqual(len(dish_names), 100)
