@@ -8,7 +8,7 @@ device's branch.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest import mock
 
 from django.test import TestCase
@@ -80,7 +80,10 @@ class CdataPairingTest(PunchPairingTestBase):
         assert record.customer == self.customer
         assert record.branch == self.branch
         assert record.method == AttendanceRecord.Method.BIOMETRIC
-        assert record.check_out_time is None
+        # Issue #83: the punch is days old and never got a paired
+        # check-out, so the batch sweep auto-closed it at check-in + 2h.
+        assert record.check_out_time == record.check_in_time + timedelta(hours=2)
+        assert record.check_out_is_auto is True
         assert record.date.isoformat() == "2026-10-20"
         # Device wall time is IST: aware stamp must keep that wall clock.
         assert timezone.localtime(record.check_in_time).isoformat().startswith("2026-10-20T08:15:00")

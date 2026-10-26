@@ -4,12 +4,18 @@ Tracks customer check-ins and trainer attendance at gym branches.
 All models are tenant-scoped via ``TenantModelMixin``.
 """
 
+from datetime import timedelta
 from typing import Any, ClassVar
 
 from django.db import models
 from django.utils import timezone
 
 from apps.tenants.models import TenantModelMixin
+
+#: Issue #83: the biometric hardware has no check-out punch, so a
+#: check-in that never receives a paired check-out is closed this long
+#: after it opened (checkout = check-in + 2h).
+AUTO_CHECKOUT_AFTER = timedelta(hours=2)
 
 
 class AttendanceRecord(TenantModelMixin):
@@ -46,6 +52,10 @@ class AttendanceRecord(TenantModelMixin):
     )
     check_in_time = models.DateTimeField()
     check_out_time = models.DateTimeField(null=True, blank=True)
+    # Issue #83: True when check_out_time was auto-derived (check-in + 2h)
+    # because no real check-out punch or manual stamp ever arrived. A real
+    # punch or admin edit clears the flag — it never overwrites one.
+    check_out_is_auto = models.BooleanField(default=False)
     method = models.CharField(
         max_length=10,
         choices=Method.choices,
@@ -81,6 +91,20 @@ class AttendanceRecord(TenantModelMixin):
         if self.date is None and self.check_in_time is not None:
             self.date = timezone.localtime(self.check_in_time).date()
         super().save(*args, **kwargs)
+
+    @property
+    def auto_check_out_time(self):
+        """Return the derived +2h check-out, or ``None`` when not derivable.
+
+        Derived only while the stored ``check_out_time`` is still ``None``
+        and the auto-checkout moment (check-in + 2h) has passed — a read
+        never writes, and a real check-out always shadows it.
+        """
+        if self.check_out_time is None and self.check_in_time is not None:
+            derived = self.check_in_time + AUTO_CHECKOUT_AFTER
+            if timezone.now() >= derived:
+                return derived
+        return None
 
     def __str__(self) -> str:
         """Return a human-readable attendance label."""

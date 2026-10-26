@@ -18,6 +18,12 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
     ``person_name``, ``person_type``, ``branch_id``, ``branch_name`` and a
     derived ``status``) while keeping the raw ``customer``/``branch`` FK
     fields for backward compatibility.
+
+    Issue #83: a record still open past check-in + 2h is rendered with
+    the derived auto check-out (``check_out_time`` = check-in + 2h,
+    ``check_out_is_auto`` = true) so the UI never shows a zombie open
+    visit — without writing the guess to the DB. A stored check-out
+    (real punch or admin edit) always renders as-is with the flag false.
     """
 
     person_id = serializers.IntegerField(source="customer_id", read_only=True)
@@ -45,13 +51,31 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
             "branch_name",
             "check_in_time",
             "check_out_time",
+            "check_out_is_auto",
             "status",
             "method",
             "date",
             "created_at",
             "updated_at",
         ]
-        read_only_fields: ClassVar[list[str]] = ["id", "date", "created_at", "updated_at"]
+        read_only_fields: ClassVar[list[str]] = [
+            "id",
+            "date",
+            "check_out_is_auto",
+            "created_at",
+            "updated_at",
+        ]
+
+    def to_representation(self, instance: AttendanceRecord) -> dict:
+        """Render the derived auto check-out for open records past +2h."""
+        rep = super().to_representation(instance)
+        derived = instance.auto_check_out_time
+        if derived is not None:
+            rep["check_out_time"] = serializers.DateTimeField().to_representation(derived)
+            rep["check_out_is_auto"] = True
+        else:
+            rep["check_out_is_auto"] = bool(instance.check_out_time is not None and instance.check_out_is_auto)
+        return rep
 
     def get_person_type(self, obj: AttendanceRecord) -> str:
         """Return the attendance person type."""

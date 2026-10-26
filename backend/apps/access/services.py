@@ -366,10 +366,13 @@ def ingest_attlog_rows(*, device: BiometricDevice, rows: list) -> dict:
     into attendance at most once per raw row; the pairing state machine
     additionally ignores double-reads and stale/out-of-order repeats.
 
+    Issue #83: after pairing, the tenant's open check-ins past
+    check-in + 2h are auto-closed (``apply_auto_checkouts``).
+
     Returns:
         ``{"paired": int, "orphaned": int, "skipped": int}``.
     """
-    from apps.attendance.services import pair_punch
+    from apps.attendance.services import apply_auto_checkouts, pair_punch
 
     paired = 0
     skipped = 0
@@ -405,6 +408,10 @@ def ingest_attlog_rows(*, device: BiometricDevice, rows: list) -> dict:
             row.ingested_at = row.ingested_at or stamped
         if row.pk in orphan_set:
             row.is_orphan = True
+    # Issue #83: every incoming batch also sweeps open check-ins that
+    # passed check-in + 2h (the device never pushes check-outs, so this
+    # is the only automatic DB-level closer between backfill runs).
+    apply_auto_checkouts(tenant=device.tenant)
     return {"paired": paired, "orphaned": len(orphan_pks), "skipped": skipped}
 
 

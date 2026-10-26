@@ -94,6 +94,20 @@ class AttendanceRecordViewSet(ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    def perform_update(self, serializer: AttendanceRecordSerializer) -> None:
+        """Persist an admin edit, clearing the auto flag on check-out writes.
+
+        Issue #83: an explicit ``check_out_time`` in the payload is a
+        manual correction — it must win over the auto derivation, so the
+        ``check_out_is_auto`` flag clears (also when the admin nulls the
+        check-out to reopen the visit; the +2h derivation then simply
+        re-applies on display, since no real value exists).
+        """
+        if "check_out_time" in serializer.validated_data:
+            serializer.save(check_out_is_auto=False)
+        else:
+            serializer.save()
+
     def update(self, request: Request, *args: object, **kwargs: object) -> Response:
         """Update an attendance record."""
         self.required_permission = "attendance.edit_attendance"

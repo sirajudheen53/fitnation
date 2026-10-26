@@ -8,7 +8,7 @@ parsed attendance side.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django.test import TestCase
 from django.utils import timezone
@@ -375,7 +375,10 @@ class ReDumpIdempotencyTest(TestCase):
         records = self._records()
         assert len(records) == 1
         assert timezone.localtime(records[0].check_in_time).strftime("%Y-%m-%d %H:%M:%S") == "2026-10-20 08:15:00"
-        assert records[0].check_out_time is None
+        # Issue #83: the unpaired check-in (day-old punch, no check-out)
+        # is auto-closed at check-in + 2h by the batch sweep.
+        assert records[0].check_out_time == records[0].check_in_time + timedelta(hours=2)
+        assert records[0].check_out_is_auto is True
 
     def test_full_day_redump_keeps_check_out(self) -> None:
         """Re-sending a whole day's punches leaves the folded record intact."""
@@ -410,4 +413,6 @@ class ReDumpIdempotencyTest(TestCase):
         assert PunchLogRaw.objects.count() == 3
         records = self._records()
         assert len(records) == 1
-        assert records[0].check_out_time is None
+        # Issue #83: lone check-in is auto-closed at check-in + 2h.
+        assert records[0].check_out_time == records[0].check_in_time + timedelta(hours=2)
+        assert records[0].check_out_is_auto is True
