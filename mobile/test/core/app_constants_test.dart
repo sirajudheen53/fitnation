@@ -7,8 +7,11 @@ void main() {
     expect(AppConstants.authMode, AuthMode.firebase);
   });
 
-  test('API base URL falls back to the Android emulator loopback', () {
-    expect(AppConstants.apiBaseUrl, 'http://10.0.2.2:8000');
+  test('API base URL defaults to the production Cloud Run backend', () {
+    expect(
+      AppConstants.apiBaseUrl,
+      'https://fitnation-backend-prod-6qezqfxxla-el.a.run.app',
+    );
     expect(AppConstants.firebaseAuthEndpoint, '/auth/firebase/');
   });
 }

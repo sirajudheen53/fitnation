@@ -31,12 +31,14 @@ class AppConstants {
       (_useFirebaseAuth ? AuthMode.firebase : AuthMode.backendOtp);
 
   /// Base URL for the FBOS API.
-  /// Override for real devices / other environments with:
-  /// `flutter run --dart-define=FBOS_API_BASE=https://<real-server>`
-  /// Default keeps the Android emulator loopback so `flutter run` works as-is.
+  /// Default is the production Cloud Run backend so release builds work on
+  /// real devices out of the box.
+  /// For local development / Android emulator, override with:
+  /// `flutter run --dart-define=FBOS_API_BASE=http://10.0.2.2:8000`
   static const String apiBaseUrl = String.fromEnvironment(
     'FBOS_API_BASE',
-    defaultValue: 'http://10.0.2.2:8000', // Android emulator -> host localhost
+    defaultValue:
+        'https://fitnation-backend-prod-6qezqfxxla-el.a.run.app', // prod Cloud Run
   );
   static const String apiPrefix = '/api/v1';
 
