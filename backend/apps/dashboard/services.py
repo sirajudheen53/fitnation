@@ -25,6 +25,10 @@ from apps.payments.models import Payment
 from apps.trainers.models import TrainerAssignment, TrainerPerformance
 from apps.users.models import User
 
+# Issue #84: marker stamped on cached overview payloads so same-day cache rows
+# computed before lapsed memberships counted as pending dues are recomputed.
+PENDING_DUES_SEMANTICS = "issue-84"
+
 
 def get_overview(tenant: Any) -> dict:
     """Return the top-level dashboard overview for a tenant.
@@ -33,9 +37,16 @@ def get_overview(tenant: Any) -> dict:
     attendance, trainer count and pending payments.
     """
     cached = _read(tenant, "overview")
-    # Reject cached payloads from before the "mrr" field was added to the
-    # contract — otherwise a same-day cache row would serve the old shape.
-    if cached is not None and isinstance(cached, dict) and "mrr" in cached:
+    # Reject cached payloads that predate the current contract: rows without
+    # "mrr" lack the MRR field; rows without the issue-84 marker were computed
+    # before lapsed memberships counted as pending dues, so a same-day cache
+    # row would otherwise serve the old (zero-while-expired) count.
+    if (
+        cached is not None
+        and isinstance(cached, dict)
+        and "mrr" in cached
+        and cached.get("pending_dues_semantics") == PENDING_DUES_SEMANTICS
+    ):
         return cached
 
     today = timezone.localdate()
@@ -61,7 +72,7 @@ def get_overview(tenant: Any) -> dict:
 
     trainer_count = User.objects.filter(tenant=tenant, role=User.Role.TRAINER, trainer_profile__isnull=False).count()
 
-    pending_payments = Payment.objects.for_tenant(tenant).filter(status=Payment.Status.PENDING).count()
+    pending_payments = len(get_pending_payments(tenant))
 
     data = {
         "total_members": total_members,
@@ -74,6 +85,8 @@ def get_overview(tenant: Any) -> dict:
         "today_attendance": today_attendance,
         "trainer_count": trainer_count,
         "pending_payments": pending_payments,
+        # Cache-shape marker (stripped by OverviewSerializer): see _read guard.
+        "pending_dues_semantics": PENDING_DUES_SEMANTICS,
     }
     _write(tenant, "overview", data)
     return data
@@ -248,10 +261,35 @@ def get_trainer_performance(tenant: Any) -> list[dict]:
 
 
 def get_pending_payments(tenant: Any) -> list[dict]:
-    """Return pending payments with customer name, amount and due date.
+    """Return the unified pending-payment queue for a tenant (issue #84).
 
-    Due date is derived from the linked membership's end date when available,
-    otherwise falls back to the payment's creation date.
+    "Pending" is money the gym is owed right now, from two sources:
+
+    1. Explicit pending ``Payment`` records (issue #72 send-link queue).
+    2. Membership dues — a membership whose ``end_date`` has passed (not
+       cancelled) with no covering charge. The amount is the plan price,
+       matching the renewal contract: ``POST /memberships/{id}/renewal/``
+       extends the SAME membership, so the expected renewal due for a lapsed
+       member is exactly the plan's price.
+
+    Guards keep the queue free of double counting:
+
+    - active memberships (``end_date`` >= today) and cancelled ones are not
+      dues — lapsedness is judged by ``end_date``, not the stored status,
+      which can be stale until the next save;
+    - a customer with an explicit pending membership-kind payment already has
+      their charge tracked, so the derived due is suppressed for them (an
+      admission-fee pending payment does NOT cover a renewal);
+    - one due per customer: their most recently lapsed membership.
+
+    Derived rows carry a negative id (``abs(id)`` = membership id) so they
+    stay unique next to real payment ids while the row shape
+    (id/customer_name/customer_is_deleted/amount/due_date) is unchanged for
+    the frontend. Soft-deleted members keep their due (money is owed
+    regardless); the frontend already renders the deleted-user marker.
+
+    Order: explicit payments first, newest first, then dues, most-lapsed
+    (oldest end_date) first.
     """
     pending = (
         Payment.objects.for_tenant(tenant)
@@ -276,7 +314,42 @@ def get_pending_payments(tenant: Any) -> list[dict]:
                 "due_date": due_date,
             }
         )
+    rows.extend(_membership_dues(tenant))
     return rows
+
+
+def _membership_dues(tenant: Any) -> list[dict]:
+    """Derived pending dues for lapsed memberships without a covering charge."""
+    covered_customers = set(
+        Payment.objects.for_tenant(tenant)
+        .filter(status=Payment.Status.PENDING, kind=Payment.Kind.MEMBERSHIP)
+        .values_list("customer_id", flat=True)
+    )
+    lapsed = (
+        Membership.objects.for_tenant(tenant)
+        .filter(end_date__lt=timezone.localdate())
+        .exclude(status=Membership.Status.CANCELLED)
+        .select_related("customer", "plan")
+        .order_by("-end_date", "-id")
+    )
+    # First hit per customer wins, i.e. the most recently lapsed membership.
+    latest_by_customer: dict[int, Membership] = {}
+    for membership in lapsed:
+        if membership.customer_id in covered_customers:
+            continue
+        latest_by_customer.setdefault(membership.customer_id, membership)
+
+    dues = [
+        {
+            "id": -membership.id,
+            "customer_name": membership.customer.name,
+            "customer_is_deleted": membership.customer.deleted_at is not None,
+            "amount": round(float(membership.plan.price), 2),
+            "due_date": membership.end_date.isoformat(),
+        }
+        for membership in sorted(latest_by_customer.values(), key=lambda m: m.end_date)
+    ]
+    return dues
 
 
 def _sum(values: Any) -> Decimal:

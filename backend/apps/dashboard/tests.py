@@ -277,3 +277,219 @@ class DashboardAPITests(APITestCase):
         self.client.credentials()
         response = self.client.get("/api/v1/dashboard/overview/")
         self.assertEqual(response.status_code, 401)
+
+
+class PendingPaymentsDuesTests(APITestCase):
+    """Issue #84: a lapsed membership with no covering charge is a pending due.
+
+    Rubric: amount = plan price (the renewal contract), due_date = end_date,
+    one due per customer (most recently lapsed membership), suppressed while
+    an explicit pending membership-kind payment exists for the customer.
+    """
+
+    def setUp(self) -> None:
+        """Create tenant, owner, plan, customer and auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            first_name="Owner",
+            last_name="User",
+            role=User.Role.GYM_OWNER,
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        self.plan = _make_plan(self.tenant, price="1500.00", duration_days=30)
+        self.customer = _make_customer(self.tenant, "cust@local.test")
+
+    def _make_lapsed_membership(self, customer=None, plan=None, ended_days_ago=5):
+        """Create a membership whose end_date has already passed."""
+        today = timezone.localdate()
+        return Membership.objects.create(
+            tenant=self.tenant,
+            customer=customer or self.customer,
+            plan=plan or self.plan,
+            start_date=today - timedelta(days=ended_days_ago + 30),
+            end_date=today - timedelta(days=ended_days_ago),
+        )
+
+    def _pending_rows(self) -> list[dict]:
+        """Fetch the dashboard pending-payments list."""
+        response = self.client.get("/api/v1/dashboard/pending-payments/")
+        self.assertEqual(response.status_code, 200)
+        return response.data
+
+    def _overview(self) -> dict:
+        """Fetch the dashboard overview payload."""
+        response = self.client.get("/api/v1/dashboard/overview/")
+        self.assertEqual(response.status_code, 200)
+        return response.data
+
+    def test_expired_membership_appears_as_pending_due(self) -> None:
+        """The owner's report: expired membership, no payments → not zero."""
+        membership = self._make_lapsed_membership()
+
+        rows = self._pending_rows()
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["id"], -membership.id)
+        self.assertEqual(row["customer_name"], self.customer.name)
+        self.assertEqual(row["amount"], 1500.0)
+        self.assertEqual(row["due_date"], membership.end_date.isoformat())
+        self.assertFalse(row["customer_is_deleted"])
+        self.assertEqual(self._overview()["pending_payments"], 1)
+
+    def test_active_membership_is_not_a_due(self) -> None:
+        """A membership with end_date in the future is covered — no due."""
+        today = timezone.localdate()
+        Membership.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            plan=self.plan,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+        )
+        self.assertEqual(self._pending_rows(), [])
+        self.assertEqual(self._overview()["pending_payments"], 0)
+
+    def test_cancelled_membership_is_not_a_due(self) -> None:
+        """A cancelled membership is a deliberate exit — no due."""
+        membership = self._make_lapsed_membership()
+        membership.status = Membership.Status.CANCELLED
+        membership.save()
+
+        self.assertEqual(self._pending_rows(), [])
+        self.assertEqual(self._overview()["pending_payments"], 0)
+
+    def test_stale_active_status_still_lapses_by_date(self) -> None:
+        """Lapsedness is judged by end_date, not the stored (stale) status."""
+        membership = self._make_lapsed_membership()
+        # Bypass save() so the stored status stays "active" past the end_date.
+        Membership.objects.filter(pk=membership.pk).update(status=Membership.Status.ACTIVE)
+
+        rows = self._pending_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], -membership.id)
+
+    def test_renewal_clears_the_due(self) -> None:
+        """After the renewal endpoint extends the membership, the due is gone."""
+        membership = self._make_lapsed_membership()
+        response = self.client.post(
+            f"/api/v1/memberships/memberships/{membership.id}/renewal/",
+            {"days": 30},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(self._pending_rows(), [])
+        self.assertEqual(self._overview()["pending_payments"], 0)
+
+    def test_pending_membership_payment_suppresses_the_due(self) -> None:
+        """An explicit pending membership payment replaces the derived due — no duplicate."""
+        membership = self._make_lapsed_membership()
+        payment = Payment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            membership=membership,
+            amount="1500.00",
+            payment_method=Payment.PaymentMethod.CASH,
+            status=Payment.Status.PENDING,
+        )
+
+        rows = self._pending_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], payment.id)
+        self.assertNotEqual(rows[0]["id"], -membership.id)
+        self.assertEqual(self._overview()["pending_payments"], 1)
+
+    def test_admission_pending_payment_does_not_cover_the_renewal(self) -> None:
+        """An admission-fee charge is different money — the membership due stays."""
+        membership = self._make_lapsed_membership()
+        payment = Payment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            amount="500.00",
+            payment_method=Payment.PaymentMethod.CASH,
+            status=Payment.Status.PENDING,
+            kind=Payment.Kind.ADMISSION,
+        )
+
+        rows = self._pending_rows()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({row["id"] for row in rows}, {payment.id, -membership.id})
+        self.assertEqual(self._overview()["pending_payments"], 2)
+
+    def test_completed_payment_does_not_cover_the_renewal(self) -> None:
+        """Completed money was for the past period — the lapsed renewal is still owed."""
+        membership = self._make_lapsed_membership()
+        Payment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            membership=membership,
+            amount="1500.00",
+            payment_method=Payment.PaymentMethod.UPI,
+            status=Payment.Status.COMPLETED,
+            paid_at=timezone.now(),
+        )
+
+        rows = self._pending_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], -membership.id)
+
+    def test_one_due_per_customer_uses_latest_membership(self) -> None:
+        """Multiple lapsed memberships collapse to the most recently lapsed one."""
+        quarterly = _make_plan(self.tenant, name="Quarterly", price="4000.00", duration_days=90)
+        older = self._make_lapsed_membership(ended_days_ago=10)
+        latest = self._make_lapsed_membership(plan=quarterly, ended_days_ago=2)
+
+        rows = self._pending_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], -latest.id)
+        self.assertNotEqual(rows[0]["id"], -older.id)
+        self.assertEqual(rows[0]["amount"], 4000.0)
+        self.assertEqual(rows[0]["due_date"], latest.end_date.isoformat())
+
+    def test_deleted_member_due_is_flagged(self) -> None:
+        """A soft-deleted member's due stays visible with the deleted marker (#81)."""
+        self._make_lapsed_membership()
+        self.customer.deleted_at = timezone.now()
+        self.customer.save(update_fields=["deleted_at", "updated_at"])
+
+        rows = self._pending_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["customer_is_deleted"])
+
+    def test_dues_are_tenant_scoped(self) -> None:
+        """Another tenant sees none of this tenant's dues."""
+        self._make_lapsed_membership()
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_owner = create_user(
+            tenant=other_tenant,
+            email="other-owner@local.test",
+            first_name="Other",
+            last_name="Owner",
+            role=User.Role.GYM_OWNER,
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {issue_token(other_owner, other_tenant).key}")
+
+        self.assertEqual(self._pending_rows(), [])
+        overview = self._overview()
+        self.assertEqual(overview["pending_payments"], 0)
+        self.assertEqual(overview["total_members"], 0)
+
+    def test_overview_cache_row_from_before_dues_is_recomputed(self) -> None:
+        """A same-day cache row computed before #84 (no marker) is not served."""
+        self._make_lapsed_membership()
+        DashboardCache.objects.create(
+            tenant=self.tenant,
+            metric_name="overview",
+            # Has "mrr" (passes the old shape check) but no dues marker.
+            metric_value={"total_members": 1, "mrr": "0", "pending_payments": 0},
+        )
+
+        overview = self._overview()
+        self.assertEqual(overview["pending_payments"], 1)
+
+        cached = DashboardCache.objects.for_tenant(self.tenant).get(metric_name="overview")
+        self.assertEqual(cached.metric_value.get("pending_dues_semantics"), "issue-84")
