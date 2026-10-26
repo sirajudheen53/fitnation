@@ -3,17 +3,22 @@
 import io
 import shutil
 import tempfile
+from datetime import timedelta
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.files.storage import FileSystemStorage, default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.test import APITestCase
 
 from PIL import Image, features
 
+from apps.attendance.models import AttendanceRecord
 from apps.branches.models import Branch
 from apps.customers.models import (
     BodyMeasurement,
@@ -23,8 +28,15 @@ from apps.customers.models import (
     ProgressPhoto,
 )
 from apps.customers.serializers import MAX_PROFILE_PHOTO_BYTES
+from apps.diet.models import DietAssignment, DietPlan
+from apps.memberships.models import Membership, MembershipPlan
+from apps.notifications.models import NotificationLog
+from apps.payments.models import Invoice, Payment
 from apps.tenants.services import provision_tenant
-from apps.users.services import create_owner_user, issue_token
+from apps.trainers.models import TrainerAssignment, TrainerSession
+from apps.users.models import Trainer
+from apps.users.services import create_owner_user, delete_customer_account, issue_token
+from apps.workouts.models import WorkoutAssignment, WorkoutPlan
 
 User = get_user_model()
 
@@ -2271,7 +2283,13 @@ class PostDeleteReAddCustomerTests(APITestCase):
         return self.client.delete(f"/api/v1/customers/customers/{customer_id}/")
 
     def test_delete_removes_linked_portal_user(self) -> None:
-        """Deleting a customer also removes its customer-role portal user."""
+        """Deleting a customer also removes its customer-role portal user.
+
+        Issue #81 re-baseline: the portal user is still deleted (its email +
+        phone must be freed for re-add), but the Customer row itself now
+        SURVIVES as a soft-deleted, PII-scrubbed marker for the history that
+        still references it.
+        """
         create_response = self._add_customer(phone="+919999000001", email="asha@local.test")
         self.assertEqual(create_response.status_code, 201, str(create_response.data))
         customer_id = create_response.data["id"]
@@ -2283,7 +2301,13 @@ class PostDeleteReAddCustomerTests(APITestCase):
         self.assertFalse(User.objects.filter(pk=user_id).exists())
         # The phone is freed — no identity left holding it.
         self.assertFalse(User.objects.filter(tenant=self.tenant, phone="+919999000001").exists())
-        self.assertFalse(Customer.objects.filter(pk=customer_id).exists())
+        # The row stays (soft delete), anonymized to the display marker.
+        row = Customer.objects.get(pk=customer_id)
+        self.assertIsNotNone(row.deleted_at)
+        self.assertIsNone(row.user)
+        self.assertEqual(row.name, "Deleted user")
+        self.assertIsNone(row.email)
+        self.assertEqual(row.phone, "")
 
     def test_readd_same_phone_with_email_after_delete(self) -> None:
         """Delete, then re-add the SAME phone with an email → 201."""
@@ -2321,7 +2345,11 @@ class PostDeleteReAddCustomerTests(APITestCase):
         self.assertEqual(other_response.status_code, 201, str(other_response.data))
 
     def test_delete_keeps_non_customer_user_linked_to_profile(self) -> None:
-        """A profile deliberately linked to a staff user: the user survives."""
+        """A profile deliberately linked to a staff user: the user survives.
+
+        Issue #81: the profile row is soft-deleted either way — only the
+        portal-user removal is conditional on the customer role.
+        """
         manager = User.objects.create_user(
             email="manager@local.test",
             password="F1tNati0n!",
@@ -2340,8 +2368,11 @@ class PostDeleteReAddCustomerTests(APITestCase):
 
         delete_response = self._delete_customer(customer.id)
         self.assertEqual(delete_response.status_code, 204)
-        self.assertTrue(User.objects.filter(pk=manager.pk).exists())  # staff stays
-        self.assertFalse(Customer.objects.filter(pk=customer.id).exists())
+        manager.refresh_from_db()
+        self.assertIsNotNone(User.objects.filter(pk=manager.pk).first())  # staff stays
+        row = Customer.objects.get(pk=customer.id)  # soft-deleted, not removed
+        self.assertIsNotNone(row.deleted_at)
+        self.assertEqual(row.name, "Deleted user")
 
     def test_readd_adopts_orphaned_synthetic_identity(self) -> None:
         """A pre-fix orphan (synthetic user, no customer row) is re-linked.
@@ -2429,6 +2460,387 @@ class PostDeleteReAddCustomerTests(APITestCase):
         self.assertIn("phone", readd_response.data)
         trainer_user.refresh_from_db()
         self.assertEqual(trainer_user.phone, "+919999000009")  # never mutated
+
+
+class SoftDeleteDeletedUserTests(APITestCase):
+    """Issue #81: a deleted customer's references all render "Deleted user".
+
+    The ERP delete soft-deletes the row (PII scrubbed, portal identity freed
+    per #72) instead of removing it. Every surface that still references the
+    member keeps its history row and renders the marker — backed by the
+    scrubbed ``customer.name`` plus an explicit ``*_is_deleted`` flag.
+    """
+
+    def setUp(self) -> None:
+        """Tenant, owner, branch, and owner auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.branch = Branch.objects.create(
+            tenant=self.tenant,
+            name="Main Branch",
+            address_line1="MG Road",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def _make_customer(
+        self,
+        phone: str,
+        name: str = "Asha Nair",
+        email: str | None = None,
+    ) -> Customer:
+        """Create a live customer with full PII directly in the tenant."""
+        user = User.objects.create_user(
+            email=email or f"cust{phone}@local.test",
+            password=None,
+            first_name=name.split(" ")[0],
+            last_name=name.split(" ", 1)[1] if " " in name else "",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+            phone=phone,
+        )
+        return Customer.objects.create(
+            tenant=self.tenant,
+            user=user,
+            branch=self.branch,
+            name=name,
+            email=email,
+            phone=phone,
+            date_of_birth="1995-04-01",
+            emergency_contact_name="Devan Nair",
+            emergency_contact_phone="+919999999999",
+            address_street="12 Lake View",
+            address_city="Kochi",
+            address_state="Kerala",
+            address_postal_code="682001",
+            notes="Prefers evening batches",
+        )
+
+    def _add_payment(self, customer: Customer, amount: str = "1499.00") -> Payment:
+        """A completed membership payment referencing the customer."""
+        return Payment.objects.create(
+            tenant=self.tenant,
+            customer=customer,
+            amount=Decimal(amount),
+            payment_method=Payment.PaymentMethod.UPI,
+            status=Payment.Status.COMPLETED,
+        )
+
+    def _delete_customer(self, customer_id: int) -> Response:
+        """The ERP delete path — DRF destroy on the customer viewset."""
+        return self.client.delete(f"/api/v1/customers/customers/{customer_id}/")
+
+    @staticmethod
+    def _rows(response: Response) -> list:
+        """List rows across paginated (``results``) and plain-list endpoints."""
+        data = response.data
+        return data["results"] if isinstance(data, dict) else data
+
+    # ── the marker itself ────────────────────────────────────────────────
+
+    def test_delete_soft_deletes_and_scrubs_all_pii(self) -> None:
+        """DELETE keeps the row but wipes every personal field on it."""
+        customer = self._make_customer("+918888000001", email="asha@local.test")
+        user_id = customer.user_id
+
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+
+        row = Customer.objects.get(pk=customer.id)
+        self.assertIsNotNone(row.deleted_at)
+        self.assertEqual(row.name, "Deleted user")
+        self.assertIsNone(row.email)
+        self.assertEqual(row.phone, "")
+        self.assertIsNone(row.date_of_birth)
+        self.assertEqual(row.gender, Customer.Gender.PREFER_NOT_TO_SAY)
+        self.assertIsNone(row.emergency_contact_name)
+        self.assertIsNone(row.emergency_contact_phone)
+        self.assertEqual(row.address_street, "")
+        self.assertEqual(row.address_city, "")
+        self.assertEqual(row.address_state, "")
+        self.assertEqual(row.address_postal_code, "")
+        self.assertEqual(row.notes, "")
+        self.assertEqual(row.status, Customer.Status.INACTIVE)
+        self.assertFalse(row.is_active)
+        self.assertIsNone(row.user)
+        self.assertFalse(User.objects.filter(pk=user_id).exists())  # #72 semantics
+
+    def test_deleted_customer_hidden_from_list_search_and_detail(self) -> None:
+        """The member list, its search, and the detail endpoint skip deleted."""
+        customer = self._make_customer("+918888000002")
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+
+        list_response = self.client.get("/api/v1/customers/customers/")
+        self.assertEqual(list_response.status_code, 200)
+        ids = [row["id"] for row in self._rows(list_response)]
+        self.assertNotIn(customer.id, ids)
+
+        search_response = self.client.get("/api/v1/customers/customers/?search=%2B918888000002")
+        self.assertEqual(search_response.status_code, 200)
+        self.assertEqual([row["id"] for row in self._rows(search_response)], [])
+
+        detail_response = self.client.get(f"/api/v1/customers/customers/{customer.id}/")
+        self.assertEqual(detail_response.status_code, 404)
+
+        # The detail actions (health-profile etc.) bypass get_queryset with an
+        # explicit tenant scope — deleted customers are excluded there too.
+        health_response = self.client.get(f"/api/v1/customers/customers/{customer.id}/health-profile/")
+        self.assertEqual(health_response.status_code, 404)
+
+    def test_delete_twice_is_idempotent_404(self) -> None:
+        """A second DELETE 404s (row excluded) — never a 500 on marked rows."""
+        customer = self._make_customer("+918888000003")
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+        self.assertEqual(self._delete_customer(customer.id).status_code, 404)
+
+    # ── surfaces that reference the deleted member ───────────────────────
+
+    def test_payments_survive_and_render_deleted_user(self) -> None:
+        """Payment history keeps its row; name + flag mark the member gone."""
+        customer = self._make_customer("+918888000010")
+        payment = self._add_payment(customer)
+
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+        self.assertTrue(Payment.objects.filter(pk=payment.pk).exists())
+
+        response = self.client.get("/api/v1/payments/")
+        self.assertEqual(response.status_code, 200)
+        row = next(p for p in self._rows(response) if p["id"] == payment.id)
+        self.assertEqual(row["customer_name"], "Deleted user")
+        self.assertTrue(row["customer_is_deleted"])
+        self.assertEqual(row["customer_id"], customer.id)  # reference intact
+
+    def test_invoices_survive_and_render_deleted_user(self) -> None:
+        """Invoices keep their row and name the deleted member correctly."""
+        customer = self._make_customer("+918888000011")
+        payment = self._add_payment(customer)
+        invoice = Invoice.objects.create(
+            tenant=self.tenant,
+            customer=customer,
+            payment=payment,
+            subtotal=Decimal("1499.00"),
+            total=Decimal("1499.00"),
+        )
+
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+
+        response = self.client.get("/api/v1/invoices/")
+        self.assertEqual(response.status_code, 200)
+        row = next(i for i in self._rows(response) if i["id"] == invoice.id)
+        self.assertEqual(row["customer_name"], "Deleted user")
+        self.assertTrue(row["customer_is_deleted"])
+
+    def test_attendance_punches_survive_and_render_deleted_user(self) -> None:
+        """Attendance history keeps its punches, person_* carries the marker."""
+        customer = self._make_customer("+918888000012")
+        record = AttendanceRecord.objects.create(
+            tenant=self.tenant,
+            customer=customer,
+            branch=self.branch,
+            check_in_time=timezone.now(),
+            method=AttendanceRecord.Method.MANUAL,
+        )
+
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+        self.assertTrue(AttendanceRecord.objects.filter(pk=record.pk).exists())
+
+        response = self.client.get("/api/v1/attendance/attendance/")
+        self.assertEqual(response.status_code, 200)
+        row = next(r for r in self._rows(response) if r["id"] == record.id)
+        self.assertEqual(row["person_name"], "Deleted user")
+        self.assertTrue(row["person_is_deleted"])
+        self.assertEqual(row["person_id"], customer.id)
+
+    def test_memberships_survive_and_render_deleted_user(self) -> None:
+        """Membership history keeps its rows; list carries the marker."""
+        customer = self._make_customer("+918888000013")
+        plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Quarterly GTL",
+            price=Decimal("3999.00"),
+            duration_days=90,
+        )
+        membership = Membership.objects.create(
+            tenant=self.tenant,
+            customer=customer,
+            plan=plan,
+            start_date=timezone.localdate(),
+            end_date=timezone.localdate() + timedelta(days=90),
+        )
+
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+        self.assertTrue(Membership.objects.filter(pk=membership.pk).exists())
+
+        response = self.client.get("/api/v1/memberships/memberships/")
+        self.assertEqual(response.status_code, 200)
+        row = next(m for m in self._rows(response) if m["id"] == membership.id)
+        self.assertEqual(row["customer_name"], "Deleted user")
+        self.assertTrue(row["customer_is_deleted"])
+
+    def test_trainer_assignment_and_session_survive_and_render_deleted_user(self) -> None:
+        """PT assignment + session history survive with the marker."""
+        customer = self._make_customer("+918888000014")
+        trainer_user = User.objects.create_user(
+            email="coach@local.test",
+            password="F1tNati0n!",
+            first_name="Coach",
+            last_name="One",
+            role=User.Role.TRAINER,
+            tenant=self.tenant,
+        )
+        trainer = Trainer.objects.create(user=trainer_user)
+        assignment = TrainerAssignment.objects.create(
+            tenant=self.tenant,
+            trainer=trainer,
+            customer=customer,
+            branch=self.branch,
+        )
+        session = TrainerSession.objects.create(
+            tenant=self.tenant,
+            trainer=trainer,
+            customer=customer,
+            branch=self.branch,
+            scheduled_at=timezone.now() + timedelta(days=1),
+            duration_minutes=60,
+        )
+
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+        self.assertTrue(TrainerAssignment.objects.filter(pk=assignment.pk).exists())
+        self.assertTrue(TrainerSession.objects.filter(pk=session.pk).exists())
+
+        assignments = self.client.get("/api/v1/trainer-assignments/")
+        self.assertEqual(assignments.status_code, 200)
+        row = next(a for a in self._rows(assignments) if a["id"] == assignment.id)
+        self.assertEqual(row["customer_name"], "Deleted user")
+        self.assertTrue(row["customer_is_deleted"])
+
+        sessions = self.client.get("/api/v1/trainer-sessions/")
+        self.assertEqual(sessions.status_code, 200)
+        row = next(s for s in self._rows(sessions) if s["id"] == session.id)
+        self.assertEqual(row["customer_name"], "Deleted user")
+        self.assertTrue(row["customer_is_deleted"])
+
+    def test_workout_and_diet_assignments_survive_and_render_deleted_user(self) -> None:
+        """Workout/diet plan assignments survive with the marker."""
+        customer = self._make_customer("+918888000015")
+        workout_plan = WorkoutPlan.objects.create(tenant=self.tenant, name="Beginner Cut")
+        diet_plan = DietPlan.objects.create(tenant=self.tenant, name="Lean Bulk")
+        workout = WorkoutAssignment.objects.create(
+            tenant=self.tenant,
+            customer=customer,
+            workout_plan=workout_plan,
+        )
+        diet = DietAssignment.objects.create(
+            tenant=self.tenant,
+            customer=customer,
+            diet_plan=diet_plan,
+        )
+
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+
+        workouts = self.client.get("/api/v1/workouts/workout-assignments/")
+        self.assertEqual(workouts.status_code, 200)
+        row = next(a for a in self._rows(workouts) if a["id"] == workout.id)
+        self.assertEqual(row["customer_name"], "Deleted user")
+        self.assertTrue(row["customer_is_deleted"])
+
+        diets = self.client.get("/api/v1/diet-assignments/")
+        self.assertEqual(diets.status_code, 200)
+        row = next(a for a in self._rows(diets) if a["id"] == diet.id)
+        self.assertEqual(row["customer_name"], "Deleted user")
+        self.assertTrue(row["customer_is_deleted"])
+
+    def test_notification_logs_survive_and_render_deleted_user(self) -> None:
+        """WhatsApp/notification history keeps its rows with the marker."""
+        customer = self._make_customer("+918888000016")
+        log = NotificationLog.objects.create(
+            tenant=self.tenant,
+            customer=customer,
+            notification_type=NotificationLog.NotificationType.CHECK_IN,
+            status=NotificationLog.Status.SENT,
+            channel="whatsapp",
+        )
+
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+        self.assertTrue(NotificationLog.objects.filter(pk=log.pk).exists())
+
+        response = self.client.get("/api/v1/notifications/logs/")
+        self.assertEqual(response.status_code, 200)
+        row = next(n for n in self._rows(response) if n["id"] == log.id)
+        self.assertEqual(row["customer_name"], "Deleted user")
+        self.assertTrue(row["customer_is_deleted"])
+
+    # ── invariants ────────────────────────────────────────────────────────
+
+    def test_hard_delete_of_customer_with_history_is_protected(self) -> None:
+        """A direct ``.delete()`` on a referenced customer raises loudly.
+
+        Belt-and-suspenders behind the soft delete: no code path can
+        silently destroy payment/attendance history anymore (issue #81).
+        """
+        customer = self._make_customer("+918888000017")
+        self._add_payment(customer)
+
+        with self.assertRaises(ProtectedError):
+            customer.delete()
+
+    def test_readd_creates_fresh_row_and_old_reference_stays_deleted(self) -> None:
+        """Same-phone re-add: new live member, old history still marked.
+
+        The #72 re-add contract under #81 semantics — the new row is a
+        normal member; the deleted row's payment reference still renders
+        "Deleted user" (it keeps pointing at the old, marked row).
+        """
+        customer = self._make_customer("+918888000018", email="asha@local.test")
+        payment = self._add_payment(customer)
+        self.assertEqual(self._delete_customer(customer.id).status_code, 204)
+
+        readd = self.client.post(
+            "/api/v1/customers/customers/",
+            {"first_name": "Asha", "last_name": "Nair", "phone": "+918888000018", "email": "asha@local.test"},
+            format="json",
+        )
+        self.assertEqual(readd.status_code, 201, str(readd.data))
+        new_id = readd.data["id"]
+        self.assertNotEqual(new_id, customer.id)
+
+        # Old reference stays deleted even though the member is back.
+        payments = self.client.get("/api/v1/payments/")
+        row = next(p for p in self._rows(payments) if p["id"] == payment.id)
+        self.assertEqual(row["customer_name"], "Deleted user")
+        self.assertTrue(row["customer_is_deleted"])
+
+        # The new member is live and searchable.
+        members = self.client.get("/api/v1/customers/customers/")
+        ids = [c["id"] for c in self._rows(members)]
+        self.assertIn(new_id, ids)
+        self.assertNotIn(customer.id, ids)
+
+    def test_gdpr_self_deletion_sets_marker_and_surfaces_render_label(self) -> None:
+        """The in-app GDPR deletion marks ``deleted_at``; surfaces agree.
+
+        Stored name stays the §8 B8 "Deleted member #pk" fallback, but every
+        serializer surface renders the unified "Deleted user" label (the
+        CustomerSerializer normalizes from the marker).
+        """
+        customer = self._make_customer("+918888000019", email="gdpr@local.test")
+        payment = self._add_payment(customer)
+
+        returned = delete_customer_account(customer.user, self.tenant)
+        self.assertIsNotNone(returned)
+        row = Customer.objects.get(pk=customer.pk)
+        self.assertIsNotNone(row.deleted_at)
+        self.assertEqual(row.name, "Deleted user")  # same label as the ERP delete
+        self.assertFalse(row.user.is_active)  # portal account anonymized, alive
+
+        payments = self.client.get("/api/v1/payments/")
+        payload = next(p for p in self._rows(payments) if p["id"] == payment.id)
+        self.assertEqual(payload["customer_name"], "Deleted user")
+        self.assertTrue(payload["customer_is_deleted"])
 
 
 class OptionalContactCustomerTests(APITestCase):

@@ -4,6 +4,7 @@ from typing import ClassVar
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -14,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from apps.customers.models import (
+    DELETED_USER_LABEL,
     BodyMeasurement,
     Customer,
     FitnessGoal,
@@ -65,8 +67,14 @@ class CustomerViewSet(ModelViewSet):
     ordering: ClassVar[list[str]] = ["-created_at"]
 
     def get_queryset(self) -> Customer:
-        """Return customers scoped to the request tenant with optional filters."""
-        queryset = Customer.objects.for_tenant(self.request.tenant)
+        """Return customers scoped to the request tenant with optional filters.
+
+        Soft-deleted customers (issue #81) are excluded: they are no longer
+        members, must not be assignable in wizards/pickers, and their detail
+        endpoints 404. Historical rows that still reference them (payments,
+        attendance, …) surface the deletion via the serializers instead.
+        """
+        queryset = Customer.objects.for_tenant(self.request.tenant).filter(deleted_at__isnull=True)
 
         # Customers can only access their own record
         if getattr(self.request.user, "role", None) == "customer":
@@ -110,19 +118,47 @@ class CustomerViewSet(ModelViewSet):
         return super().partial_update(request, *args, **kwargs)
 
     def perform_destroy(self, instance: Customer) -> None:
-        """Delete the customer and its linked customer-role portal user.
+        """Soft-delete the customer and free its linked portal identity.
 
-        The default destroy would leave the OneToOne portal identity behind:
-        its globally-unique email and phone then block re-adding the same
-        person (issue #72) — a phone-only payload collides on the
-        deterministic synthetic email, and a real-email identity trips the
-        ADR-002 ``phone_already_registered`` guard. Only a customer-role user
-        is removed; a profile deliberately linked to a staff account leaves
-        that account untouched.
+        Issue #81: the row is NEVER removed — payments, attendance, trainer
+        assignments, memberships and other history keep pointing at it, and
+        every surface renders the marked row as "Deleted user". The personal
+        fields are scrubbed (same anonymize-in-place shape as the in-app GDPR
+        deletion, :func:`apps.users.services.delete_customer_account`) so no
+        stale name or contact leaks through an unmapped consumer.
+
+        The portal identity is still removed (issue #72 semantics preserved):
+        the customer-role user is deleted so its globally-unique email and
+        phone are freed for the re-add flows — the serializer's orphan
+        adoption never sees a soft-deleted row because its phone/email are
+        blank and its user link is severed. Only a customer-role user is
+        removed; a profile deliberately linked to a staff account leaves that
+        account untouched.
+
+        A hard delete of the row itself is impossible through this API — and
+        the cross-app history FKs are PROTECT, so even a manual ``.delete()``
+        fails loudly instead of silently destroying history.
         """
         user = instance.user
         with transaction.atomic():
-            instance.delete()
+            instance.deleted_at = timezone.now()
+            instance.name = DELETED_USER_LABEL
+            instance.email = None
+            instance.phone = ""
+            instance.date_of_birth = None
+            instance.gender = Customer.Gender.PREFER_NOT_TO_SAY
+            instance.emergency_contact_name = None
+            instance.emergency_contact_phone = None
+            instance.address_street = ""
+            instance.address_city = ""
+            instance.address_state = ""
+            instance.address_postal_code = ""
+            instance.profile_photo = None
+            instance.notes = ""
+            instance.status = Customer.Status.INACTIVE
+            instance.is_active = False
+            instance.user = None
+            instance.save()
             if user is not None and user.role == User.Role.CUSTOMER:
                 user.delete()
 
@@ -131,7 +167,7 @@ class CustomerViewSet(ModelViewSet):
         """Retrieve or update the customer's health profile."""
         self.required_permission = "customers.view_customer"
         customer = get_object_or_404(
-            Customer.objects.for_tenant(request.tenant),
+            Customer.objects.for_tenant(request.tenant).filter(deleted_at__isnull=True),
             id=pk,
         )
 
@@ -177,7 +213,7 @@ class CustomerViewSet(ModelViewSet):
         """List or create body measurements for a customer."""
         self.required_permission = "customers.view_customer"
         customer = get_object_or_404(
-            Customer.objects.for_tenant(request.tenant),
+            Customer.objects.for_tenant(request.tenant).filter(deleted_at__isnull=True),
             id=pk,
         )
 
@@ -204,7 +240,7 @@ class CustomerViewSet(ModelViewSet):
         """List or create fitness goals for a customer."""
         self.required_permission = "customers.view_customer"
         customer = get_object_or_404(
-            Customer.objects.for_tenant(request.tenant),
+            Customer.objects.for_tenant(request.tenant).filter(deleted_at__isnull=True),
             id=pk,
         )
 
@@ -226,7 +262,7 @@ class CustomerViewSet(ModelViewSet):
         """List or create progress photos for a customer."""
         self.required_permission = "customers.view_customer"
         customer = get_object_or_404(
-            Customer.objects.for_tenant(request.tenant),
+            Customer.objects.for_tenant(request.tenant).filter(deleted_at__isnull=True),
             id=pk,
         )
 
@@ -256,7 +292,7 @@ class CustomerViewSet(ModelViewSet):
         """
         self.required_permission = "customers.view_customer"
         customer = get_object_or_404(
-            Customer.objects.for_tenant(request.tenant),
+            Customer.objects.for_tenant(request.tenant).filter(deleted_at__isnull=True),
             id=pk,
         )
 

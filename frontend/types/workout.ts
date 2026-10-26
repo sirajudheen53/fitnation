@@ -105,6 +105,8 @@ export interface WorkoutAssignment {
   workout_plan: number;
   workout_plan_name: string;
   customer_name: string;
+  /** Issue #81: the assigned member was deleted (name shows "Deleted user"). */
+  customer_is_deleted?: boolean;
   start_date: string;
   end_date: string | null;
   is_active: boolean;

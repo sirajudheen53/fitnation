@@ -5,6 +5,7 @@ from typing import ClassVar
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
+from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.users.auth import AuthToken
 from apps.users.models import Trainer, TrainerCustomerAssignment, TrainerSchedule, User
 
@@ -313,7 +314,7 @@ class TrainerUpdateSerializer(serializers.ModelSerializer):
         ]
 
 
-class TrainerCustomerAssignmentSerializer(serializers.ModelSerializer):
+class TrainerCustomerAssignmentSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
     """Serializer for TrainerCustomerAssignment model."""
 
     customer_name = serializers.CharField(source="customer.name", read_only=True)
@@ -333,6 +334,7 @@ class TrainerCustomerAssignmentSerializer(serializers.ModelSerializer):
             "unassigned_at",
             "customer_name",
             "customer_email",
+            "customer_is_deleted",
             "trainer_email",
             "created_at",
             "updated_at",

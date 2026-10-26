@@ -9,9 +9,21 @@ from apps.branches.models import Branch
 from apps.tenants.models import TenantModelMixin
 from apps.users.models import User
 
+# Issue #81: the display label every surface shows for a deleted customer.
+# Stored on the scrubbed row's ``name`` AND forced by serializer display
+# helpers — the serializer, not the stored string, is authoritative.
+DELETED_USER_LABEL = "Deleted user"
+
 
 class Customer(TenantModelMixin):
-    """A tenant-scoped customer profile linked one-to-one to a user."""
+    """A tenant-scoped customer profile linked one-to-one to a user.
+
+    Deletion is a soft delete (issue #81): the ERP delete marks
+    ``deleted_at``, scrubs the personal fields and frees the portal identity
+    (issue #72) while the row itself stays — payments, attendance, trainer
+    assignments and other history keep pointing at it and render as
+    :data:`DELETED_USER_LABEL`.
+    """
 
     class Gender(models.TextChoices):
         """Gender options for a customer."""
@@ -28,9 +40,15 @@ class Customer(TenantModelMixin):
         INACTIVE = "inactive", "Inactive"
         SUSPENDED = "suspended", "Suspended"
 
+    # Nullable + SET_NULL (issue #81): the profile row outlives the portal
+    # identity — the ERP delete unlinks and removes the customer-role user
+    # while the profile is retained for history. A user deleted through any
+    # other path leaves the profile standing instead of cascade-destroying it.
     user = models.OneToOneField(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="customer_profile",
     )
     branch = models.ForeignKey(
@@ -71,6 +89,10 @@ class Customer(TenantModelMixin):
     )
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    # Issue #81 soft-delete marker: set by the ERP destroy (and the in-app
+    # GDPR deletion). NULL = live member; non-NULL = deleted — surfaces render
+    # DELETED_USER_LABEL for any reference to the row.
+    deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -85,6 +107,15 @@ class Customer(TenantModelMixin):
                 name="uq_customer_tenant_email",
             ),
         ]
+
+    @property
+    def is_deleted(self) -> bool:
+        """True once the soft-delete marker is set."""
+        return self.deleted_at is not None
+
+    def display_name(self) -> str:
+        """The name every surface should show: label when deleted, else name."""
+        return DELETED_USER_LABEL if self.is_deleted else self.name
 
     def __str__(self) -> str:
         """Return customer label."""

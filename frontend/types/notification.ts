@@ -29,6 +29,8 @@ export interface NotificationLog {
   id: number;
   customer: number | null;
   customer_name: string;
+  /** Issue #81: the referenced member was deleted (name shows "Deleted user"). */
+  customer_is_deleted?: boolean;
   notification_type: NotificationType;
   status: NotificationStatus;
   /** The transport that carried the attempt (wati | gupshup | msg91 | …). */

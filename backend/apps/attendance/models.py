@@ -33,7 +33,8 @@ class AttendanceRecord(TenantModelMixin):
 
     customer = models.ForeignKey(
         "customers.Customer",
-        on_delete=models.CASCADE,
+        # Issue #81: attendance history survives a deleted customer.
+        on_delete=models.PROTECT,
         related_name="attendance_records",
     )
     branch = models.ForeignKey(

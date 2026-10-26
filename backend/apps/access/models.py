@@ -198,7 +198,9 @@ class AccessLog(TenantModelMixin):
     )
     customer = models.ForeignKey(
         "customers.Customer",
-        on_delete=models.CASCADE,
+        # Issue #81: an access log is an audit record — it must outlive the
+        # customer; a hard delete fails loudly instead of destroying history.
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="access_logs",
@@ -357,7 +359,8 @@ class AccessDecisionLog(TenantModelMixin):
 
     customer = models.ForeignKey(
         "customers.Customer",
-        on_delete=models.CASCADE,
+        # Issue #81: access decisions are an audit trail — PROTECT, never cascade.
+        on_delete=models.PROTECT,
         related_name="access_decisions",
     )
     device = models.ForeignKey(

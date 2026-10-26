@@ -20,7 +20,8 @@ class Review(TenantModelMixin):
 
     customer = models.ForeignKey(
         Customer,
-        on_delete=models.CASCADE,
+        # Issue #81: review history survives a deleted customer.
+        on_delete=models.PROTECT,
         related_name="reviews",
     )
     branch = models.ForeignKey(

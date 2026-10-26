@@ -15,6 +15,8 @@ export interface Payment {
   id: number;
   customer_id: number;
   customer_name: string;
+  /** Issue #81: the referenced member was deleted (name shows "Deleted user"). */
+  customer_is_deleted?: boolean;
   /** Member phone (issue #72 pending-payments queue); null when unset. */
   customer_phone?: string | null;
   amount: string;
@@ -60,6 +62,8 @@ export interface Invoice {
   invoice_number: string;
   customer_id: number;
   customer_name: string;
+  /** Issue #81: the referenced member was deleted (name shows "Deleted user"). */
+  customer_is_deleted?: boolean;
   amount: string;
   tax_amount: string;
   total_amount: string;

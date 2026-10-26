@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from apps.branches.models import Branch, BranchTrainerAssignment
 from apps.customers.models import (
+    DELETED_USER_LABEL,
     BodyMeasurement,
     Customer,
     FitnessGoal,
@@ -63,11 +64,12 @@ def delete_customer_account(user: User, tenant: Tenant) -> Customer | None:
       values scrubbed to neutral): the ``User`` row (name → ``Deleted
       Member``, email → a random ``deleted-<uuid>@deleted.invalid``, phone →
       empty, ``is_email_verified`` off, ``is_active`` off so it can never
-      log in again) and the linked ``Customer`` profile (name, email, phone,
-      date of birth, emergency contacts, address, notes and profile photo
-      scrubbed; gender reset to "prefer not to say"; ``is_active`` off and
-      ``status`` set to ``inactive``). Business records that reference the
-      member therefore survive but no longer point at a natural person.
+      log in again) and the linked ``Customer`` profile (name → the issue
+      #81 "Deleted user" marker + ``deleted_at`` set, email, phone, date of
+      birth, emergency contacts, address, notes and profile photo scrubbed;
+      gender reset to "prefer not to say"; ``is_active`` off and ``status``
+      set to ``inactive``). Business records that reference the member
+      therefore survive but no longer point at a natural person.
     * **Purged outright** — health data and session/identity plumbing with
       no statutory-records claim: the ``HealthProfile`` row, its
       ``BodyMeasurement``/``FitnessGoal``/``ProgressPhoto`` rows, every
@@ -110,7 +112,13 @@ def delete_customer_account(user: User, tenant: Tenant) -> Customer | None:
             BodyMeasurement.objects.filter(tenant_scope, customer=customer).delete()
             FitnessGoal.objects.filter(tenant_scope, customer=customer).delete()
             ProgressPhoto.objects.filter(tenant_scope, customer=customer).delete()
-            customer.name = f"Deleted member #{customer.pk}"
+            # Issue #81: the same soft-delete marker + display label the ERP
+            # delete uses, so every surface renders the member identically —
+            # whether they were removed by the gym or deleted their own
+            # account. (Previously "Deleted member #pk"; the label is what
+            # every ``customer.name`` reference shows now.)
+            customer.deleted_at = timezone.now()
+            customer.name = DELETED_USER_LABEL
             customer.email = None
             customer.phone = ""
             customer.date_of_birth = None

@@ -97,6 +97,8 @@ export interface BranchTrainerAssignment {
   is_active: boolean;
   trainer_email: string;
   customer_name: string;
+  /** Issue #81: the assigned member was deleted (name shows "Deleted user"). */
+  customer_is_deleted?: boolean;
   branch_name: string | null;
 }
 
@@ -137,6 +139,8 @@ export interface TrainerSession {
   notes: string;
   trainer_email: string;
   customer_name: string;
+  /** Issue #81: the booked member was deleted (name shows "Deleted user"). */
+  customer_is_deleted?: boolean;
   branch_name: string | null;
   created_at: string;
   updated_at: string;

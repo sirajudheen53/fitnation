@@ -132,6 +132,9 @@ export interface EnrollCredentialResult {
 export interface AccessOverride {
   id: number;
   customer: number;
+  /** Issue #81: server-side display name — a deleted member shows "Deleted user". */
+  customer_name?: string;
+  customer_is_deleted?: boolean;
   device: number;
   allow_access: boolean;
   reason: string;
@@ -157,6 +160,9 @@ export interface AccessLog {
   id: number;
   device: number;
   customer: number | null;
+  /** Issue #81: server-side display name; empty for unidentified punches. */
+  customer_name?: string;
+  customer_is_deleted?: boolean;
   device_user_id: string;
   credential_type: AccessCredentialType;
   event_type: AccessEventType;

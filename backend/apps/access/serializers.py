@@ -17,6 +17,7 @@ from apps.access.models import (
 )
 from apps.access.services import parse_attlog_punch
 from apps.customers.models import Customer
+from apps.customers.serializers import DeletedCustomerFlagMixin
 
 
 class BiometricDeviceSerializer(serializers.ModelSerializer):
@@ -155,8 +156,15 @@ class BiometricCredentialEnrollResultSerializer(serializers.Serializer):
     sync = DeviceSyncResultSerializer()
 
 
-class AccessOverrideSerializer(serializers.ModelSerializer):
-    """Serializer for access overrides."""
+class AccessOverrideSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
+    """Serializer for access overrides.
+
+    ``customer_name``/``customer_is_deleted`` (issue #81): the override list
+    names the member server-side — a deleted member renders "Deleted user"
+    instead of the frontend's raw ``Customer #id`` fallback.
+    """
+
+    customer_name = serializers.CharField(source="customer.name", read_only=True)
 
     class Meta:
         """Serializer metadata."""
@@ -165,6 +173,8 @@ class AccessOverrideSerializer(serializers.ModelSerializer):
         fields: ClassVar[list[str]] = [
             "id",
             "customer",
+            "customer_name",
+            "customer_is_deleted",
             "device",
             "allow_access",
             "reason",
@@ -175,8 +185,15 @@ class AccessOverrideSerializer(serializers.ModelSerializer):
         read_only_fields: ClassVar[list[str]] = ["id", "created_by"]
 
 
-class AccessLogSerializer(serializers.ModelSerializer):
-    """Serializer for access logs."""
+class AccessLogSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
+    """Serializer for access logs.
+
+    ``customer_name``/``customer_is_deleted`` (issue #81): unidentified
+    punches keep ``customer_name`` empty; a deleted member's entries render
+    "Deleted user" instead of a raw id.
+    """
+
+    customer_name = serializers.CharField(source="customer.name", read_only=True, default="")
 
     class Meta:
         """Serializer metadata."""
@@ -186,6 +203,8 @@ class AccessLogSerializer(serializers.ModelSerializer):
             "id",
             "device",
             "customer",
+            "customer_name",
+            "customer_is_deleted",
             "device_user_id",
             "credential_type",
             "event_type",

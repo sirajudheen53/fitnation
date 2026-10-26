@@ -257,7 +257,8 @@ class TrainerCustomerAssignment(TenantModelMixin):
     )
     customer = models.ForeignKey(
         "customers.Customer",
-        on_delete=models.CASCADE,
+        # Issue #81: assignment history survives a deleted customer.
+        on_delete=models.PROTECT,
         related_name="trainer_assignments",
     )
     is_active = models.BooleanField(default=True)

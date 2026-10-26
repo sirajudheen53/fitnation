@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Card, CardHeader, CardBody, Badge, Spinner, Alert, Button } from "@/components/ui";
+import { Card, CardHeader, CardBody, Badge, Spinner, Alert, Button, DeletedUserBadge } from "@/components/ui";
 import { fetchInvoice, errorMessage } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { getInvoiceStatusLabel, formatInvoiceDate } from "@/features/payments/components/invoiceHelpers";
@@ -99,7 +99,10 @@ export default function InvoiceDetailPage() {
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div>
                 <h3 className="text-sm font-medium text-gray-500">Billed to</h3>
-                <p className="mt-1 font-medium text-gray-900">{invoice.customer_name}</p>
+                <p className="mt-1 font-medium text-gray-900">
+                    {invoice.customer_name}
+                    {invoice.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
+                  </p>
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">

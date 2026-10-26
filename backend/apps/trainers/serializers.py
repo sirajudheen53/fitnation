@@ -4,6 +4,7 @@ from typing import ClassVar
 
 from rest_framework import serializers
 
+from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.trainers.models import TrainerAssignment, TrainerPerformance, TrainerSession
 from apps.users.models import Trainer, TrainerSchedule
 
@@ -42,7 +43,7 @@ class TrainerSerializer(serializers.ModelSerializer):
         read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at", "rating"]
 
 
-class TrainerAssignmentSerializer(serializers.ModelSerializer):
+class TrainerAssignmentSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
     """Serializer for the branch-scoped trainer↔customer assignment."""
 
     trainer_email = serializers.CharField(source="trainer.user.email", read_only=True)
@@ -63,6 +64,7 @@ class TrainerAssignmentSerializer(serializers.ModelSerializer):
             "is_active",
             "trainer_email",
             "customer_name",
+            "customer_is_deleted",
             "branch_name",
         ]
         read_only_fields: ClassVar[list[str]] = ["id", "assigned_at", "unassigned_at"]
@@ -112,13 +114,14 @@ class TrainerScheduleSerializer(serializers.ModelSerializer):
         read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
 
-class TrainerSessionSerializer(serializers.ModelSerializer):
+class TrainerSessionSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
     """Serializer for PT sessions.
 
     ``status`` is read-only — lifecycle moves happen through the
     ``complete`` / ``no-show`` / ``cancel`` actions. Entitlement and overlap
     gates run in ``apps.trainers.services`` (409 with a machine-readable
-    ``reason``), not here.
+    ``reason``), not here. ``customer_is_deleted`` (issue #81) badges a
+    session whose member was deleted; the name renders "Deleted user".
     """
 
     trainer_email = serializers.CharField(source="trainer.user.email", read_only=True)
@@ -140,6 +143,7 @@ class TrainerSessionSerializer(serializers.ModelSerializer):
             "notes",
             "trainer_email",
             "customer_name",
+            "customer_is_deleted",
             "branch_name",
             "created_at",
             "updated_at",

@@ -6,16 +6,19 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.customers.models import Customer
+from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.memberships.models import Membership
 from apps.payments.models import Invoice, Payment, PaymentRefund, RazorpayConfig
 
 
-class PaymentSerializer(serializers.ModelSerializer):
+class PaymentSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
     """Serialize payment details for the frontend Payment contract (FBOS-005).
 
     Exposes ``customer_id``/``customer_name``, ``method``, ``membership_id``,
     ``invoice_id`` and ``payment_date`` (falling back to ``created_at`` so
-    pending payments always carry a sortable date).
+    pending payments always carry a sortable date). ``customer_is_deleted``
+    (issue #81) lets the UI badge a payment whose member was deleted — the
+    name itself is scrubbed to "Deleted user" on the retained row.
     """
 
     customer_id = serializers.PrimaryKeyRelatedField(source="customer", queryset=Customer.objects.all())
@@ -42,6 +45,7 @@ class PaymentSerializer(serializers.ModelSerializer):
             "id",
             "customer_id",
             "customer_name",
+            "customer_is_deleted",
             "customer_phone",
             "membership_id",
             "plan_name",
@@ -89,8 +93,14 @@ class PaymentSerializer(serializers.ModelSerializer):
         return data
 
 
-class InvoiceSerializer(serializers.ModelSerializer):
-    """Serialize invoice details."""
+class InvoiceSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
+    """Serialize invoice details.
+
+    ``customer_name``/``customer_is_deleted`` (issue #81): the invoice list
+    renders the member by name — a deleted member shows "Deleted user".
+    """
+
+    customer_name = serializers.CharField(source="customer.name", read_only=True, default="")
 
     class Meta:
         """Serializer metadata."""
@@ -99,6 +109,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
         fields: ClassVar[list] = [
             "id",
             "customer",
+            "customer_name",
+            "customer_is_deleted",
             "payment",
             "invoice_number",
             "subtotal",

@@ -197,7 +197,8 @@ class DeleteAccountTests(DeleteAccountTestBase):
         self.assertIsNotNone(customer)
         self.assertFalse(customer.is_active)
         self.assertEqual(customer.status, Customer.Status.INACTIVE)
-        self.assertEqual(customer.name, f"Deleted member #{customer_pk}")
+        self.assertEqual(customer.name, "Deleted user")  # issue #81 label
+        self.assertIsNotNone(customer.deleted_at)  # issue #81 marker
         self.assertEqual(customer.phone, "")
         self.assertIsNone(customer.email)
         self.assertIsNone(customer.date_of_birth)
@@ -254,7 +255,7 @@ class DeleteAccountTests(DeleteAccountTestBase):
         self.assertTrue(Payment.objects.for_tenant(self.tenant).filter(customer=customer).exists())
         self.assertTrue(Invoice.objects.for_tenant(self.tenant).filter(customer=customer).exists())
         self.assertTrue(AttendanceRecord.objects.for_tenant(self.tenant).filter(customer=customer).exists())
-        self.assertEqual(customer.name, f"Deleted member #{customer_pk}")
+        self.assertEqual(customer.name, "Deleted user")  # issue #81 label
         self.assertFalse(Customer.objects.filter(tenant=self.tenant, phone=PHONE).exists())
 
     def test_same_phone_at_another_tenant_is_untouched(self) -> None:
@@ -272,7 +273,7 @@ class DeleteAccountTests(DeleteAccountTestBase):
         self.assertTrue(self.other_user.is_active)
         other_customer = Customer.objects.get(user=self.other_user)
         self.assertTrue(other_customer.is_active)
-        self.assertNotEqual(other_customer.name, f"Deleted member #{other_customer.pk}")
+        self.assertNotEqual(other_customer.name, "Deleted user")
 
     def test_peer_in_same_tenant_is_untouched(self) -> None:
         """Another member at the same gym is neither deleted nor logged out."""

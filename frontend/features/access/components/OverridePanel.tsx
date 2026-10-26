@@ -4,7 +4,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ShieldCheck, ShieldX, History } from "lucide-react";
-import { Alert, Badge, Button, Card, CardBody, CardHeader, Input } from "@/components/ui";
+import { Alert, Badge, Button, Card, CardBody, CardHeader, DeletedUserBadge, Input } from "@/components/ui";
 import { getCustomerDisplayName } from "@/features/customers/components/CustomerTable";
 import { errorMessage } from "@/lib/api";
 import type { Customer } from "@/types/customer";
@@ -274,7 +274,11 @@ export function OverridePanel({
                   {overrides.map((o) => (
                     <tr key={o.id} className="hover:bg-gray-50" data-testid={`override-row-${o.id}`}>
                       <td className="px-4 py-3 font-medium text-gray-900">
-                        {customerName(o.customer)}
+                        {/* Issue #81: prefer the server-provided display name —
+                            a deleted member's id no longer resolves in the
+                            (live-only) customers list. */}
+                        {o.customer_name || customerName(o.customer)}
+                        {o.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
                       </td>
                       <td className="px-4 py-3 text-gray-600">{deviceName(o.device)}</td>
                       <td className="px-4 py-3">

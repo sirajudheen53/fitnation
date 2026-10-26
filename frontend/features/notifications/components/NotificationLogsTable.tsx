@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge } from "@/components/ui";
+import { Badge, DeletedUserBadge } from "@/components/ui";
 import type { NotificationLog, NotificationType } from "@/types/notification";
 import {
   getNotificationStatusMeta,
@@ -56,6 +56,7 @@ export function NotificationLogsTable({ logs, onRowClick }: NotificationLogsTabl
               >
                 <td className="px-4 py-3 font-medium text-gray-900">
                   {log.customer_name || "—"}
+                  {log.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
                 </td>
                 <td className="px-4 py-3 text-gray-600">
                   {getNotificationTypeLabel(log.notification_type)}

@@ -28,7 +28,8 @@ class Feedback(TenantModelMixin):
 
     customer = models.ForeignKey(
         Customer,
-        on_delete=models.CASCADE,
+        # Issue #81: feedback history survives a deleted customer.
+        on_delete=models.PROTECT,
         related_name="feedback",
     )
     rating = models.PositiveSmallIntegerField(
@@ -112,7 +113,8 @@ class FeedbackResponse(TenantModelMixin):
     )
     customer = models.ForeignKey(
         Customer,
-        on_delete=models.CASCADE,
+        # Issue #81: survey-response history survives a deleted customer.
+        on_delete=models.PROTECT,
         related_name="survey_responses",
     )
     answers = models.JSONField(default=dict, blank=True)

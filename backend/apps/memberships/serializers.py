@@ -4,6 +4,7 @@ from typing import ClassVar
 
 from rest_framework import serializers
 
+from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.memberships.models import Coupon, Membership, MembershipPlan
 
 
@@ -30,7 +31,7 @@ class MembershipPlanSerializer(serializers.ModelSerializer):
         read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
 
 
-class MembershipSerializer(serializers.ModelSerializer):
+class MembershipSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
     """Serialize membership details."""
 
     customer_id = serializers.ReadOnlyField()
@@ -47,6 +48,7 @@ class MembershipSerializer(serializers.ModelSerializer):
             "customer",
             "customer_id",
             "customer_name",
+            "customer_is_deleted",
             "plan",
             "plan_name",
             "price",

@@ -9,6 +9,7 @@ from rest_framework.fields import SerializerMethodField
 from PIL import Image
 
 from apps.customers.models import (
+    DELETED_USER_LABEL,
     BodyMeasurement,
     Customer,
     FitnessGoal,
@@ -21,6 +22,27 @@ from apps.users.services import SYNTHETIC_EMAIL_DOMAIN, synthetic_otp_email
 # FBOS-026 part 1: profile photo constraints (JPEG/PNG/WebP, max 5 MB).
 ALLOWED_PROFILE_PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}
 MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024
+
+
+class DeletedCustomerFlagMixin(serializers.Serializer):
+    """Expose the soft-delete state of a row's customer (issue #81).
+
+    Any surface serializer whose rows reference a customer mixes this in so
+    the payload carries ``customer_is_deleted`` — the frontend badges the
+    reference instead of pattern-matching the display name. The referenced
+    customer renders as :data:`DELETED_USER_LABEL` regardless: the delete
+    scrubs the stored name, and :meth:`CustomerSerializer.to_representation`
+    would force it anyway. (Subclasses ``serializers.Serializer`` so the
+    declared field is collected into ``_declared_fields`` — a plain mixin's
+    class attributes are invisible to DRF's metaclass.)
+    """
+
+    customer_is_deleted = serializers.SerializerMethodField()
+
+    def get_customer_is_deleted(self, obj) -> bool:
+        """True when the row points at a soft-deleted customer."""
+        customer = getattr(obj, "customer", None)
+        return customer is not None and customer.deleted_at is not None
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -46,6 +68,8 @@ class CustomerSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False)
     name = serializers.CharField(max_length=200, required=False)
     app_invite_status = SerializerMethodField()
+    # Issue #81: read-only soft-delete marker (never writable via the API).
+    is_deleted = serializers.SerializerMethodField()
 
     class Meta:
         """Serializer metadata."""
@@ -72,11 +96,29 @@ class CustomerSerializer(serializers.ModelSerializer):
             "status",
             "notes",
             "is_active",
+            "is_deleted",
             "app_invite_status",
             "created_at",
             "updated_at",
         ]
         read_only_fields: ClassVar[list[str]] = ["id", "created_at", "updated_at"]
+
+    def get_is_deleted(self, obj: Customer) -> bool:
+        """Return the soft-delete marker (issue #81)."""
+        return obj.deleted_at is not None
+
+    def to_representation(self, instance: Customer) -> dict:
+        """Force the deleted-customer display label on every payload.
+
+        The ERP delete scrubs ``name`` to the label already; this guards the
+        GDPR-anonymized rows (stored "Deleted member #pk") and any future
+        path that leaves a personal name on a marked row — a deleted
+        customer's name never leaves the backend (issue #81).
+        """
+        data = super().to_representation(instance)
+        if instance.deleted_at is not None:
+            data["name"] = DELETED_USER_LABEL
+        return data
 
     def get_app_invite_status(self, obj: Customer) -> dict | None:
         """Summarize the latest ``app_invite`` notification for the member.

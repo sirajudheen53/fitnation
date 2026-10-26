@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Pencil, Star, Users } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Badge, Button, Card, CardBody, CardHeader, Spinner } from "@/components/ui";
+import { Badge, DeletedUserBadge, Button, Card, CardBody, CardHeader, Spinner } from "@/components/ui";
 import {
   errorMessage,
   fetchTrainer,
@@ -393,6 +393,7 @@ export default function TrainerProfilePage() {
                               className="font-medium text-gray-900 hover:text-brand-700"
                             >
                               {a.customer_name}
+                              {a.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
                             </Link>
                           </td>
                           <td className="px-4 py-3 text-gray-700">{a.branch_name ?? "—"}</td>

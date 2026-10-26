@@ -33,6 +33,13 @@ describe("CustomerTable helpers", () => {
     expect(getCustomerDisplayName(customer)).toBe("only@email.com");
   });
 
+  it("renders a deleted customer as 'Deleted user' (issue #81)", () => {
+    // Even with a stale real name still cached on the object, the marker wins.
+    expect(getCustomerDisplayName({ name: "Asha Nair", is_deleted: true })).toBe("Deleted user");
+    // A scrubbed backend row (name already the marker) renders identically.
+    expect(getCustomerDisplayName({ name: "Deleted user", email: null, phone: "" })).toBe("Deleted user");
+  });
+
   it("marks active customers as Active", () => {
     const customer = {
       id: 3,

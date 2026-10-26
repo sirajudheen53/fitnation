@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Wallet } from "lucide-react";
-import { Card, CardHeader, CardBody } from "@/components/ui";
+import { Card, CardHeader, CardBody, DeletedUserBadge } from "@/components/ui";
 import type { PendingPayment } from "@/types/dashboard";
 
 interface PendingPaymentsProps {
@@ -42,7 +42,10 @@ export function PendingPayments({ payments, loading = false }: PendingPaymentsPr
             {payments.map((payment) => (
               <li key={payment.id} className="flex items-center justify-between py-3">
                 <div>
-                  <p className="font-medium text-gray-900">{payment.customer_name}</p>
+                  <p className="font-medium text-gray-900">
+                    {payment.customer_name}
+                    {payment.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
+                  </p>
                   <p className="text-xs text-gray-500">Due {formatDueDate(payment.due_date)}</p>
                 </div>
                 <div className="text-right">

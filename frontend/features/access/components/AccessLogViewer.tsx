@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardBody, CardHeader, Badge } from "@/components/ui";
+import { Card, CardBody, CardHeader, Badge, DeletedUserBadge } from "@/components/ui";
 import { getCustomerDisplayName } from "@/features/customers/components/CustomerTable";
 import type { Customer } from "@/types/customer";
 import {
@@ -97,7 +97,11 @@ export function AccessLogViewer({
                         {formatAccessTimestamp(log.event_timestamp)}
                       </td>
                       <td className="px-4 py-3 font-medium text-gray-900">
-                        {customerName(log.customer)}
+                        {/* Issue #81: prefer the server-provided display name —
+                            a deleted member's id no longer resolves in the
+                            (live-only) customers list. */}
+                        {log.customer_name || customerName(log.customer)}
+                        {log.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
                       </td>
                       <td className="px-4 py-3 text-gray-600">{deviceName(log.device)}</td>
                       <td className="px-4 py-3">

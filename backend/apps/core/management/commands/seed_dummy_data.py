@@ -457,8 +457,12 @@ class Command(BaseCommand):
                 user = User.objects.get(email=email)
                 # Delete customer if exists (cascades to health_profile, fitness_goals, memberships, payments, etc.)
                 if hasattr(user, "customer_profile"):
+                    from apps.attendance.models import AttendanceRecord
+
                     customer = user.customer_profile
-                    # Delete all related data
+                    # Delete all related data. Attendance is PROTECT on
+                    # customer (issue #81) — seed punches must go explicitly
+                    # before the (admin-only) hard delete can run.
                     FitnessGoal.objects.filter(customer=customer).delete()
                     HealthProfile.objects.filter(customer=customer).delete()
                     BodyMeasurement.objects.filter(customer=customer).delete()
@@ -466,6 +470,7 @@ class Command(BaseCommand):
                     DietAssignment.objects.filter(customer=customer).delete()
                     Payment.objects.filter(customer=customer).delete()
                     Membership.objects.filter(customer=customer).delete()
+                    AttendanceRecord.objects.filter(customer=customer).delete()
                     customer.delete()
                 user.delete()
                 self.stdout.write(f"  Deleted user: {email}")

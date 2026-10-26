@@ -85,5 +85,7 @@ class PendingPaymentSerializer(serializers.Serializer):
 
     id = serializers.IntegerField()
     customer_name = serializers.CharField()
+    # Issue #81: the referenced member was soft-deleted.
+    customer_is_deleted = serializers.BooleanField(default=False)
     amount = serializers.FloatField(default=0.0)
     due_date = serializers.CharField(allow_null=True, default=None)

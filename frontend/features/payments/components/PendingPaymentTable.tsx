@@ -1,7 +1,7 @@
 "use client";
 
 import { Send } from "lucide-react";
-import { Badge, Button } from "@/components/ui";
+import { Badge, Button, DeletedUserBadge } from "@/components/ui";
 import { getPaymentStatusLabel, STATUS_VARIANTS } from "@/features/payments/components/PaymentTable";
 import type { Payment } from "@/types/payment";
 
@@ -68,7 +68,10 @@ export function PendingPaymentTable({
             const sending = sendingPaymentId === payment.id;
             return (
               <tr key={payment.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 font-medium text-gray-900">{payment.customer_name}</td>
+                <td className="px-6 py-4 font-medium text-gray-900">
+                  {payment.customer_name}
+                  {payment.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
+                </td>
                 <td className="px-6 py-4 text-gray-600">{payment.customer_phone || "—"}</td>
                 <td className="px-6 py-4 text-gray-700">₹{Number(payment.amount).toLocaleString()}</td>
                 <td className="px-6 py-4 text-gray-600">{getPendingPaymentRef(payment)}</td>

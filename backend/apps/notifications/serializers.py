@@ -4,10 +4,11 @@ from typing import ClassVar
 
 from rest_framework import serializers
 
+from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.notifications.models import DeviceToken, NotificationLog
 
 
-class NotificationLogSerializer(serializers.ModelSerializer):
+class NotificationLogSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
     """Serialize a notification log entry."""
 
     customer_name = serializers.CharField(source="customer.name", read_only=True, default="")
@@ -20,6 +21,7 @@ class NotificationLogSerializer(serializers.ModelSerializer):
             "id",
             "customer",
             "customer_name",
+            "customer_is_deleted",
             "notification_type",
             "status",
             "channel",

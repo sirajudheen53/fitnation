@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge } from "@/components/ui";
+import { Badge, DeletedUserBadge } from "@/components/ui";
 import type { WorkoutAssignment } from "@/types/workout";
 import { formatDate } from "./helpers";
 
@@ -44,7 +44,10 @@ export function AssignmentTable({ assignments, loading = false }: AssignmentTabl
         <tbody className="divide-y divide-gray-100">
           {assignments.map((a) => (
             <tr key={a.id} className="hover:bg-gray-50">
-              <td className="px-6 py-4 font-medium text-gray-900">{a.customer_name}</td>
+              <td className="px-6 py-4 font-medium text-gray-900">
+                {a.customer_name}
+                {a.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
+              </td>
               <td className="px-6 py-4 text-gray-700">{a.workout_plan_name}</td>
               <td className="px-6 py-4 text-gray-600">{formatDate(a.start_date)}</td>
               <td className="px-6 py-4 text-gray-600">{formatDate(a.end_date)}</td>

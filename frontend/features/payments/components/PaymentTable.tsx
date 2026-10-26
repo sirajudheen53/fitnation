@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Eye } from "lucide-react";
-import { Badge } from "@/components/ui";
+import { Badge, DeletedUserBadge } from "@/components/ui";
 import type { Payment, PaymentKind, PaymentStatus } from "@/types/payment";
 
 /** Badge variant per payment status — shared with the pending-payments queue (issue #72). */
@@ -139,6 +139,7 @@ export function PaymentTable({
                 <tr key={payment.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-medium text-gray-900">
                     {payment.customer_name}
+                    {payment.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
                   </td>
                   <td className="px-6 py-4">
                     <Badge variant={getPaymentKindBadgeVariant(payment.kind)}>

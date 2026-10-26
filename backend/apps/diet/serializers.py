@@ -4,6 +4,7 @@ from typing import ClassVar
 
 from rest_framework import serializers
 
+from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.diet.models import (
     DietAssignment,
     DietDay,
@@ -240,7 +241,7 @@ class DietDayWriteSerializer(DietDaySerializer):
         read_only_fields: ClassVar[list[str]] = ["id", "total_calories"]
 
 
-class DietAssignmentSerializer(serializers.ModelSerializer):
+class DietAssignmentSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
     """Serialize a diet plan assignment to a customer."""
 
     diet_plan_name = serializers.CharField(
@@ -260,6 +261,7 @@ class DietAssignmentSerializer(serializers.ModelSerializer):
             "diet_plan",
             "diet_plan_name",
             "customer_name",
+            "customer_is_deleted",
             "start_date",
             "end_date",
             "is_active",

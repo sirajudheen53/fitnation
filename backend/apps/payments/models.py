@@ -58,7 +58,9 @@ class Payment(TenantModelMixin):
 
     customer = models.ForeignKey(
         "customers.Customer",
-        on_delete=models.CASCADE,
+        # Issue #81: financial records survive a deleted customer — a hard
+        # delete fails loudly instead of destroying payment history.
+        on_delete=models.PROTECT,
         related_name="payments",
     )
     # kind=membership is the default so pre-existing rows are unaffected.
@@ -117,7 +119,8 @@ class Invoice(TenantModelMixin):
 
     customer = models.ForeignKey(
         "customers.Customer",
-        on_delete=models.CASCADE,
+        # Issue #81: invoices are financial records — PROTECT, never cascade.
+        on_delete=models.PROTECT,
         related_name="invoices",
     )
     payment = models.ForeignKey(

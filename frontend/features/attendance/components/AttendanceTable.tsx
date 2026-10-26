@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge } from "@/components/ui";
+import { Badge, DeletedUserBadge } from "@/components/ui";
 import type { AttendanceRecord, AttendanceStatus } from "@/types/attendance";
 
 const STATUS_VARIANTS: Record<AttendanceStatus, "success" | "warning" | "danger" | "info"> = {
@@ -69,7 +69,10 @@ export function AttendanceTable({
         <tbody className="divide-y divide-gray-100">
           {records.map((record) => (
             <tr key={record.id} className="hover:bg-gray-50">
-              <td className="px-6 py-4 font-medium text-gray-900">{record.person_name}</td>
+              <td className="px-6 py-4 font-medium text-gray-900">
+                {record.person_name}
+                {record.person_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
+              </td>
               <td className="px-6 py-4 capitalize text-gray-600">{record.person_type}</td>
               <td className="px-6 py-4 text-gray-600">{record.branch_name ?? "—"}</td>
               <td className="px-6 py-4 text-gray-600">{formatTime(record.check_in_time)}</td>

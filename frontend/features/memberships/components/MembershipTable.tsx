@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Eye, Ban, RotateCcw } from "lucide-react";
-import { Badge } from "@/components/ui";
+import { Badge, DeletedUserBadge } from "@/components/ui";
 import type { Membership, MembershipStatus } from "@/types/membership";
 
 export const STATUS_VARIANTS: Record<
@@ -80,6 +80,7 @@ export function MembershipTable({
             <tr key={membership.id} className="hover:bg-gray-50">
               <td className="px-6 py-4 font-medium text-gray-900">
                 {membership.customer_name}
+                {membership.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
               </td>
               <td className="px-6 py-4 text-gray-700">{membership.plan_name}</td>
               <td className="px-6 py-4 text-gray-600">

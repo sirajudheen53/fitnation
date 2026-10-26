@@ -43,6 +43,8 @@ export interface Membership {
   id: number;
   customer_id: number;
   customer_name: string;
+  /** Issue #81: the member was deleted (name shows "Deleted user"). */
+  customer_is_deleted?: boolean;
   plan_id: number;
   plan_name: string;
   start_date: string;

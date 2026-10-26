@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Badge, Alert, Spinner } from "@/components/ui";
+import { Badge, DeletedUserBadge, Alert, Spinner } from "@/components/ui";
 import { fetchInvoices, errorMessage } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { canAccessRoute } from "@/lib/permissions";
@@ -91,7 +91,10 @@ export default function InvoicesPage() {
                   <td className="px-6 py-4 font-medium text-gray-900">
                     {invoice.invoice_number}
                   </td>
-                  <td className="px-6 py-4 text-gray-700">{invoice.customer_name}</td>
+                  <td className="px-6 py-4 text-gray-700">
+                    {invoice.customer_name}
+                    {invoice.customer_is_deleted ? <DeletedUserBadge className="ml-2" /> : null}
+                  </td>
                   <td className="px-6 py-4 text-gray-700">
                     ₹{Number(invoice.total_amount).toLocaleString()}
                   </td>

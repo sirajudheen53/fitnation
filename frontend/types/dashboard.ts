@@ -59,6 +59,8 @@ export interface TrainerOverviewData {
 export interface PendingPayment {
   id: number;
   customer_name: string;
+  /** Issue #81: the referenced member was deleted (name shows "Deleted user"). */
+  customer_is_deleted?: boolean;
   amount: number;
   due_date: string | null;
 }

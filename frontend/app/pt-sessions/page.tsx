@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CalendarClock, Plus } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Badge, Button, Card, CardBody, Spinner } from "@/components/ui";
+import { Badge, DeletedUserBadge, Button, Card, CardBody, Spinner } from "@/components/ui";
 import {
   bookTrainerSession,
   cancelTrainerSession,
@@ -299,6 +299,9 @@ export default function PtSessionsPage() {
                                 data-testid="session-parties"
                               >
                                 {session.customer_name}
+                                {session.customer_is_deleted ? (
+                                  <DeletedUserBadge className="ml-2 align-middle" />
+                                ) : null}
                                 <span className="text-gray-400"> × </span>
                                 {trainer ? trainerName(trainer) : session.trainer_email}
                               </p>

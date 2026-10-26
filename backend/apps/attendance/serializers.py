@@ -23,6 +23,9 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
     person_id = serializers.IntegerField(source="customer_id", read_only=True)
     person_name = serializers.CharField(source="customer.name", read_only=True)
     person_type = serializers.SerializerMethodField()
+    # Issue #81: the punch's member was deleted — name renders "Deleted user"
+    # (scrubbed row); the flag lets the UI badge the row.
+    person_is_deleted = serializers.SerializerMethodField()
     branch_id = serializers.IntegerField(read_only=True)
     branch_name = serializers.CharField(source="branch.name", read_only=True)
 
@@ -36,6 +39,7 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
             "person_id",
             "person_name",
             "person_type",
+            "person_is_deleted",
             "branch",
             "branch_id",
             "branch_name",
@@ -52,6 +56,10 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
     def get_person_type(self, obj: AttendanceRecord) -> str:
         """Return the attendance person type."""
         return "customer"
+
+    def get_person_is_deleted(self, obj: AttendanceRecord) -> bool:
+        """Return the soft-delete marker of the punched member (issue #81)."""
+        return obj.customer.deleted_at is not None
 
 
 class TrainerAttendanceSerializer(serializers.ModelSerializer):

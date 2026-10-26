@@ -40,6 +40,12 @@ export interface Customer {
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   is_active: boolean;
+  /**
+   * Issue #81: soft-delete marker. Deleted members are excluded from the
+   * customer list, but any cached/stale object must still render the
+   * "Deleted user" label (see getCustomerDisplayName).
+   */
+  is_deleted?: boolean;
   profile_photo: string | null;
   created_at: string;
   updated_at: string;

@@ -11,6 +11,8 @@ export interface AttendanceRecord {
   person_id: number;
   person_name: string;
   person_type: AttendanceType;
+  /** Issue #81: the punched member was deleted (person_name shows "Deleted user"). */
+  person_is_deleted?: boolean;
   branch_id: number | null;
   branch_name: string | null;
   check_in_time: string | null;

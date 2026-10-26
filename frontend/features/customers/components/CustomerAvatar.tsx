@@ -11,7 +11,12 @@ export function getCustomerDisplayName(customer: {
   phone?: string | null;
   first_name?: string;
   last_name?: string;
+  /** Issue #81 soft-delete marker — forces the "Deleted user" label. */
+  is_deleted?: boolean;
 }): string {
+  // A deleted customer renders as the marker, never a stale or partial name
+  // (the backend scrubs `name` to the same label; this guards stale caches).
+  if (customer.is_deleted) return "Deleted user";
   const fromName = (customer.name ?? "").trim();
   if (fromName) return fromName;
   const fromParts = `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim();

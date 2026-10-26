@@ -270,6 +270,8 @@ def get_pending_payments(tenant: Any) -> list[dict]:
             {
                 "id": payment.id,
                 "customer_name": payment.customer.name,
+                # Issue #81: the row's member was deleted (name shows the marker).
+                "customer_is_deleted": payment.customer.deleted_at is not None,
                 "amount": round(float(payment.amount), 2),
                 "due_date": due_date,
             }

@@ -4,6 +4,7 @@ from typing import ClassVar
 
 from rest_framework import serializers
 
+from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.exercises.models import Exercise
 from apps.exercises.serializers import ExerciseSerializer
 from apps.workouts.models import (
@@ -251,7 +252,7 @@ class WorkoutPlanSerializer(serializers.ModelSerializer):
         return instance
 
 
-class WorkoutAssignmentSerializer(serializers.ModelSerializer):
+class WorkoutAssignmentSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):
     """Serialize a workout plan assignment to a customer."""
 
     workout_plan_name = serializers.CharField(
@@ -273,6 +274,7 @@ class WorkoutAssignmentSerializer(serializers.ModelSerializer):
             "workout_plan",
             "workout_plan_name",
             "customer_name",
+            "customer_is_deleted",
             "start_date",
             "end_date",
             "is_active",
