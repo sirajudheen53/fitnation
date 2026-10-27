@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.customers.models import Customer
@@ -632,6 +633,104 @@ class DietAssignmentAPITests(DietAPIBase):
         """The active action requires a customer param for non-customers."""
         response = self.client.get("/api/v1/diet-assignments/active/")
         self.assertEqual(response.status_code, 400)
+
+
+class DietAssignmentTransitionAPITests(DietAPIBase):
+    """Issue #90: replace/unassign transitions and tenant-scoped validation."""
+
+    def setUp(self) -> None:
+        """Extend the base fixtures with a second diet plan."""
+        super().setUp()
+        self.plan2 = DietPlan.objects.create(
+            tenant=self.tenant,
+            name="Cut Plan",
+            goal=DietPlan.Goal.CUT,
+        )
+
+    def _assign(self, **overrides) -> object:
+        """POST a diet assignment with sensible defaults."""
+        payload = {
+            "customer": self.customer.id,
+            "diet_plan": self.plan.id,
+            "start_date": "2026-01-01",
+        }
+        payload.update(overrides)
+        return self.client.post("/api/v1/diet-assignments/", payload, format="json")
+
+    def test_replace_active_ends_previous_assignment(self) -> None:
+        """Assigning with replace_active=True deactivates the current plan."""
+        first = self._assign()
+        self.assertEqual(first.status_code, 201)
+        response = self._assign(
+            diet_plan=self.plan2.id,
+            start_date="2026-02-01",
+            replace_active=True,
+        )
+        self.assertEqual(response.status_code, 201)
+        first_assignment = DietAssignment.objects.get(pk=first.data["id"])
+        second_assignment = DietAssignment.objects.get(pk=response.data["id"])
+        self.assertFalse(first_assignment.is_active)
+        self.assertEqual(first_assignment.end_date, date(2026, 1, 31))
+        self.assertTrue(second_assignment.is_active)
+
+    def test_create_without_replace_keeps_both_active(self) -> None:
+        """Default create leaves previous assignments untouched."""
+        self._assign()
+        response = self._assign(diet_plan=self.plan2.id, start_date="2026-02-01")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            DietAssignment.objects.filter(customer=self.customer, is_active=True).count(),
+            2,
+        )
+
+    def test_unassign_stamps_end_date_and_deactivates(self) -> None:
+        """POST unassign/ ends the assignment effective today."""
+        assignment = DietAssignment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            diet_plan=self.plan,
+        )
+        response = self.client.post(f"/api/v1/diet-assignments/{assignment.id}/unassign/")
+        self.assertEqual(response.status_code, 200)
+        assignment.refresh_from_db()
+        self.assertFalse(assignment.is_active)
+        self.assertEqual(assignment.end_date, timezone.localdate())
+
+    def test_unassign_cross_tenant_returns_404(self) -> None:
+        """An assignment from another tenant is not unassignable."""
+        other_tenant = provision_tenant("Other Gym", contact_email="owner2@diet.test")
+        other_assignment = DietAssignment.objects.create(
+            tenant=other_tenant,
+            customer=Customer.objects.create(
+                tenant=other_tenant,
+                name="Other Tenant Customer",
+            ),
+            diet_plan=DietPlan.objects.create(tenant=other_tenant, name="Other Plan"),
+        )
+        response = self.client.post(f"/api/v1/diet-assignments/{other_assignment.id}/unassign/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_end_date_before_start_date_rejected(self) -> None:
+        """An assignment cannot end before it starts."""
+        response = self._assign(start_date="2026-02-01", end_date="2026-01-01")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("end_date", response.data)
+
+    def test_create_with_cross_tenant_customer_rejected(self) -> None:
+        """A customer from another tenant cannot be assigned a diet plan."""
+        other_tenant = provision_tenant("Other Gym", contact_email="owner2@diet.test")
+        other_customer = Customer.objects.create(tenant=other_tenant, name="Outside Customer")
+        response = self._assign(customer=other_customer.id)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("customer", response.data)
+
+    def test_create_with_cross_tenant_plan_rejected(self) -> None:
+        """A diet plan from another tenant cannot be assigned."""
+        other_tenant = provision_tenant("Other Gym", contact_email="owner2@diet.test")
+        other_plan = DietPlan.objects.create(tenant=other_tenant, name="Outside Plan")
+        response = self._assign(diet_plan=other_plan.id)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("diet_plan", response.data)
 
 
 class DietPermissionsTests(DietAPIBase):

@@ -1,7 +1,10 @@
 """Diet Plan management serializers."""
 
+from datetime import timedelta
 from typing import ClassVar
 
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.customers.serializers import DeletedCustomerFlagMixin
@@ -305,6 +308,15 @@ class DietAssignmentSerializer(DeletedCustomerFlagMixin, serializers.ModelSerial
         source="customer.name",
         read_only=True,
     )
+    # Issue #90 replace flow: creating with replace_active=True ends the
+    # customer's other active assignment(s) so they hold exactly one current
+    # plan. Past assignments are kept as history, never deleted.
+    replace_active = serializers.BooleanField(
+        write_only=True,
+        required=False,
+        default=False,
+        help_text="Deactivate the customer's other active assignment(s) on create.",
+    )
 
     class Meta:
         model = DietAssignment
@@ -320,10 +332,67 @@ class DietAssignmentSerializer(DeletedCustomerFlagMixin, serializers.ModelSerial
             "is_active",
             "assigned_by",
             "notes",
+            "replace_active",
             "created_at",
             "updated_at",
         ]
         read_only_fields: ClassVar[list[str]] = ["id", "assigned_by", "created_at", "updated_at"]
+
+    def validate(self, attrs: dict) -> dict:
+        """Reject an end date that falls before the start date."""
+        instance = getattr(self, "instance", None)
+        start_date = attrs.get("start_date", instance.start_date if instance else None)
+        end_date = attrs.get("end_date", instance.end_date if instance else None)
+        if start_date is None:
+            start_date = timezone.localdate()
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError(
+                {"end_date": "End date cannot be before the start date."},
+            )
+        return attrs
+
+    def create(self, validated_data: dict) -> DietAssignment:
+        """Create the assignment, optionally replacing the current one."""
+        replace_active = validated_data.pop("replace_active", False)
+        with transaction.atomic():
+            assignment = super().create(validated_data)
+            if replace_active:
+                self._deactivate_other_active(assignment)
+        return assignment
+
+    @staticmethod
+    def _deactivate_other_active(assignment: DietAssignment) -> None:
+        """End the customer's other active assignments, keeping history rows."""
+        others = DietAssignment.objects.filter(
+            tenant_id=assignment.tenant_id,
+            customer_id=assignment.customer_id,
+            is_active=True,
+        ).exclude(pk=assignment.pk)
+        for other in others:
+            other.is_active = False
+            if other.end_date is None or other.end_date >= assignment.start_date:
+                other.end_date = assignment.start_date - timedelta(days=1)
+            other.save(update_fields=["is_active", "end_date", "updated_at"])
+
+    def validate_customer(self, value) -> object:
+        """Ensure the customer belongs to the request tenant."""
+        request = self.context.get("request")
+        tenant = getattr(request, "tenant", None) if request else None
+        if tenant and value.tenant_id != tenant.id:
+            raise serializers.ValidationError(
+                "The customer does not belong to the current tenant.",
+            )
+        return value
+
+    def validate_diet_plan(self, value: DietPlan) -> DietPlan:
+        """Ensure the diet plan belongs to the request tenant."""
+        request = self.context.get("request")
+        tenant = getattr(request, "tenant", None) if request else None
+        if tenant and value.tenant_id != tenant.id:
+            raise serializers.ValidationError(
+                "The diet plan does not belong to the current tenant.",
+            )
+        return value
 
 
 class NutritionBreakdownSerializer(serializers.Serializer):

@@ -3,6 +3,7 @@
 from typing import ClassVar
 
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
@@ -541,3 +542,19 @@ class DietAssignmentViewSet(ModelViewSet):
             is_active=True,
         )
         return Response(DietAssignmentSerializer(assignments, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="unassign")
+    def unassign(self, request: Request, pk: int) -> Response:
+        """End an assignment: deactivate it and stamp the end date (issue #90).
+
+        The row is kept as history. An existing end date in the past is
+        preserved, so repeated calls are idempotent.
+        """
+        self.required_permission = "diets.edit_diet"
+        assignment = self.get_object()
+        today = timezone.localdate()
+        assignment.is_active = False
+        if assignment.end_date is None or assignment.end_date > today:
+            assignment.end_date = today
+        assignment.save(update_fields=["is_active", "end_date", "updated_at"])
+        return Response(DietAssignmentSerializer(assignment).data)
