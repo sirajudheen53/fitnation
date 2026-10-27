@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   Mail,
-  Phone,
   User,
   Calendar,
   Users,
@@ -18,10 +17,11 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { Button, Input, Alert } from "@/components/ui";
+import { Button, Input, Alert, PhoneInput } from "@/components/ui";
 import type { Customer, CustomerFormData, Gender } from "@/types/customer";
 import type { PaymentMethod } from "@/types/payment";
 import { errorMessage, resolveMediaUrl } from "@/lib/api";
+import { isAcceptablePhoneValue, normalizePhoneValue } from "@/lib/phone";
 import { ProfilePhotoPicker, validateProfilePhoto } from "./ProfilePhotoPicker";
 
 // Admission fees are collected as cash/UPI/card/other at the desk (msg 2438);
@@ -45,7 +45,16 @@ const customerSchema = z
       .or(z.literal("")),
     first_name: z.string().min(1, "First name is required").max(100),
     last_name: z.string().max(100).optional().or(z.literal("")),
-    phone: z.string().max(20).optional().or(z.literal("")),
+    // Phone holds the composed E.164 value from PhoneInput (#88); empty is
+    // allowed — the "email or phone" rule is enforced in superRefine below.
+    phone: z
+      .string()
+      .max(20)
+      .optional()
+      .or(z.literal(""))
+      .refine((v) => !v || isAcceptablePhoneValue(v), {
+        message: "Enter a valid phone number",
+      }),
     // Untouched <select>/<input> elements submit as "" (or NaN for numbers),
     // so tolerate empty values instead of failing validation with cryptic
     // "Invalid enum value" messages.
@@ -62,7 +71,14 @@ const customerSchema = z
       ])
       .optional(),
     emergency_contact_name: z.string().max(100).optional().or(z.literal("")),
-    emergency_contact_phone: z.string().max(20).optional().or(z.literal("")),
+    emergency_contact_phone: z
+      .string()
+      .max(20)
+      .optional()
+      .or(z.literal(""))
+      .refine((v) => !v || isAcceptablePhoneValue(v), {
+        message: "Enter a valid phone number",
+      }),
     address_street: z.string().max(300).optional().or(z.literal("")),
     address_city: z.string().max(100).optional().or(z.literal("")),
     address_state: z.string().max(100).optional().or(z.literal("")),
@@ -124,6 +140,7 @@ export function CustomerForm({
     reset,
     watch,
     setValue,
+    control,
     formState: { errors },
   } = useForm<CustomerSchemaData>({
     resolver: zodResolver(customerSchema),
@@ -167,12 +184,16 @@ export function CustomerForm({
         email: customer.email ?? "",
         first_name: legacyFirst,
         last_name: legacyLast,
-        phone: customer.phone || "",
+        // Legacy-format rows ("+91 98765 43210", bare 10-digit) canonicalize
+        // on prefill so an untouched field still submits a clean value (#88).
+        phone: normalizePhoneValue(customer.phone || ""),
         gender: customer.gender ?? undefined,
         date_of_birth: customer.date_of_birth || "",
         branch_id: customer.branch ?? undefined,
         emergency_contact_name: customer.emergency_contact_name || "",
-        emergency_contact_phone: customer.emergency_contact_phone || "",
+        emergency_contact_phone: normalizePhoneValue(
+          customer.emergency_contact_phone || "",
+        ),
         address_street: customer.address_street || "",
         address_city: customer.address_city || "",
         address_state: customer.address_state || "",
@@ -288,13 +309,18 @@ export function CustomerForm({
           error={errors.email?.message}
           {...register("email")}
         />
-        <Input
-          label="Phone"
-          type="tel"
-          placeholder="+91 98765 43210"
-          icon={<Phone className="h-4 w-4" />}
-          error={errors.phone?.message}
-          {...register("phone")}
+        <Controller
+          control={control}
+          name="phone"
+          render={({ field }) => (
+            <PhoneInput
+              label="Phone"
+              error={errors.phone?.message}
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              autoComplete="tel"
+            />
+          )}
         />
       </div>
 
@@ -345,13 +371,17 @@ export function CustomerForm({
           error={errors.emergency_contact_name?.message}
           {...register("emergency_contact_name")}
         />
-        <Input
-          label="Emergency contact phone"
-          type="tel"
-          placeholder="+91 98765 43211"
-          icon={<Phone className="h-4 w-4" />}
-          error={errors.emergency_contact_phone?.message}
-          {...register("emergency_contact_phone")}
+        <Controller
+          control={control}
+          name="emergency_contact_phone"
+          render={({ field }) => (
+            <PhoneInput
+              label="Emergency contact phone"
+              error={errors.emergency_contact_phone?.message}
+              value={field.value ?? ""}
+              onChange={field.onChange}
+            />
+          )}
         />
       </div>
 

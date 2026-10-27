@@ -2,17 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { ArrowRight, ArrowLeft, Check, Building2, MapPin, Phone, Dumbbell } from "lucide-react";
+import { ArrowRight, ArrowLeft, Check, Building2, MapPin, Dumbbell } from "lucide-react";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PhoneInput } from "@/components/ui/PhoneInput";
 import { Alert } from "@/components/ui/Alert";
 import { completeOnboarding, ApiError } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { isAcceptablePhoneValue } from "@/lib/phone";
 
 const BUSINESS_TYPES = [
   { value: "gym", label: "Gym / Fitness Center" },
@@ -36,10 +38,11 @@ const onboardingSchema = z.object({
     .string()
     .min(5, "Please enter a complete address")
     .max(500, "Address must not exceed 500 characters"),
+  // PhoneInput emits the E.164 shape the backend stores (#88).
   primary_branch_phone: z
     .string()
-    .min(7, "Please enter a valid phone number")
-    .max(20, "Phone must not exceed 20 characters"),
+    .min(1, "Please enter a valid phone number")
+    .refine(isAcceptablePhoneValue, "Please enter a valid phone number"),
 });
 
 type OnboardingFormData = z.infer<typeof onboardingSchema>;
@@ -58,6 +61,7 @@ export default function OnboardingPage() {
     handleSubmit,
     trigger,
     watch,
+    control,
     formState: { errors },
   } = useForm<OnboardingFormData>({
     resolver: zodResolver(onboardingSchema),
@@ -225,13 +229,19 @@ export default function OnboardingPage() {
               {...register("primary_branch_address")}
             />
 
-            <Input
-              label="Branch phone"
-              type="tel"
-              placeholder="+91 484 123 4567"
-              icon={<Phone className="h-4 w-4" />}
-              error={errors.primary_branch_phone?.message}
-              {...register("primary_branch_phone")}
+            <Controller
+              control={control}
+              name="primary_branch_phone"
+              render={({ field }) => (
+                <PhoneInput
+                  label="Branch phone"
+                  error={errors.primary_branch_phone?.message}
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  required
+                  autoComplete="tel"
+                />
+              )}
             />
 
             <div className="flex gap-3">

@@ -3,16 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Mail, Building2, User, Phone, Lock, Eye, EyeOff } from "lucide-react";
+import { Mail, Building2, User, Lock, Eye, EyeOff } from "lucide-react";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PhoneInput } from "@/components/ui/PhoneInput";
 import { Alert } from "@/components/ui/Alert";
 import { signup, ApiError } from "@/lib/api";
+import { isAcceptablePhoneValue } from "@/lib/phone";
 
 const signupSchema = z.object({
   business_name: z
@@ -27,11 +29,15 @@ const signupSchema = z.object({
     .string()
     .email("Please enter a valid email address")
     .min(1, "Email is required"),
+  // PhoneInput emits the E.164 shape the backend stores (#88).
   phone: z
     .string()
     .max(20, "Phone must not exceed 20 characters")
     .optional()
-    .or(z.literal("")),
+    .or(z.literal(""))
+    .refine((v) => !v || isAcceptablePhoneValue(v), {
+      message: "Enter a valid phone number",
+    }),
   password: z
     .string()
     .min(8, "Password must be at least 8 characters")
@@ -49,6 +55,7 @@ export default function SignUpPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
@@ -129,14 +136,18 @@ export default function SignUpPage() {
           autoComplete="email"
         />
 
-        <Input
-          label="Phone (optional)"
-          type="tel"
-          placeholder="+91 98765 43210"
-          icon={<Phone className="h-4 w-4" />}
-          error={errors.phone?.message}
-          {...register("phone")}
-          autoComplete="tel"
+        <Controller
+          control={control}
+          name="phone"
+          render={({ field }) => (
+            <PhoneInput
+              label="Phone (optional)"
+              error={errors.phone?.message}
+              value={field.value ?? ""}
+              onChange={field.onChange}
+              autoComplete="tel"
+            />
+          )}
         />
 
         <div className="relative">

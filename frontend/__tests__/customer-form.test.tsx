@@ -53,6 +53,7 @@ describe("CustomerForm optional contact fields", () => {
     const { container } = render(<CustomerForm onSubmit={onSubmit} />);
 
     fireEvent.change(screen.getByLabelText("First name"), { target: { value: "Arjun" } });
+    // PhoneInput composes the E.164 value from the country code + digits (#88).
     fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "+91 98765 43210" } });
     submitForm(container);
 
@@ -60,7 +61,7 @@ describe("CustomerForm optional contact fields", () => {
     const payload = onSubmit.mock.calls[0][0] as CustomerFormData;
     expect(payload.email).toBe("");
     expect(payload.last_name).toBe("");
-    expect(payload.phone).toBe("+91 98765 43210");
+    expect(payload.phone).toBe("+919876543210");
   });
 
   it("accepts an email-only customer without last name", async () => {

@@ -37,10 +37,7 @@ export function parsePhoneInput(
   if (!text) return { country: findCountryByIso(DEFAULT_COUNTRY_ISO), national: "" };
   if (text.startsWith("+")) {
     const digits = text.slice(1).replace(/\D/g, "");
-    // Longest dial match wins (e.g. 971 over 97 over 9).
-    const match = PHONE_COUNTRIES.filter((c) => digits.startsWith(c.dial)).sort(
-      (a, b) => b.dial.length - a.dial.length,
-    )[0];
+    const match = matchDialCode(digits);
     if (match) return { country: match, national: digits.slice(match.dial.length) };
     // Unknown country: keep the default country selected and show the digits
     // so the value is never silently lost on edit.
@@ -52,15 +49,52 @@ export function parsePhoneInput(
   };
 }
 
+/** Longest known dial code that prefixes `digits`, if any. */
+export function matchDialCode(digits: string): PhoneCountry | null {
+  return (
+    PHONE_COUNTRIES.filter((c) => digits.startsWith(c.dial)).sort(
+      (a, b) => b.dial.length - a.dial.length,
+    )[0] ?? null
+  );
+}
+
 /** Compose the E.164 wire value from a dial code and national digits. */
 export function formatPhoneE164(dial: string, national: string): string {
   const digits = national.replace(/\D/g, "");
   return digits ? `+${dial}${digits}` : "";
 }
 
+/**
+ * Canonical form-state value: compact E.164 for "+"-values with a known dial
+ * code (e.g. "+91 98765 43210" → "+919876543210"), separators stripped
+ * otherwise. Use on form prefill so an untouched legacy-format field still
+ * submits a clean value; PhoneInput keeps everything canonical after edits.
+ */
+export function normalizePhoneValue(raw: string | null | undefined): string {
+  const text = String(raw ?? "").trim();
+  if (!text) return "";
+  if (text.startsWith("+")) {
+    const digits = text.slice(1).replace(/\D/g, "");
+    const match = matchDialCode(digits);
+    return match ? `+${match.dial}${digits.slice(match.dial.length)}` : `+${digits}`;
+  }
+  return text.replace(/\D/g, "");
+}
+
 /** The E.164 wire shape: "+" + 1-15 digits, first digit 1-9 (ITU E.164). */
 export function isValidPhoneE164(value: string | null | undefined): boolean {
   return /^\+[1-9]\d{6,14}$/.test(String(value ?? "").trim());
+}
+
+/**
+ * Schema-level acceptance: canonical E.164, or the legacy bare Indian row
+ * shape the backend's save-time rule still normalizes (the #88 transition —
+ * the frontend must not be stricter than the API it talks to).
+ */
+export function isAcceptablePhoneValue(value: string | null | undefined): boolean {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  return isValidPhoneE164(text) || /^[2-9]\d{9}$/.test(text);
 }
 
 /**

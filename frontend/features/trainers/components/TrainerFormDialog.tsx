@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { Controller, useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { X, Plus } from "lucide-react";
-import { Button, Card, CardBody, Input } from "@/components/ui";
+import { Button, Card, CardBody, Input, PhoneInput } from "@/components/ui";
 import { createTrainer, errorMessage, updateTrainer } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { isAcceptablePhoneValue, normalizePhoneValue } from "@/lib/phone";
 import type { Trainer } from "@/types/trainer";
 import { certificationLabel } from "./trainers-shared";
 
@@ -16,7 +17,17 @@ const trainerSchema = z
     first_name: z.string().trim().min(1, "First name is required.").max(150),
     last_name: z.string().trim().min(1, "Last name is required.").max(150),
     email: z.string().trim().email("Enter a valid email address."),
-    phone: z.string().trim().max(20).optional().or(z.literal("")),
+    // PhoneInput emits E.164 (#88); legacy bare rows stay acceptable until
+    // the data migration completes.
+    phone: z
+      .string()
+      .trim()
+      .max(20)
+      .optional()
+      .or(z.literal(""))
+      .refine((v) => !v || isAcceptablePhoneValue(v), {
+        message: "Enter a valid phone number.",
+      }),
     /** Create-only: blank ⇒ the backend sets an unusable password. */
     password: z.string().max(128).optional().or(z.literal("")),
     specialization: z.string().trim().max(100).optional().or(z.literal("")),
@@ -84,7 +95,7 @@ export function TrainerFormDialog({ trainer, onClose, onSaved }: TrainerFormDial
       first_name: trainer?.first_name ?? "",
       last_name: trainer?.last_name ?? "",
       email: trainer?.email ?? "",
-      phone: trainer?.phone ?? "",
+      phone: normalizePhoneValue(trainer?.phone ?? ""),
       password: "",
       specialization: trainer?.specialization ?? "",
       bio: trainer?.bio ?? "",
@@ -108,7 +119,7 @@ export function TrainerFormDialog({ trainer, onClose, onSaved }: TrainerFormDial
       first_name: trainer?.first_name ?? "",
       last_name: trainer?.last_name ?? "",
       email: trainer?.email ?? "",
-      phone: trainer?.phone ?? "",
+      phone: normalizePhoneValue(trainer?.phone ?? ""),
       password: "",
       specialization: trainer?.specialization ?? "",
       bio: trainer?.bio ?? "",
@@ -236,11 +247,18 @@ export function TrainerFormDialog({ trainer, onClose, onSaved }: TrainerFormDial
               </div>
             )}
             {!editing && (
-              <Input
-                label="Phone"
-                type="tel"
-                error={errors.phone?.message ?? fieldErrors.phone?.[0]}
-                {...register("phone")}
+              <Controller
+                control={control}
+                name="phone"
+                render={({ field }) => (
+                  <PhoneInput
+                    label="Phone"
+                    error={errors.phone?.message ?? fieldErrors.phone?.[0]}
+                    value={field.value ?? ""}
+                    onChange={field.onChange}
+                    autoComplete="tel"
+                  />
+                )}
               />
             )}
 

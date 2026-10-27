@@ -1,19 +1,19 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   Building2,
   Mail,
   MapPin,
-  Phone,
   Clock,
 } from "lucide-react";
-import { Button, Input, Alert } from "@/components/ui";
+import { Button, Input, Alert, PhoneInput } from "@/components/ui";
 import type { Branch, BranchFormData } from "@/types/branch";
 import { errorMessage } from "@/lib/api";
+import { isAcceptablePhoneValue, normalizePhoneValue } from "@/lib/phone";
 
 const branchSchema = z.object({
   name: z.string().min(1, "Branch name is required").max(200),
@@ -27,11 +27,13 @@ const branchSchema = z.object({
     .min(1, "PIN code is required")
     .regex(/^\d{6}$/, "PIN code must be 6 digits"),
   country: z.string().min(1, "Country is required").max(100),
+  // PhoneInput emits the E.164 shape the backend stores (#88); legacy shapes
+  // stay acceptable so an untouched prefill still validates (#88 transition).
   phone: z
     .string()
     .optional()
     .or(z.literal(""))
-    .refine((v) => !v || /^[+0-9\s-]{7,20}$/.test(v), {
+    .refine((v) => !v || isAcceptablePhoneValue(v), {
       message: "Enter a valid phone number",
     }),
   email: z.string().email("Enter a valid email").optional().or(z.literal("")),
@@ -77,6 +79,7 @@ export function BranchForm({
     reset,
     watch,
     setValue,
+    control,
     formState: { errors },
   } = useForm<BranchSchemaData>({
     resolver: zodResolver(branchSchema),
@@ -111,7 +114,7 @@ export function BranchForm({
         state: branch.state,
         postal_code: branch.postal_code,
         country: branch.country,
-        phone: branch.phone || "",
+        phone: normalizePhoneValue(branch.phone || ""),
         email: branch.email || "",
         opening_time: branch.opening_time,
         closing_time: branch.closing_time,
@@ -230,13 +233,17 @@ export function BranchForm({
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Input
-          label="Phone"
-          type="tel"
-          placeholder="+91 98765 43210"
-          icon={<Phone className="h-4 w-4" />}
-          error={errors.phone?.message}
-          {...register("phone")}
+        <Controller
+          control={control}
+          name="phone"
+          render={({ field }) => (
+            <PhoneInput
+              label="Phone"
+              error={errors.phone?.message}
+              value={field.value ?? ""}
+              onChange={field.onChange}
+            />
+          )}
         />
         <Input
           label="Email"
