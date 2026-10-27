@@ -892,6 +892,133 @@ class CustomerFilterAPITests(APITestCase):
         self.assertEqual(response.data["count"], 23)  # 3 original + 20 new
 
 
+class CustomerPlanAssignmentFilterAPITests(APITestCase):
+    """Issue #90: customers list filtered by active workout/diet assignments."""
+
+    def setUp(self) -> None:
+        """Create a tenant with customers holding varied assignment states."""
+        self.tenant = provision_tenant(name="Plan Filter Gym", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        self.workout_plan = WorkoutPlan.objects.create(tenant=self.tenant, name="Strength Plan")
+        self.diet_plan = DietPlan.objects.create(tenant=self.tenant, name="Bulk Plan")
+
+        def _customer(email: str, name: str) -> Customer:
+            """Create a customer with portal identity for the tenant."""
+            user = User.objects.create_user(
+                email=email,
+                password="F1tNati0n!",
+                first_name=name.split()[0],
+                last_name=name.split()[-1],
+                role=User.Role.CUSTOMER,
+                tenant=self.tenant,
+            )
+            return Customer.objects.create(
+                tenant=self.tenant,
+                user=user,
+                name=name,
+                email=email,
+            )
+
+        self.both_plans = _customer("both@local.test", "Both Plans")
+        self.workout_only = _customer("workout@local.test", "Workout Only")
+        self.no_plans = _customer("none@local.test", "No Plans")
+
+        # Active workout + diet assignments for `both_plans`.
+        WorkoutAssignment.objects.create(
+            tenant=self.tenant,
+            customer=self.both_plans,
+            workout_plan=self.workout_plan,
+        )
+        DietAssignment.objects.create(
+            tenant=self.tenant,
+            customer=self.both_plans,
+            diet_plan=self.diet_plan,
+        )
+        # Ended workout history for `workout_only` — must NOT count as active.
+        WorkoutAssignment.objects.create(
+            tenant=self.tenant,
+            customer=self.workout_only,
+            workout_plan=self.workout_plan,
+            is_active=False,
+        )
+
+        # Another tenant with its own assigned customer — must never leak in.
+        self.other_tenant = provision_tenant("Other Gym", contact_email="owner2@local.test")
+        other_plan = WorkoutPlan.objects.create(tenant=self.other_tenant, name="Other Plan")
+        WorkoutAssignment.objects.create(
+            tenant=self.other_tenant,
+            customer=Customer.objects.create(tenant=self.other_tenant, name="Outsider"),
+            workout_plan=other_plan,
+        )
+
+    def _customer_names(self, query: str) -> list[str]:
+        """GET the customers list with the query and return result names."""
+        response = self.client.get(f"/api/v1/customers/customers/{query}")
+        self.assertEqual(response.status_code, 200)
+        return [row["name"] for row in response.data["results"]]
+
+    def test_filter_assigned_workout_any(self) -> None:
+        """assigned_workout_plan=any returns only customers with an active workout plan."""
+        names = self._customer_names("?assigned_workout_plan=any")
+        self.assertEqual(names, ["Both Plans"])
+
+    def test_filter_assigned_workout_none(self) -> None:
+        """assigned_workout_plan=none excludes active assignments but keeps history."""
+        names = self._customer_names("?assigned_workout_plan=none")
+        self.assertIn("Workout Only", names)
+        self.assertIn("No Plans", names)
+        self.assertNotIn("Both Plans", names)
+
+    def test_filter_by_specific_workout_plan(self) -> None:
+        """assigned_workout_plan=<id> returns customers actively on that plan."""
+        names = self._customer_names(f"?assigned_workout_plan={self.workout_plan.id}")
+        self.assertEqual(names, ["Both Plans"])
+
+    def test_filter_assigned_diet_any(self) -> None:
+        """assigned_diet_plan=any returns only customers with an active diet plan."""
+        names = self._customer_names("?assigned_diet_plan=any")
+        self.assertEqual(names, ["Both Plans"])
+
+    def test_filter_assigned_diet_none(self) -> None:
+        """assigned_diet_plan=none returns everyone without an active diet plan."""
+        names = self._customer_names("?assigned_diet_plan=none")
+        self.assertIn("Workout Only", names)
+        self.assertIn("No Plans", names)
+        self.assertNotIn("Both Plans", names)
+
+    def test_filter_combined_workout_and_diet(self) -> None:
+        """Both filters combine with AND semantics."""
+        names = self._customer_names("?assigned_workout_plan=any&assigned_diet_plan=any")
+        self.assertEqual(names, ["Both Plans"])
+        names = self._customer_names(
+            f"?assigned_workout_plan={self.workout_plan.id}&assigned_diet_plan=none",
+        )
+        self.assertEqual(names, [])
+
+    def test_filter_invalid_value_returns_400(self) -> None:
+        """A non-id, non any/none value is a validation error."""
+        response = self.client.get("/api/v1/customers/customers/?assigned_workout_plan=bogus")
+        self.assertEqual(response.status_code, 400)
+
+    def test_filter_never_returns_other_tenants(self) -> None:
+        """No assignment filter combination leaks other tenants' customers."""
+        for query in (
+            "?assigned_workout_plan=any",
+            "?assigned_workout_plan=none",
+            f"?assigned_workout_plan={self.workout_plan.id}",
+        ):
+            with self.subTest(query=query):
+                self.assertNotIn("Outsider", self._customer_names(query))
+
+
 class CustomerExtendedFieldsAPITests(APITestCase):
     """Tests for new customer fields via the API."""
 

@@ -2,7 +2,7 @@
 
 from typing import ClassVar
 
-from django.db import transaction
+from django.db import models, transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -89,7 +89,65 @@ class CustomerViewSet(ModelViewSet):
         gender = self.request.query_params.get("gender")
         if gender:
             queryset = queryset.filter(gender=gender)
+        # Issue #90: filter by the customer's current (active) plan assignment —
+        # "any", "none", or a specific plan id.
+        workout_plan_filter = self.request.query_params.get("assigned_workout_plan")
+        if workout_plan_filter:
+            queryset = self._filter_by_active_plan(
+                queryset,
+                related_name="workout_assignments",
+                plan_field="workout_plan",
+                value=workout_plan_filter,
+            )
+        diet_plan_filter = self.request.query_params.get("assigned_diet_plan")
+        if diet_plan_filter:
+            queryset = self._filter_by_active_plan(
+                queryset,
+                related_name="diet_assignments",
+                plan_field="diet_plan",
+                value=diet_plan_filter,
+            )
         return queryset
+
+    @staticmethod
+    def _filter_by_active_plan(
+        queryset: "models.QuerySet[Customer]",
+        *,
+        related_name: str,
+        plan_field: str,
+        value: str,
+    ) -> "models.QuerySet[Customer]":
+        """Filter customers by their active plan assignment (issue #90).
+
+        Args:
+            queryset: The tenant-scoped customer queryset to filter.
+            related_name: Reverse name from Customer to the assignment model.
+            plan_field: Name of the plan FK on the assignment model.
+            value: ``any`` (has an active assignment), ``none`` (has none), or
+                a plan id (has an active assignment of that specific plan).
+
+        Returns:
+            The filtered queryset.
+
+        Raises:
+            ValidationError: When ``value`` is not a plan id nor any/none.
+        """
+        if value == "any":
+            return queryset.filter(**{f"{related_name}__is_active": True}).distinct()
+        if value == "none":
+            return queryset.exclude(**{f"{related_name}__is_active": True})
+        try:
+            plan_id = int(value)
+        except ValueError:
+            raise ValidationError(
+                {related_name: "Must be 'any', 'none', or a plan id."},
+            ) from None
+        return queryset.filter(
+            **{
+                f"{related_name}__is_active": True,
+                f"{related_name}__{plan_field}_id": plan_id,
+            },
+        ).distinct()
 
     def create(self, request: Request) -> Response:
         """Create a new customer."""
