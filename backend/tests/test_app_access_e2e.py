@@ -34,6 +34,7 @@ from apps.memberships.models import Membership, MembershipPlan
 from apps.notifications.models import NotificationLog
 from apps.tenants.services import provision_tenant
 from apps.users.models import AuthToken, User
+from apps.users.phone import normalize_e164
 
 FLAG_ON = {"app_access": True}
 
@@ -43,6 +44,13 @@ SHARED_PHONE = "9876500001"
 SECOND_MEMBER_PHONE = "9876500002"
 # A member of the second gym with his own phone.
 OTHER_GYM_PHONE = "9876500003"
+
+# Issue #88: storage and API payloads carry E.164 while the wire payloads in
+# these rehearsals stay RAW — the tolerance (raw in, canonical stored) is part
+# of what the journey asserts.
+SHARED_PHONE_E164 = normalize_e164(SHARED_PHONE)
+SECOND_MEMBER_PHONE_E164 = normalize_e164(SECOND_MEMBER_PHONE)
+OTHER_GYM_PHONE_E164 = normalize_e164(OTHER_GYM_PHONE)
 
 
 def _ok_poster():
@@ -225,14 +233,14 @@ class AppAccessE2ERehearsalTests(APITestCase):
 
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data["status"], "completed")
-        self.assertEqual(response.data["customer"]["phone"], SHARED_PHONE)
+        self.assertEqual(response.data["customer"]["phone"], SHARED_PHONE_E164)
         self.assertIsNotNone(response.data["membership"]["id"])
         self.assertEqual(response.data["membership"]["status"], "active")
         self.assertIsNotNone(response.data["payment"]["id"])
         self.assertEqual(response.data["payment"]["status"], "completed")
         self.assertIsNotNone(response.data["invoice_number"])
         # The member now exists exactly once in gym A.
-        self.assertEqual(Customer.objects.for_tenant(self.gym_a).filter(phone=SHARED_PHONE).count(), 1)
+        self.assertEqual(Customer.objects.for_tenant(self.gym_a).filter(phone=SHARED_PHONE_E164).count(), 1)
         self.assertEqual(Membership.objects.for_tenant(self.gym_a).count(), 1)
 
     def test_step1b_repeat_submit_reuses_the_customer(self) -> None:
@@ -247,7 +255,7 @@ class AppAccessE2ERehearsalTests(APITestCase):
         second = self.onboard(SHARED_PHONE, self.plan_a)
         self.assertEqual(second.status_code, 201, second.data)
         self.assertEqual(second.data["onboarding_id"], first.data["onboarding_id"])
-        self.assertEqual(Customer.objects.for_tenant(self.gym_a).filter(phone=SHARED_PHONE).count(), 1)
+        self.assertEqual(Customer.objects.for_tenant(self.gym_a).filter(phone=SHARED_PHONE_E164).count(), 1)
         self.assertEqual(Membership.objects.for_tenant(self.gym_a).count(), 1)
 
     # ── 2. the invite goes out (fake transport) ────────────────────────────
@@ -296,7 +304,7 @@ class AppAccessE2ERehearsalTests(APITestCase):
         re-sent within the dedupe window (no double-messaging the member).
         """
         self.onboard(SHARED_PHONE, self.plan_a)
-        customer = Customer.objects.for_tenant(self.gym_a).get(phone=SHARED_PHONE)
+        customer = Customer.objects.for_tenant(self.gym_a).get(phone=SHARED_PHONE_E164)
 
         self.auth_as(self.manager, self.gym_a)
         with mock.patch("apps.notifications.services.channels.requests.post", self.poster):
@@ -378,14 +386,17 @@ class AppAccessE2ERehearsalTests(APITestCase):
 
         row = DeviceToken.objects.get(token="fcm-token-e2e-1")
         self.assertEqual(row.tenant, self.gym_a)
-        self.assertEqual(row.user.email, f"{SHARED_PHONE}.{self.gym_a.uuid}@fitnation.local")
+        self.assertEqual(row.user.email, f"{SHARED_PHONE_E164}.{self.gym_a.uuid}@fitnation.local")
 
     # ── 4. expiry → grace → gated out ──────────────────────────────────────
 
     def _expire_membership(self, days_ago: int) -> None:
         """Push the member's membership end_date into the past."""
         membership = (
-            Membership.objects.for_tenant(self.gym_a).filter(customer__phone=SHARED_PHONE).order_by("-end_date").first()
+            Membership.objects.for_tenant(self.gym_a)
+            .filter(customer__phone=SHARED_PHONE_E164)
+            .order_by("-end_date")
+            .first()
         )
         self.assertIsNotNone(membership, "member has no membership")
         membership.end_date = timezone.localdate() - timedelta(days=days_ago)
@@ -466,7 +477,7 @@ class AppAccessE2ERehearsalTests(APITestCase):
         verified = self.otp_verify(SHARED_PHONE, gym=str(self.gym_a.uuid))
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {verified.data['token']}")
 
-        membership = Membership.objects.for_tenant(self.gym_a).filter(customer__phone=SHARED_PHONE).first()
+        membership = Membership.objects.for_tenant(self.gym_a).filter(customer__phone=SHARED_PHONE_E164).first()
         membership.status = Membership.Status.CANCELLED
         membership.end_date = timezone.localdate()  # today — still inside the window
         membership.save(update_fields=["status", "end_date"])
@@ -497,8 +508,8 @@ class AppAccessE2ERehearsalTests(APITestCase):
         self.assertEqual(customers.status_code, 200, customers.data)
         rows = _rows(customers)
         phones = {row["phone"] for row in rows}
-        self.assertEqual(phones, {SECOND_MEMBER_PHONE})
-        self.assertNotIn(SHARED_PHONE, phones)
+        self.assertEqual(phones, {SECOND_MEMBER_PHONE_E164})
+        self.assertNotIn(SHARED_PHONE_E164, phones)
 
         # The membership list is the member's own.
         memberships = self.client.get("/api/v1/memberships/memberships/")
@@ -519,8 +530,8 @@ class AppAccessE2ERehearsalTests(APITestCase):
         self.onboard(SHARED_PHONE, self.plan_b, user=self.manager_b)
 
         # Gym A's member and gym B's member are distinct accounts.
-        user_a = User.objects.get(tenant=self.gym_a, phone=SHARED_PHONE)
-        user_b = User.objects.get(tenant=self.gym_b, phone=SHARED_PHONE)
+        user_a = User.objects.get(tenant=self.gym_a, phone=SHARED_PHONE_E164)
+        user_b = User.objects.get(tenant=self.gym_b, phone=SHARED_PHONE_E164)
         self.assertNotEqual(user_a.pk, user_b.pk)
 
         # The anchor decides: the same phone verifies into gym A...

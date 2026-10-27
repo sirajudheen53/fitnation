@@ -17,6 +17,7 @@ from apps.customers.models import (
     ProgressPhoto,
 )
 from apps.users.models import User
+from apps.users.phone import normalize_e164, phone_lookup_candidates
 from apps.users.services import SYNTHETIC_EMAIL_DOMAIN, synthetic_otp_email
 
 # FBOS-026 part 1: profile photo constraints (JPEG/PNG/WebP, max 5 MB).
@@ -168,6 +169,15 @@ class CustomerSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Profile photo must be a JPEG, PNG or WebP image.")
         return value
 
+    def validate_phone(self, value: str) -> str:
+        """Accept raw or E.164 input, canonicalize to E.164 (#88).
+
+        The converged login key is E.164 (Firebase ``phone_number`` claims),
+        so ``8606806956`` and ``+918606806956`` payloads must land on the same
+        stored value — both are accepted, ambiguous values pass untouched.
+        """
+        return normalize_e164(value)
+
     def validate(self, data: dict) -> dict:
         """Ensure a tenant does not contain duplicate customer emails.
 
@@ -292,8 +302,12 @@ class CustomerSerializer(serializers.ModelSerializer):
         return not user.email or user.email.lower().endswith(SYNTHETIC_EMAIL_DOMAIN)
 
     def _phone_identity_match(self, tenant, phone: str):
-        """Return the tenant user already holding this phone, if any."""
-        return User.objects.filter(tenant=tenant, phone=phone).order_by("id").first()
+        """Return the tenant user already holding this phone, if any.
+
+        Candidate-tolerant (#88): the payload may carry E.164 while the
+        stored identity still sits under the raw typed form (or vice versa).
+        """
+        return User.objects.filter(tenant=tenant, phone__in=phone_lookup_candidates(phone)).order_by("id").first()
 
     def _converge_phone_identity(self, user: User, validated_data: dict) -> None:
         """Replace a synthetic/empty email with the customer's real email.

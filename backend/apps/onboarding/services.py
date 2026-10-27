@@ -32,6 +32,7 @@ from apps.onboarding.serializers import (
 )
 from apps.payments.models import Invoice, Payment
 from apps.payments.razorpay_service import RazorpayError, create_order
+from apps.users.phone import phone_lookup_candidates
 
 if TYPE_CHECKING:
     from apps.tenants.models import Tenant
@@ -116,7 +117,13 @@ def _create_customer(tenant: Tenant, customer_payload: dict, request: Any) -> tu
     known = None
     phone = customer_payload.get("phone", "")
     if phone:
-        known = Customer.objects.for_tenant(tenant).filter(phone=phone, user__isnull=False).first()
+        # Candidate-tolerant (#88): the wizard payload and the stored row may
+        # disagree on format until the E.164 data migration has rolled out.
+        known = (
+            Customer.objects.for_tenant(tenant)
+            .filter(phone__in=phone_lookup_candidates(phone), user__isnull=False)
+            .first()
+        )
     customer = serializer.save(tenant=tenant)
     returning = known is not None and known.pk == customer.pk
     return customer, returning

@@ -25,6 +25,7 @@ from apps.customers.models import Customer
 from apps.memberships.models import Membership, MembershipPlan
 from apps.tenants.services import provision_tenant
 from apps.users.models import AuthToken, User
+from apps.users.phone import normalize_e164
 from tests.test_app_access_e2e import _ok_poster
 
 JOURNEY_PHONE = "9876500001"
@@ -137,7 +138,7 @@ class AppAccessJourneyLogTests(APITestCase):
         return response.data
 
     def set_end_date(self, days_ago: int, status: str) -> None:
-        membership = Membership.objects.filter(tenant=self.gym_a, customer__phone=JOURNEY_PHONE).first()
+        membership = Membership.objects.filter(tenant=self.gym_a, customer__phone=normalize_e164(JOURNEY_PHONE)).first()
         membership.end_date = timezone.localdate() - timedelta(days=days_ago)
         membership.status = status
         membership.save(update_fields=["end_date", "status"])
@@ -157,7 +158,7 @@ class AppAccessJourneyLogTests(APITestCase):
         self.assertEqual(invite["channel"], "whatsapp")
 
         # 2. resend inside the cooldown is idempotent.
-        customer = Customer.objects.get(tenant=self.gym_a, phone=JOURNEY_PHONE)
+        customer = Customer.objects.get(tenant=self.gym_a, phone=normalize_e164(JOURNEY_PHONE))
         self.auth_as(self.desk)
         with mock.patch("apps.notifications.services.channels.requests.post", self.poster):
             repeat = self.client.post("/api/v1/memberships/app-invite/", {"customer_id": customer.pk}, format="json")
@@ -211,7 +212,7 @@ class AppAccessJourneyLogTests(APITestCase):
         listing = self.client.get("/api/v1/customers/customers/")
         phones = {row["phone"] for row in listing.data["results"]}
         self.log("5 isolation", f"member-2 sees phones={sorted(phones)} (only their own row)")
-        self.assertEqual(phones, {"9876500002"})
+        self.assertEqual(phones, {normalize_e164("9876500002")})
 
         # 6. the same phone at another gym resolves via the anchor.
         self.onboard(JOURNEY_PHONE, self.desk_b, self.plan_b, self.branch_b)

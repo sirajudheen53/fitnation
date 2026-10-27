@@ -8,6 +8,7 @@ from django.db import models
 from apps.branches.models import Branch
 from apps.tenants.models import TenantModelMixin
 from apps.users.models import User
+from apps.users.phone import normalize_e164
 
 # Issue #81: the display label every surface shows for a deleted customer.
 # Stored on the scrubbed row's ``name`` AND forced by serializer display
@@ -112,6 +113,16 @@ class Customer(TenantModelMixin):
     def is_deleted(self) -> bool:
         """True once the soft-delete marker is set."""
         return self.deleted_at is not None
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        """Persist, storing the phone in E.164 (issue #88).
+
+        ``Customer.phone`` mirrors the login key on the linked user; both must
+        normalize identically or the ERP create/edit convergence (ADR-002) and
+        the member search drift apart. Ambiguous values stay untouched.
+        """
+        self.phone = normalize_e164(self.phone)
+        super().save(*args, **kwargs)
 
     def display_name(self) -> str:
         """The name every surface should show: label when deleted, else name."""

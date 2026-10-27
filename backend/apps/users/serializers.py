@@ -8,6 +8,7 @@ from rest_framework import serializers
 from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.users.auth import AuthToken
 from apps.users.models import Trainer, TrainerCustomerAssignment, TrainerSchedule, User
+from apps.users.phone import normalize_e164
 
 
 def _reject_duplicate_email(email: str) -> None:
@@ -98,6 +99,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Managers cannot create owners or other managers.")
         return value
 
+    def validate_phone(self, value: str) -> str:
+        """Canonicalize the phone to E.164 (#88) so issue + verify + the
+        tenant-resolution ladder all bind and match on the same string,
+        whether the app sends ``8606806956`` or ``+918606806956``."""
+        return normalize_e164(value)
+
     def validate(self, data: dict) -> dict:
         """Reject emails already used by any platform user."""
         _reject_duplicate_email(data.get("email", ""))
@@ -112,6 +119,11 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
         model = User
         fields: ClassVar[list[str]] = ["first_name", "last_name", "phone", "role", "is_active"]
+
+    def validate_phone(self, value: str) -> str:
+        """Canonicalize the phone to E.164 (#88) — the login key is matched
+        exactly against Firebase's E.164 claims."""
+        return normalize_e164(value)
 
     def validate_role(self, value: str) -> str:
         """Validate role updates do not escalate privileges.
@@ -159,6 +171,11 @@ class OTPRequestSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20)
     gym = serializers.UUIDField(required=False)  # device-bound gym anchor
 
+    def validate_phone(self, value: str) -> str:
+        """Canonicalize to E.164 (#88) so the code binds to the same string
+        the verify call and the identity convergence use."""
+        return normalize_e164(value)
+
 
 class OTPVerifySerializer(serializers.Serializer):
     """OTP verification — explicit gym anchors only (FBOS-011 §3/§4)."""
@@ -171,6 +188,10 @@ class OTPVerifySerializer(serializers.Serializer):
         required=False,
         allow_blank=True,
     )
+
+    def validate_phone(self, value: str) -> str:
+        """Canonicalize to E.164 (#88) — must match the request-side binding."""
+        return normalize_e164(value)
 
 
 class FirebaseAuthSerializer(serializers.Serializer):
@@ -276,6 +297,10 @@ class TrainerCreateSerializer(serializers.Serializer):
     experience_years = serializers.IntegerField(required=False, default=0)
     max_clients = serializers.IntegerField(required=False, default=50)
     profile_photo = serializers.URLField(required=False, allow_blank=True)
+
+    def validate_phone(self, value: str) -> str:
+        """Canonicalize the trainer phone to E.164 (#88), like user creates."""
+        return normalize_e164(value)
 
     def to_internal_value(self, data: dict) -> dict:
         """Parse certifications from JSON string if needed."""

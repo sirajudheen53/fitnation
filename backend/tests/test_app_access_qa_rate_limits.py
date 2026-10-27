@@ -23,6 +23,7 @@ from apps.memberships.models import MembershipPlan
 from apps.notifications.models import NotificationLog
 from apps.tenants.services import provision_tenant
 from apps.users.models import OtpCode, User
+from apps.users.phone import normalize_e164
 
 FLAG_ON = {"app_access": True}
 
@@ -279,7 +280,9 @@ class OtpExpiryTests(APITestCase):
     def test_an_expired_code_is_refused(self) -> None:
         """A code past its TTL is rejected (400)."""
         code = self._issue("9876580001")
-        OtpCode.objects.filter(phone="9876580001").update(expires_at=timezone.now() - timedelta(minutes=1))
+        OtpCode.objects.filter(phone=normalize_e164("9876580001")).update(
+            expires_at=timezone.now() - timedelta(minutes=1)
+        )
         response = self.client.post(
             "/api/v1/users/auth/otp/verify/",
             {"phone": "9876580001", "otp": code, "gym": str(self.tenant.uuid)},
@@ -326,6 +329,6 @@ class OtpExpiryTests(APITestCase):
     def test_the_code_is_hashed_at_rest(self) -> None:
         """The stored row never contains the plaintext code."""
         code = self._issue("9876580006")
-        row = OtpCode.objects.get(phone="9876580006")
+        row = OtpCode.objects.get(phone=normalize_e164("9876580006"))
         self.assertNotEqual(row.code_hash, code)
         self.assertNotIn(code, row.code_hash)

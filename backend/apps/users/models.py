@@ -6,6 +6,7 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
 from apps.tenants.models import Tenant, TenantModelMixin
+from apps.users.phone import normalize_e164
 
 
 class UserManager(BaseUserManager):
@@ -112,6 +113,17 @@ class User(AbstractUser):
         """User model metadata."""
 
         db_table = "users"
+
+    def save(self, *args: object, **kwargs: object) -> None:
+        """Persist, storing the phone in E.164 (issue #88).
+
+        The login ladders match ``User.phone`` EXACTLY against Firebase's
+        E.164 ``phone_number`` claim, so every write path (API, seeds, admin)
+        lands on the canonical ``+91…`` form; ambiguous values are stored
+        untouched and remain reachable through the tolerant candidate ladder.
+        """
+        self.phone = normalize_e164(self.phone)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         """Return user label."""

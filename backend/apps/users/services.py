@@ -23,6 +23,7 @@ from apps.notifications.models import DeviceToken
 from apps.tenants.models import Tenant
 from apps.users.auth import AuthToken
 from apps.users.models import EmailVerificationToken, OtpCode, User
+from apps.users.phone import phone_lookup_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -470,7 +471,12 @@ def resolve_tenant_for_otp(phone: str, gym_anchor: str | None, ip: str | None = 
             raise TenantResolutionError({"gym": "Unknown gym."}, status_code=400) from None
 
     _throttle_lookup(phone, ip)
-    users = list(User.objects.filter(role=User.Role.CUSTOMER, phone=phone).select_related("tenant"))
+    # phone__in over every storage format (#88): Firebase hands the claim in
+    # E.164 while rows may still sit under the raw typed form until the data
+    # migration (users 0008) lands — both must resolve.
+    users = list(
+        User.objects.filter(role=User.Role.CUSTOMER, phone__in=phone_lookup_candidates(phone)).select_related("tenant")
+    )
     tenants = {u.tenant for u in users if u.tenant is not None}
     if len(tenants) == 1:
         return next(iter(tenants)), None
@@ -540,8 +546,18 @@ def get_or_create_customer_by_phone(phone: str, tenant: Tenant) -> User:
             hit (generic non-enumerating 429 at the view layer).
     """
     # ADR-002 rule 2: reuse an existing owner-created customer user in the
-    # tenant before provisioning a synthetic phone-keyed identity.
-    existing = User.objects.filter(tenant=tenant, phone=phone, role=User.Role.CUSTOMER).order_by("id").first()
+    # tenant before provisioning a synthetic phone-keyed identity. Tolerant
+    # candidates (#88): the candidate may arrive E.164 from Firebase while
+    # the stored row still carries the raw typed form.
+    existing = (
+        User.objects.filter(
+            tenant=tenant,
+            phone__in=phone_lookup_candidates(phone),
+            role=User.Role.CUSTOMER,
+        )
+        .order_by("id")
+        .first()
+    )
     if existing is not None:
         Customer.objects.get_or_create(
             user=existing,
