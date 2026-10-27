@@ -275,8 +275,24 @@ import {
   HealthProfileFormData,
 } from "@/types/customer";
 
-export function fetchCustomers(token: string): Promise<CustomerListResponse> {
-  return request<CustomerListResponse>("/customers/customers/", { token });
+export function fetchCustomers(
+  token: string,
+  params?: { assigned_workout_plan?: string; assigned_diet_plan?: string },
+): Promise<CustomerListResponse> {
+  // Issue #90: server-side filter by active plan assignment — "any", "none",
+  // or a plan id.
+  const query = new URLSearchParams();
+  if (params?.assigned_workout_plan) {
+    query.set("assigned_workout_plan", params.assigned_workout_plan);
+  }
+  if (params?.assigned_diet_plan) {
+    query.set("assigned_diet_plan", params.assigned_diet_plan);
+  }
+  const qs = query.toString();
+  return request<CustomerListResponse>(
+    `/customers/customers/${qs ? `?${qs}` : ""}`,
+    { token },
+  );
 }
 
 export function fetchCustomer(id: number | string, token: string): Promise<Customer> {
@@ -1211,6 +1227,28 @@ export function assignDietPlan(
   });
 }
 
+/** Issue #90: the customer's current (active) diet assignment(s). */
+export function fetchActiveDietAssignments(
+  token: string,
+  customerId: number | string,
+): Promise<DietAssignment[]> {
+  return request<DietAssignment[]>(
+    `/diet-assignments/active/?customer=${customerId}`,
+    { token },
+  );
+}
+
+/** Issue #90: end a diet assignment (deactivates and stamps the end date). */
+export function unassignDietAssignment(
+  id: number | string,
+  token: string,
+): Promise<DietAssignment> {
+  return request<DietAssignment>(`/diet-assignments/${id}/unassign/`, {
+    method: "POST",
+    token,
+  });
+}
+
 /* ── Exercises ───────────────────────────────────────────────── */
 
 import {
@@ -1494,6 +1532,28 @@ export function assignWorkoutPlan(
     body: data,
     token,
   });
+}
+
+/** Issue #90: the customer's current (active) workout assignment(s). */
+export function fetchActiveWorkoutAssignments(
+  token: string,
+  customerId: number | string,
+): Promise<WorkoutAssignment[]> {
+  return request<WorkoutAssignment[]>(
+    `/workouts/workout-assignments/active/?customer=${customerId}`,
+    { token },
+  );
+}
+
+/** Issue #90: end a workout assignment (deactivates and stamps the end date). */
+export function unassignWorkoutAssignment(
+  id: number | string,
+  token: string,
+): Promise<WorkoutAssignment> {
+  return request<WorkoutAssignment>(
+    `/workouts/workout-assignments/${id}/unassign/`,
+    { method: "POST", token },
+  );
 }
 
 /* Workout logs */

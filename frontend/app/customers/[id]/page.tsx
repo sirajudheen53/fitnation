@@ -15,6 +15,7 @@ import { AccessControlTab } from "@/features/access/components/AccessControlTab"
 import { BiometricTab } from "@/features/access/components/BiometricTab";
 import { AppAccessCard } from "@/features/customers/components/AppAccessCard";
 import { TrainerSection } from "@/features/customers/components/TrainerSection";
+import { PlanAssignmentsSection } from "@/features/customers/components/PlanAssignmentsSection";
 import { Spinner, Alert, Button, Badge } from "@/components/ui";
 import { getToken } from "@/lib/auth";
 import {
@@ -441,6 +442,8 @@ export default function CustomerDetailPage() {
                 />
                 {/* Sprint 12 (issue #54): trainer assignment + PT pack badge. */}
                 <TrainerSection customer={customer} />
+                {/* Issue #90: current workout/meal plan with assign/replace/unassign. */}
+                <PlanAssignmentsSection customer={customer} />
               </div>
             )}
             {activeTab === "goals" && (

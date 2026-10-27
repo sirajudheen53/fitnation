@@ -142,6 +142,8 @@ export interface DietAssignmentFormData {
   start_date: string;
   end_date?: string;
   notes?: string;
+  /** Issue #90: deactivate the customer's other active assignment(s) on create. */
+  replace_active?: boolean;
 }
 
 export interface FoodItemListResponse {
