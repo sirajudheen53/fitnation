@@ -13,8 +13,10 @@ import { invitableIds, sendBulkInvites } from "@/features/customers/lib/bulkInvi
 import { Button, Alert, Spinner } from "@/components/ui";
 import {
   fetchCustomers,
+  fetchDietPlans,
   fetchMembershipPlans,
   fetchMemberships,
+  fetchWorkoutPlans,
   sendAppInvite,
   deleteCustomer,
   errorMessage,
@@ -22,9 +24,16 @@ import {
 import { getToken } from "@/lib/auth";
 import { canAccessRoute } from "@/lib/permissions";
 import type { Customer } from "@/types/customer";
+import type { DietPlan } from "@/types/diet";
 import type { Membership, MembershipPlan } from "@/types/membership";
+import type { WorkoutPlan } from "@/types/workout";
 
 type AppAccessFilter = "all" | "entitled" | "grace" | "not_entitled";
+/**
+ * Issue #90: assigned-plan filter value — "all", "any" (has an active
+ * assignment), "none", or a specific plan id (server-side filter).
+ */
+type PlanAssignmentFilter = string;
 
 const FILTER_OPTIONS: { value: AppAccessFilter; label: string }[] = [
   { value: "all", label: "All members" },
@@ -46,10 +55,14 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
+  const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>([]);
+  const [dietPlans, setDietPlans] = useState<DietPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [filter, setFilter] = useState<AppAccessFilter>("all");
+  const [workoutPlanFilter, setWorkoutPlanFilter] = useState<PlanAssignmentFilter>("all");
+  const [dietPlanFilter, setDietPlanFilter] = useState<PlanAssignmentFilter>("all");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [inviting, setInviting] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(() => {
@@ -72,31 +85,73 @@ export default function CustomersPage() {
 
     const authToken: string = token;
 
-    async function load() {
+    // Supporting data for the app-access column and the plan filters — all
+    // best-effort: the column degrades to "—" and the plan selects to
+    // Assigned/Not assigned only.
+    async function loadSupportingData() {
       try {
-        const response = await fetchCustomers(authToken);
-        setCustomers(response.results);
-        // App-access derivation needs memberships + plans (both existing
-        // endpoints); best-effort — the column shows "—" when this fails.
-        try {
-          const [membershipRes, planRes] = await Promise.all([
-            fetchMemberships(authToken),
-            fetchMembershipPlans(authToken),
-          ]);
-          setMemberships(membershipRes.results);
-          setPlans(planRes.results);
-        } catch {
-          /* app-access column degrades to "—" */
-        }
-      } catch (err) {
-        setError(errorMessage(err));
-      } finally {
-        setLoading(false);
+        const [membershipRes, planRes] = await Promise.all([
+          fetchMemberships(authToken),
+          fetchMembershipPlans(authToken),
+        ]);
+        setMemberships(membershipRes.results);
+        setPlans(planRes.results);
+      } catch {
+        /* app-access column degrades to "—" */
+      }
+      try {
+        const [workoutRes, dietRes] = await Promise.all([
+          fetchWorkoutPlans(authToken),
+          fetchDietPlans(authToken),
+        ]);
+        setWorkoutPlans(workoutRes.results);
+        setDietPlans(dietRes.results);
+      } catch {
+        /* plan selects degrade to assigned/not-assigned options */
       }
     }
 
-    load();
+    loadSupportingData();
   }, [router, userRole]);
+
+  // Issue #90: the customers list itself is server-filtered by the active
+  // plan assignment, so it refetches whenever a plan filter changes. The
+  // loading flag is raised in the change handlers — the initial load starts
+  // loading=true — so no setState happens synchronously inside this effect.
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    let cancelled = false;
+    fetchCustomers(token, {
+      assigned_workout_plan: workoutPlanFilter === "all" ? undefined : workoutPlanFilter,
+      assigned_diet_plan: dietPlanFilter === "all" ? undefined : dietPlanFilter,
+    })
+      .then((response) => {
+        if (!cancelled) {
+          setCustomers(response.results);
+          setError(null);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workoutPlanFilter, dietPlanFilter]);
+
+  function changeWorkoutPlanFilter(value: string) {
+    setWorkoutPlanFilter(value);
+    setLoading(true);
+  }
+
+  function changeDietPlanFilter(value: string) {
+    setDietPlanFilter(value);
+    setLoading(true);
+  }
 
   const canCreate = userRole ? canAccessRoute(userRole, "/customers/new") : false;
   const canOnboard = userRole ? canAccessRoute(userRole, "/onboarding/member") : false;
@@ -200,7 +255,10 @@ export default function CustomersPage() {
     >
       {error && <Alert variant="error">{error}</Alert>}
 
-      {!loading && customers.length > 0 && (
+      {/* Toolbar stays up while a plan filter is active so an empty result can
+          always be reset (issue #90). */}
+      {!loading &&
+        (customers.length > 0 || workoutPlanFilter !== "all" || dietPlanFilter !== "all") && (
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <label htmlFor="app-access-filter" className="text-sm font-medium text-gray-700">
             App access
@@ -214,6 +272,46 @@ export default function CustomersPage() {
             {FILTER_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="workout-plan-filter" className="text-sm font-medium text-gray-700">
+            Workout plan
+          </label>
+          <select
+            id="workout-plan-filter"
+            data-testid="workout-plan-filter"
+            value={workoutPlanFilter}
+            onChange={(e) => changeWorkoutPlanFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          >
+            <option value="all">All</option>
+            <option value="any">Assigned</option>
+            <option value="none">Not assigned</option>
+            {workoutPlans.map((plan) => (
+              <option key={plan.id} value={String(plan.id)}>
+                {plan.name}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="diet-plan-filter" className="text-sm font-medium text-gray-700">
+            Meal plan
+          </label>
+          <select
+            id="diet-plan-filter"
+            data-testid="diet-plan-filter"
+            value={dietPlanFilter}
+            onChange={(e) => changeDietPlanFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+          >
+            <option value="all">All</option>
+            <option value="any">Assigned</option>
+            <option value="none">Not assigned</option>
+            {dietPlans.map((plan) => (
+              <option key={plan.id} value={String(plan.id)}>
+                {plan.name}
               </option>
             ))}
           </select>
