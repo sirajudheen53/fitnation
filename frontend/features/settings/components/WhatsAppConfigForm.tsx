@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { KeyRound, Lock, MessageCircle, Save, Send, Webhook } from "lucide-react";
+import { KeyRound, MessageCircle, Save, Send, Webhook } from "lucide-react";
 import {
   Alert,
   Badge,
@@ -14,6 +14,7 @@ import {
   CardFooter,
   CardHeader,
   Input,
+  PhoneInput,
   Spinner,
 } from "@/components/ui";
 import {
@@ -24,6 +25,7 @@ import {
   updateTenantWhatsappConfig,
 } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { isValidPhoneE164 } from "@/lib/phone";
 
 const configSchema = z.object({
   wati_endpoint: z
@@ -139,8 +141,9 @@ export function WhatsAppConfigForm() {
       const ok = result.status === "sent";
       setTestResult({
         ok,
+        // testPhone is the composed E.164 value (#88) — show it as-is.
         message: ok
-          ? `Test message sent to +91${testPhone.trim()} — check the phone.` +
+          ? `Test message sent to ${testPhone.trim()} — check the phone.` +
             `${result.provider_status ? ` Provider accepted it (status: ${result.provider_status}).` : ""}` +
             `${result.message_id ? ` Message id: ${result.message_id}.` : ""}`
           : `Send finished with status "${result.status}"${result.detail ? `: ${result.detail}` : ""}.`,
@@ -245,22 +248,17 @@ export function WhatsAppConfigForm() {
           )}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1">
-              <Input
+              <PhoneInput
                 label="Phone to message"
-                type="tel"
-                inputMode="numeric"
-                maxLength={10}
-                placeholder="9876543210"
-                icon={<Lock className="h-4 w-4 opacity-0" />}
                 value={testPhone}
-                onChange={(e) => setTestPhone(e.target.value.replace(/\D/g, ""))}
+                onChange={setTestPhone}
               />
             </div>
             <Button
               type="button"
               variant="outline"
               loading={testing}
-              disabled={!/^\d{10}$/.test(testPhone)}
+              disabled={!isValidPhoneE164(testPhone)}
               onClick={handleTestSend}
             >
               <Send className="h-4 w-4" />

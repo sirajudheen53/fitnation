@@ -98,7 +98,8 @@ describe("EditGymDialog", () => {
         {
           name: "Iron Temple Fitness II",
           contact_email: "owner@irontemple.com",
-          contact_phone: "+91 98765 43210",
+          // Legacy "+91 …" prefill canonicalizes on seed (#88).
+          contact_phone: "+919876543210",
           subscription_plan: "professional",
         },
         "admin-token",

@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
-import { Button, Card, CardBody, Input } from "@/components/ui";
+import { Button, Card, CardBody, Input, PhoneInput } from "@/components/ui";
 import { errorMessage, updateAdminTenant } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { normalizePhoneValue } from "@/lib/phone";
 import { SUBSCRIPTION_PLANS, type AdminTenant } from "@/types/admin";
 
 interface EditGymDialogProps {
@@ -17,7 +18,10 @@ interface EditGymDialogProps {
 export function EditGymDialog({ tenant, onClose, onSaved }: EditGymDialogProps) {
   const [name, setName] = useState(tenant.name);
   const [contactEmail, setContactEmail] = useState(tenant.contact_email);
-  const [contactPhone, setContactPhone] = useState(tenant.contact_phone);
+  // Canonicalize on seed so an untouched legacy-format field saves clean (#88).
+  const [contactPhone, setContactPhone] = useState(() =>
+    normalizePhoneValue(tenant.contact_phone),
+  );
   const [plan, setPlan] = useState(tenant.subscription_plan);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,10 +85,10 @@ export function EditGymDialog({ tenant, onClose, onSaved }: EditGymDialogProps) 
             onChange={(e) => setContactEmail(e.target.value)}
             error={fieldErrors.contact_email?.[0]}
           />
-          <Input
+          <PhoneInput
             label="Contact phone"
             value={contactPhone}
-            onChange={(e) => setContactPhone(e.target.value)}
+            onChange={setContactPhone}
             error={fieldErrors.contact_phone?.[0]}
           />
           <div className="space-y-1.5">

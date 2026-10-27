@@ -121,7 +121,8 @@ describe("WhatsAppConfigForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /Send test message/i }));
 
     await waitFor(() =>
-      expect(mockedSendWhatsappTest).toHaveBeenCalledWith("9876543210", expect.anything()),
+      // PhoneInput composes the E.164 value from the digits (#88).
+      expect(mockedSendWhatsappTest).toHaveBeenCalledWith("+919876543210", expect.anything()),
     );
     expect(await screen.findByText(/Test message sent to \+919876543210/i)).toBeInTheDocument();
   });
@@ -236,7 +237,7 @@ describe("GupshupConfigForm (issue #67)", () => {
 
     await waitFor(() =>
       expect(mockedSendWhatsappTest).toHaveBeenCalledWith(
-        "9876543210",
+        "+919876543210",
         expect.anything(),
         "gupshup",
       ),

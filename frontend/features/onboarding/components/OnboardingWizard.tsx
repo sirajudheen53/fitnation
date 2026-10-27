@@ -22,6 +22,7 @@ import {
   verifyOnboardingPayment,
 } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { samePhoneNumber } from "@/lib/phone";
 import type { Branch } from "@/types/branch";
 import type { MembershipPlan } from "@/types/membership";
 import type { AccessDevice, DeviceSyncResult } from "@/types/access";
@@ -118,7 +119,10 @@ export function OnboardingWizard({ initialBranchId = null }: OnboardingWizardPro
       setLookupLoading(true);
       searchCustomers(authToken, phone)
         .then((matches) => {
-          const exact = matches.find((c) => c.phone === phone) ?? matches[0] ?? null;
+          // Tolerant match (#88): the row may sit under any legacy storage
+          // shape (bare/trunk/country-prefixed) while the migration rolls out.
+          const exact =
+            matches.find((c) => samePhoneNumber(c.phone, phone)) ?? matches[0] ?? null;
           patchState({ returningMember: exact });
         })
         .catch(() => patchState({ returningMember: null }))

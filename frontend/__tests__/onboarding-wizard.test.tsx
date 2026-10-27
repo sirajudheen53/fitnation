@@ -139,7 +139,7 @@ describe("OnboardingWizard — step 1 (Who)", () => {
     fireEvent.change(screen.getByLabelText("Phone number"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: /Next: Plan & payment/i }));
-    expect(await screen.findByText("Enter a 10-digit phone number")).toBeInTheDocument();
+    expect(await screen.findByText("Enter a valid phone number")).toBeInTheDocument();
     expect(screen.getByText("Name is required")).toBeInTheDocument();
     expect(screen.queryByTestId("step-plan-payment")).not.toBeInTheDocument();
   });
@@ -237,7 +237,8 @@ describe("OnboardingWizard — step 3 (Biometric)", () => {
     const today = todayISO();
     expect(mockedOnboardMember).toHaveBeenCalledWith(
       expect.objectContaining({
-        customer: expect.objectContaining({ phone: "9876543210", name: "Asha Nair", branch: 2 }),
+        // PhoneInput composes E.164 at the source (#88).
+        customer: expect.objectContaining({ phone: "+919876543210", name: "Asha Nair", branch: 2 }),
         membership: { plan: 7, start_date: today, end_date: addDays(today, 30) },
         payment: expect.objectContaining({ method: "cash", amount: 2500 }),
         biometrics: [{ device: 3, credential_type: "fingerprint", device_user_id: "1017" }],

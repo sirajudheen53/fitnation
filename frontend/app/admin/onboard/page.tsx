@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Copy, RotateCcw, Table2 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Button, Card, CardBody, Input } from "@/components/ui";
+import { Button, Card, CardBody, Input, PhoneInput } from "@/components/ui";
 import { errorMessage, onboardGym } from "@/lib/api";
 import { getToken, getStoredUser } from "@/lib/auth";
 import { SUBSCRIPTION_PLANS, type AdminOnboardGymResult } from "@/types/admin";
@@ -151,12 +151,12 @@ export default function AdminOnboardGymPage() {
               error={fieldErrors.owner_email?.[0]}
               placeholder="owner@gym.com"
             />
-            <Input
+            <PhoneInput
               label="Owner phone (optional)"
               value={form.owner_phone}
-              onChange={(e) => setField("owner_phone", e.target.value)}
+              onChange={(value) => setField("owner_phone", value)}
               error={fieldErrors.owner_phone?.[0]}
-              placeholder="+91 98765 43210"
+              autoComplete="tel"
             />
             <Input
               label="First branch name"

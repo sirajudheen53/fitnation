@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { MessageCircle, KeyRound, Link2, Send } from "lucide-react";
-import { Button, Input, Alert, Badge } from "@/components/ui";
+import { Button, Input, Alert, Badge, PhoneInput } from "@/components/ui";
 import type { WatiSettings, WatiSettingsUpdate } from "@/types/notification";
 import { errorMessage } from "@/lib/api";
 
@@ -66,6 +66,9 @@ export function NotificationSettingsForm({
   });
 
   const [enabled, setEnabled] = useState(false);
+  // Test recipient as composed E.164 (PhoneInput, #88) — the page passes it
+  // straight to the test-send endpoint.
+  const [testRecipient, setTestRecipient] = useState("");
 
   useEffect(() => {
     if (settings) {
@@ -184,18 +187,19 @@ export function NotificationSettingsForm({
           Verify your Wati integration by sending a test WhatsApp message to a phone number.
         </p>
         <div className="flex flex-col gap-3 sm:flex-row">
-          <Input
-            placeholder="Recipient phone (e.g. +91 98765 43210)"
-            id="test-recipient"
-            className="flex-1"
-          />
+          <div className="flex-1">
+            <PhoneInput
+              label="Recipient phone"
+              value={testRecipient}
+              onChange={setTestRecipient}
+            />
+          </div>
           <Button
             type="button"
             variant="outline"
             loading={testing}
             onClick={(e) => {
-              const input = document.getElementById("test-recipient") as HTMLInputElement | null;
-              onTest({ to: input?.value ?? "" });
+              onTest({ to: testRecipient });
               e.preventDefault();
             }}
           >

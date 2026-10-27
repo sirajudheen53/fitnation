@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, type FocusEvent } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { Phone, User, CalendarDays, Mail, ChevronDown, ChevronRight } from "lucide-react";
-import { Alert, Button, Input } from "@/components/ui";
+import { User, CalendarDays, Mail, ChevronDown, ChevronRight } from "lucide-react";
+import { Alert, Button, Input, PhoneInput } from "@/components/ui";
 import type { Customer, Gender } from "@/types/customer";
 import type { Branch } from "@/types/branch";
+import { isValidPhoneE164, parsePhoneInput } from "@/lib/phone";
 import { GENDER_OPTIONS } from "../lib/wizard";
 import type { OnboardingFormState } from "../lib/wizard";
 
@@ -13,13 +14,15 @@ interface StepWhoProps {
   state: OnboardingFormState;
   branches: Branch[];
   onChange: (patch: Partial<OnboardingFormState>) => void;
-  /** Phone lookup on blur; the wizard owns the query (loading state). */
+  /**
+   * Phone lookup on blur; the wizard owns the query (loading state).
+   * Receives the bare national digits — the backend's search matches them
+   * against both E.164 and legacy raw rows (issue #88).
+   */
   onPhoneBlur: (phone: string) => void;
   lookupLoading: boolean;
   onNext: () => void;
 }
-
-const PHONE_PATTERN = /^\d{10}$/;
 
 export function StepWho({
   state,
@@ -32,15 +35,17 @@ export function StepWho({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const handlePhoneBlur = (event: FocusEvent<HTMLInputElement>) => {
-    const phone = event.target.value.replace(/\D/g, "");
-    if (PHONE_PATTERN.test(phone)) onPhoneBlur(phone);
+  const handlePhoneBlur = () => {
+    if (!isValidPhoneE164(state.phone)) return;
+    // The search runs on the national digits so the backend's icontains
+    // search matches both E.164 and legacy bare rows (issue #88).
+    onPhoneBlur(parsePhoneInput(state.phone).national);
   };
 
   const validate = (): boolean => {
     const next: Record<string, string> = {};
-    if (!PHONE_PATTERN.test(state.phone.replace(/\D/g, ""))) {
-      next.phone = "Enter a 10-digit phone number";
+    if (!isValidPhoneE164(state.phone)) {
+      next.phone = "Enter a valid phone number";
     }
     if (state.name.trim() === "") next.name = "Name is required";
     if (state.branchId === null) next.branchId = "Select a branch";
@@ -70,21 +75,16 @@ export function StepWho({
       )}
 
       <div className="max-w-sm">
-        <Input
+        <PhoneInput
           label="Phone number"
-          type="tel"
-          inputMode="numeric"
-          maxLength={10}
-          placeholder="9876543210"
-          icon={<Phone className="h-4 w-4" />}
           error={errors.phone}
           hint={lookupLoading ? "Looking up…" : "The member's phone IS their login"}
           value={state.phone}
           onBlur={handlePhoneBlur}
-          onChange={(e) => {
+          onChange={(value) => {
             // Editing the phone clears the returning-member banner (stale match).
             onChange({
-              phone: e.target.value.replace(/\D/g, ""),
+              phone: value,
               returningMember: null,
             });
           }}
@@ -186,11 +186,10 @@ export function StepWho({
               value={state.emergencyContactName}
               onChange={(e) => onChange({ emergencyContactName: e.target.value })}
             />
-            <Input
+            <PhoneInput
               label="Emergency contact phone"
-              type="tel"
               value={state.emergencyContactPhone}
-              onChange={(e) => onChange({ emergencyContactPhone: e.target.value })}
+              onChange={(value) => onChange({ emergencyContactPhone: value })}
             />
           </div>
         )}

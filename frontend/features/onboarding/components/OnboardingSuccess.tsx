@@ -11,6 +11,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { Alert, Badge, Button, Card, CardBody } from "@/components/ui";
+import { displayPhone } from "@/lib/phone";
 import type { DeviceSyncResult } from "@/types/access";
 import type { AppInviteBlock, OnboardingResult } from "@/types/onboarding";
 import { describeAppInvite, paymentMethodLabel } from "../lib/wizard";
@@ -74,8 +75,8 @@ export function OnboardingSuccess({
         </h2>
         <p className="mt-1 text-sm text-gray-500">
           The member signs into the mobile app with their phone{" "}
-          <span className="font-medium">+91{result.customer.phone}</span> using OTP —
-          there is no password to hand over.
+          <span className="font-medium">{displayPhone(result.customer.phone)}</span> using
+          OTP — there is no password to hand over.
         </p>
       </div>
 
@@ -123,7 +124,7 @@ export function OnboardingSuccess({
             Member
           </div>
           <p className="mt-1 text-lg font-semibold text-gray-900">{result.customer.name}</p>
-          <p className="text-sm text-gray-500">Phone: +91{result.customer.phone}</p>
+          <p className="text-sm text-gray-500">Phone: {displayPhone(result.customer.phone)}</p>
           {membership && (
             <p className="text-sm text-gray-500">
               Plan: {membership.plan_name} · valid {formatDateLong(membership.start_date)} →{" "}
