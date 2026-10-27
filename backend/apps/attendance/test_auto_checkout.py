@@ -4,12 +4,18 @@ The device never pushes a check-out, so an unpaired check-in is closed
 at check-in + 2h: stamped by the sweep (punch ingest / manual check-in /
 backfill command), derived on read by the serializer, and always
 overridable by a real punch or an admin edit.
+
+Every scenario freezes the clock (``FrozenNowMixin``): the pairing
+state machine is keyed by local date, and these tests derive punches up
+to check-in + 5h from the real clock — near local midnight they crossed
+into the next date and failed (CI ran them at 23:09 IST).
 """
 
 from __future__ import annotations
 
 import io
 from datetime import timedelta
+from unittest import mock
 
 from django.core.management import call_command
 from django.test import TestCase
@@ -30,11 +36,36 @@ from apps.users.services import create_user, issue_token
 SN = "ADMS-AUTO-001"
 
 
-class AutoCheckoutTestBase(TestCase):
+class FrozenNowMixin:
+    """Freeze ``django.utils.timezone.now`` before fixtures run.
+
+    The sweep and ``pair_punch`` are keyed by local date, so timestamps
+    derived from the real wall clock break near midnight: a check-in at
+    20:05 plus a +5h punch lands on the next date and the per-date
+    lookup finds no record (CI at 23:09 IST turned this into the only
+    red window — 22:00–03:00 IST per an hourly sweep). 10:00 keeps even
+    the largest offset inside one local date; the patch covers
+    ``now()``, ``localdate()``/``localtime()``, and ``auto_now`` stamps.
+    """
+
+    def setUp(self) -> None:
+        """Pin the clock to mid-morning, 2026-10-20 (the pairing anchor date)."""
+        patcher = mock.patch.object(
+            timezone,
+            "now",
+            return_value=timezone.make_aware(timezone.datetime(2026, 10, 20, 10, 0, 0)),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        super().setUp()
+
+
+class AutoCheckoutTestBase(FrozenNowMixin, TestCase):
     """Shared fixtures: tenant, branch, customer, ADMS device."""
 
     def setUp(self) -> None:
-        """Create tenant, branch, customer, and the biometric device."""
+        """Freeze the clock, then create tenant, branch, customer, device."""
+        super().setUp()  # FrozenNowMixin: pin the clock before fixtures
         self.tenant = provision_tenant(name="Auto Gym", contact_email="owner@auto.test")
         self.branch = Branch.objects.create(tenant=self.tenant, name="Main Branch", branch_type="gym")
         user = User.objects.create_user(
@@ -290,11 +321,12 @@ class SerializerDerivationTest(AutoCheckoutTestBase):
         assert record.check_out_is_auto is False
 
 
-class AutoCheckoutAPITests(APITestCase):
+class AutoCheckoutAPITests(FrozenNowMixin, APITestCase):
     """End-to-end: list derivation, admin correction, check-out action."""
 
     def setUp(self) -> None:
-        """Create tenant, owner, branch, customer, and auth token."""
+        """Freeze the clock, then create tenant, owner, branch, customer, token."""
+        super().setUp()  # FrozenNowMixin: pin the clock before fixtures
         self.tenant = provision_tenant(name="Auto API Gym", contact_email="owner@autoapi.test")
         self.owner = create_user(
             tenant=self.tenant,
@@ -434,7 +466,7 @@ class PunchIngestSweepTest(AutoCheckoutTestBase):
     """The ADMS ingest batch sweeps stale open records (issue #83)."""
 
     def _attlog_row(self, pin: str, stamp: str) -> PunchLogRaw:
-        """Build an unsaved raw ATTLOG row."""
+        """Build an unsaved raw ATTLOG row (stamp is a device wall time)."""
         raw_line = f"\t{pin}\t{stamp}\t1\t0\t1\t0"
         return PunchLogRaw(tenant=self.tenant, device=self.device, table_name="ATTLOG", raw_line=raw_line)
 
@@ -443,7 +475,10 @@ class PunchIngestSweepTest(AutoCheckoutTestBase):
         stale = self._open_record(age=timedelta(hours=3))
         from apps.access.services import ingest_attlog_rows
 
-        result = ingest_attlog_rows(device=self.device, rows=[self._attlog_row("42", "2026-10-20 08:15:00")])
+        # The punch is yesterday's replay: a different local date than the
+        # frozen "today", so it opens its own record instead of pairing
+        # into (and really closing) the stale one the sweep must stamp.
+        result = ingest_attlog_rows(device=self.device, rows=[self._attlog_row("42", "2026-10-19 08:15:00")])
         assert result["paired"] == 1
         stale.refresh_from_db()
         assert stale.check_out_time == stale.check_in_time + timedelta(hours=2)
@@ -454,7 +489,7 @@ class PunchIngestSweepTest(AutoCheckoutTestBase):
         fresh = self._open_record(age=timedelta(minutes=30))
         from apps.access.services import ingest_attlog_rows
 
-        ingest_attlog_rows(device=self.device, rows=[self._attlog_row("42", "2026-10-20 08:15:00")])
+        ingest_attlog_rows(device=self.device, rows=[self._attlog_row("42", "2026-10-19 08:15:00")])
         fresh.refresh_from_db()
         assert fresh.check_out_time is None
 
