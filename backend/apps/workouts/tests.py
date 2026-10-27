@@ -4,6 +4,7 @@ from datetime import date
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.customers.models import Customer
@@ -614,6 +615,145 @@ class WorkoutAssignmentAPITests(WorkoutAPIBase):
         )
         response = self.client.delete(f"/api/v1/workouts/workout-assignments/{assignment.id}/")
         self.assertEqual(response.status_code, 204)
+
+
+class WorkoutAssignmentTransitionAPITests(WorkoutAPIBase):
+    """Issue #90: replace and unassign transitions for workout assignments."""
+
+    def setUp(self) -> None:
+        """Extend the base fixtures with a second plan."""
+        super().setUp()
+        self.plan2 = _make_plan(self.tenant, name="Cardio Plan")
+
+    def _assign(self, **overrides) -> object:
+        """POST a workout assignment with sensible defaults."""
+        payload = {
+            "customer": self.customer.id,
+            "workout_plan": self.plan.id,
+            "start_date": "2026-01-01",
+        }
+        payload.update(overrides)
+        return self.client.post("/api/v1/workouts/workout-assignments/", payload, format="json")
+
+    def test_replace_active_ends_previous_assignment(self) -> None:
+        """Assigning with replace_active=True deactivates the current plan."""
+        first = self._assign()
+        self.assertEqual(first.status_code, 201)
+        response = self._assign(
+            workout_plan=self.plan2.id,
+            start_date="2026-02-01",
+            replace_active=True,
+        )
+        self.assertEqual(response.status_code, 201)
+        first_assignment = WorkoutAssignment.objects.get(pk=first.data["id"])
+        second_assignment = WorkoutAssignment.objects.get(pk=response.data["id"])
+        self.assertFalse(first_assignment.is_active)
+        self.assertEqual(first_assignment.end_date, date(2026, 1, 31))
+        self.assertTrue(second_assignment.is_active)
+
+    def test_replace_active_preserves_earlier_end_date(self) -> None:
+        """A previous assignment already ended before the new start date keeps its end date."""
+        first = self._assign(end_date="2026-01-15")
+        self.assertEqual(first.status_code, 201)
+        response = self._assign(
+            workout_plan=self.plan2.id,
+            start_date="2026-02-01",
+            replace_active=True,
+        )
+        self.assertEqual(response.status_code, 201)
+        first_assignment = WorkoutAssignment.objects.get(pk=first.data["id"])
+        self.assertEqual(first_assignment.end_date, date(2026, 1, 15))
+
+    def test_create_without_replace_keeps_both_active(self) -> None:
+        """Default create leaves previous assignments untouched."""
+        self._assign()
+        response = self._assign(workout_plan=self.plan2.id, start_date="2026-02-01")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            WorkoutAssignment.objects.filter(customer=self.customer, is_active=True).count(),
+            2,
+        )
+
+    def test_replace_active_scoped_to_customer(self) -> None:
+        """Replacing one customer's plan leaves other customers' assignments alone."""
+        other_user = User.objects.create_user(
+            email="cust2@workout.test",
+            password="F1tNati0n!",
+            first_name="Cust",
+            last_name="Two",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        other_customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=other_user,
+            name="Customer Two",
+            email="cust2@workout.test",
+        )
+        self._assign()  # self.customer
+        other_assignment = WorkoutAssignment.objects.create(
+            tenant=self.tenant,
+            customer=other_customer,
+            workout_plan=self.plan,
+        )
+        response = self._assign(
+            workout_plan=self.plan2.id,
+            start_date="2026-02-01",
+            replace_active=True,
+        )
+        self.assertEqual(response.status_code, 201)
+        other_assignment.refresh_from_db()
+        self.assertTrue(other_assignment.is_active)
+
+    def test_unassign_stamps_end_date_and_deactivates(self) -> None:
+        """POST unassign/ ends the assignment effective today."""
+        assignment = WorkoutAssignment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            workout_plan=self.plan,
+        )
+        response = self.client.post(f"/api/v1/workouts/workout-assignments/{assignment.id}/unassign/")
+        self.assertEqual(response.status_code, 200)
+        assignment.refresh_from_db()
+        self.assertFalse(assignment.is_active)
+        self.assertEqual(assignment.end_date, timezone.localdate())
+
+    def test_unassign_preserves_past_end_date(self) -> None:
+        """Unassigning an already-ended assignment keeps its end date."""
+        assignment = WorkoutAssignment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            workout_plan=self.plan,
+            is_active=False,
+            end_date=date(2026, 1, 15),
+        )
+        response = self.client.post(f"/api/v1/workouts/workout-assignments/{assignment.id}/unassign/")
+        self.assertEqual(response.status_code, 200)
+        assignment.refresh_from_db()
+        self.assertFalse(assignment.is_active)
+        self.assertEqual(assignment.end_date, date(2026, 1, 15))
+
+    def test_unassign_cross_tenant_returns_404(self) -> None:
+        """An assignment from another tenant is not unassignable."""
+        other_tenant = provision_tenant("Other Gym", contact_email="owner2@workout.test")
+        other_assignment = WorkoutAssignment.objects.create(
+            tenant=other_tenant,
+            customer=Customer.objects.create(
+                tenant=other_tenant,
+                name="Other Tenant Customer",
+            ),
+            workout_plan=_make_plan(other_tenant, name="Other Plan"),
+        )
+        response = self.client.post(
+            f"/api/v1/workouts/workout-assignments/{other_assignment.id}/unassign/",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_end_date_before_start_date_rejected(self) -> None:
+        """An assignment cannot end before it starts."""
+        response = self._assign(start_date="2026-02-01", end_date="2026-01-01")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("end_date", response.data)
 
 
 class WorkoutLogAPITests(WorkoutAPIBase):
