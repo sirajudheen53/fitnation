@@ -833,11 +833,21 @@ describe("OverviewTab helpers", () => {
     expect(screen.getByText("BMI")).toBeInTheDocument();
   });
 
-  it("renders tab navigation links", () => {
+  it("no longer repeats tab navigation as link cards (issue #93)", () => {
     render(<OverviewTab customer={customer} summary={null} />);
-    expect(screen.getByText("Fitness Goals")).toBeInTheDocument();
-    expect(screen.getByText("Body Measurements")).toBeInTheDocument();
-    expect(screen.getByText("Health Profile")).toBeInTheDocument();
+    expect(screen.queryByText("Body Measurements")).not.toBeInTheDocument();
+    expect(screen.queryByText("Health Profile")).not.toBeInTheDocument();
+  });
+
+  it("uses the consistent no-data copy for emergency contact and gender", () => {
+    render(
+      <OverviewTab
+        customer={{ ...customer, emergency_contact_name: null, emergency_contact_phone: null, gender: null }}
+        summary={null}
+      />,
+    );
+    expect(screen.getByText("No emergency contact on file")).toBeInTheDocument();
+    expect(screen.getByText("Not specified")).toBeInTheDocument();
   });
 
   it("shows inactive badge when customer is not active", () => {

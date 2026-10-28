@@ -10,10 +10,6 @@ import {
   Hash,
   CreditCard,
   Receipt,
-  MapPin,
-  Target,
-  Ruler,
-  HeartPulse,
   Clock,
 } from "lucide-react";
 import { Card, CardHeader, CardBody, Badge, Button, Input } from "@/components/ui";
@@ -280,7 +276,6 @@ export function OverviewTab({
   onRenewMembership,
 }: OverviewTabProps) {
   const profile = summary?.health_profile ?? null;
-  const activeGoals = summary?.fitness_goals?.filter((g) => g.status === "active").length ?? 0;
 
   const latest = useMemo(() => latestAdmissionPayment(admissionPayments), [admissionPayments]);
   const [feeDialogOpen, setFeeDialogOpen] = useState(false);
@@ -408,14 +403,20 @@ export function OverviewTab({
           </div>
           <div>
             <p className="mb-2 text-sm font-medium text-gray-700">Emergency contact</p>
-            <p className="text-sm text-gray-700">
-              {customer.emergency_contact_name || "—"}
-            </p>
-            <p className="text-sm text-gray-500">{customer.emergency_contact_phone || "—"}</p>
+            {customer.emergency_contact_name ? (
+              <div className="text-sm text-gray-700">
+                <p>{customer.emergency_contact_name}</p>
+                {customer.emergency_contact_phone && (
+                  <p className="text-sm text-gray-500">{customer.emergency_contact_phone}</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No emergency contact on file</p>
+            )}
           </div>
           <div>
             <p className="mb-2 text-sm font-medium text-gray-700">Gender</p>
-            <p className="text-sm capitalize text-gray-700">{customer.gender || "—"}</p>
+            <p className="text-sm capitalize text-gray-700">{customer.gender || "Not specified"}</p>
           </div>
         </CardBody>
       </Card>
@@ -622,56 +623,6 @@ export function OverviewTab({
           </CardBody>
         </Card>
       )}
-
-      {/* Tab links */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Link
-          href={`/customers/${customer.id}#goals`}
-          className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 transition-shadow hover:shadow-sm"
-        >
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-            <Target className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="font-medium text-gray-900">Fitness Goals</p>
-            <p className="text-xs text-gray-500">
-              {activeGoals > 0 ? `${activeGoals} active goal${activeGoals > 1 ? "s" : ""}` : "No goals yet"}
-            </p>
-          </div>
-        </Link>
-
-        <Link
-          href={`/customers/${customer.id}#measurements`}
-          className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 transition-shadow hover:shadow-sm"
-        >
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-            <Ruler className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="font-medium text-gray-900">Body Measurements</p>
-            <p className="text-xs text-gray-500">
-              {summary?.latest_measurement
-                ? `Last: ${formatMemberSince(summary.latest_measurement.date_logged)}`
-                : "No measurements yet"}
-            </p>
-          </div>
-        </Link>
-
-        <Link
-          href={`/customers/${customer.id}#health`}
-          className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 transition-shadow hover:shadow-sm"
-        >
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-            <HeartPulse className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="font-medium text-gray-900">Health Profile</p>
-            <p className="text-xs text-gray-500">
-              {profile ? "On file" : "Not yet added"}
-            </p>
-          </div>
-        </Link>
-      </div>
 
       {/* Renewal confirmation */}
       {renewTarget && onRenewMembership && (

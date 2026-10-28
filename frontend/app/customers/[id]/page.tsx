@@ -16,7 +16,7 @@ import { BiometricTab } from "@/features/access/components/BiometricTab";
 import { AppAccessCard } from "@/features/customers/components/AppAccessCard";
 import { TrainerSection } from "@/features/customers/components/TrainerSection";
 import { PlanAssignmentsSection } from "@/features/customers/components/PlanAssignmentsSection";
-import { Spinner, Alert, Button, Badge } from "@/components/ui";
+import { Spinner, Alert, Button } from "@/components/ui";
 import { getToken } from "@/lib/auth";
 import {
   fetchCustomer,
@@ -39,7 +39,7 @@ import {
   fetchCustomerAttendance,
   errorMessage,
 } from "@/lib/api";
-import { getCustomerDisplayName, getCustomerMembershipStatus } from "@/features/customers/components/CustomerTable";
+import { getCustomerDisplayName } from "@/features/customers/components/CustomerAvatar";
 import { formatMembershipDate } from "@/features/memberships/components/MembershipTable";
 import type { Customer } from "@/types/customer";
 import type { Membership, MembershipPlan } from "@/types/membership";
@@ -370,10 +370,6 @@ export default function CustomerDetailPage() {
     }
   };
 
-  const statusBadge = customer
-    ? getCustomerMembershipStatus(customer)
-    : { label: "—", variant: "default" as const };
-
   /** Build a first-vs-latest comparison for the measurements tab. */
   function buildMeasurementComparison(
     list: BodyMeasurement[],
@@ -419,17 +415,6 @@ export default function CustomerDetailPage() {
       {error && !customer && <Alert variant="error">{error}</Alert>}
       {customer && (
         <div className="space-y-6">
-          <div className="flex flex-wrap items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex-1">
-              <p className="text-sm text-gray-500">{customer.email || "No email on file"}</p>
-              <p className="text-sm text-gray-500">Phone: {customer.phone || "—"}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-500">Status</p>
-              <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
-            </div>
-          </div>
-
           <div className="border-b border-gray-200">
             <CustomerTabs active={activeTab} onChange={setActiveTab} />
           </div>
