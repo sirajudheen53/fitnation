@@ -27,4 +27,21 @@ void main() {
       expect(formatDateShort(DateTime(2026, 12, 31)), '31 Dec 2026');
     });
   });
+
+  group('formatTimeShort', () {
+    test('formats morning times with AM', () {
+      expect(formatTimeShort(DateTime(2026, 10, 28, 9, 5)), '9:05 AM');
+      expect(formatTimeShort(DateTime(2026, 10, 28, 0, 7)), '12:07 AM');
+    });
+
+    test('formats afternoon and evening times with PM', () {
+      expect(formatTimeShort(DateTime(2026, 10, 28, 18, 4)), '6:04 PM');
+      expect(formatTimeShort(DateTime(2026, 10, 28, 12, 0)), '12:00 PM');
+      expect(formatTimeShort(DateTime(2026, 10, 28, 23, 59)), '11:59 PM');
+    });
+
+    test('pads single-digit minutes', () {
+      expect(formatTimeShort(DateTime(2026, 10, 28, 15, 4)), '3:04 PM');
+    });
+  });
 }

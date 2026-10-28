@@ -5,6 +5,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/providers/auth_notifier.dart';
 import '../../../plans/presentation/screens/diet_plans_screen.dart';
 import '../../../plans/presentation/screens/workout_plans_screen.dart';
+import 'home_tab.dart';
 
 /// Customer dashboard scaffold — main screen after login.
 /// Shows bottom navigation with permission-filtered tabs.
@@ -17,6 +18,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   int _currentIndex = 0;
+  late List<_DashboardTab> _tabs;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +26,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final permissions = authState.permissions;
 
     // Build list of allowed tabs based on permissions
-    final tabs = _buildAllowedTabs(permissions);
+    _tabs = _buildAllowedTabs(permissions);
+    final tabs = _tabs;
 
     return Scaffold(
       appBar: AppBar(
@@ -60,7 +63,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       label: 'Home',
       icon: Icons.home_outlined,
       selectedIcon: Icons.home,
-      body: _buildHomeBody(),
+      body: HomeTab(
+        // Deep-links into the plan tabs; null hides the row on the home card.
+        onOpenWorkouts: permissions.contains('workouts.view_workout')
+            ? () => _openTabByTitle('Workouts')
+            : null,
+        onOpenDiet: permissions.contains('diets.view_diet')
+            ? () => _openTabByTitle('Diet')
+            : null,
+      ),
     ));
 
     // Workouts tab — the customer's assigned workout plans (#94)
@@ -111,94 +122,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return tabs;
   }
 
-  Widget _buildHomeBody() {
-    final authState = ref.watch(authProvider);
-    final user = authState.user;
-
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        // Greeting card
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppTheme.primary, AppTheme.primaryLight],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Welcome back,',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                user?.fullName ?? 'Athlete',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              if (user?.tenantName != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  user!.tenantName!,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        // Quick stats placeholder
-        Text(
-          'Quick Stats',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 16),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: 1.5,
-          children: [
-            _buildStatCard(Icons.fitness_center, 'Workouts', '—'),
-            _buildStatCard(Icons.restaurant, 'Meals', '—'),
-            _buildStatCard(Icons.event_available, 'Check-ins', '—'),
-            _buildStatCard(Icons.trending_up, 'Progress', '—'),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard(IconData icon, String label, String value) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.divider),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Icon(icon, color: AppTheme.primary, size: 24),
-          Text(label, style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-        ],
-      ),
-    );
+  /// Switches to the bottom-nav tab with the given title (issue #95).
+  void _openTabByTitle(String title) {
+    final index = _tabs.indexWhere((tab) => tab.title == title);
+    if (index == -1) return;
+    setState(() => _currentIndex = index);
   }
 
   Widget _buildProfileBody() {

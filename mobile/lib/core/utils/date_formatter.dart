@@ -22,3 +22,11 @@ String formatDateShort(DateTime date) {
   final month = _monthAbbreviations[date.month - 1];
   return '$day $month ${date.year}';
 }
+
+/// Formats [date] as "6:04 PM" (12-hour clock, no leading zero on the hour).
+String formatTimeShort(DateTime date) {
+  final hour12 = date.hour % 12 == 0 ? 12 : date.hour % 12;
+  final minute = date.minute.toString().padLeft(2, '0');
+  final period = date.hour < 12 ? 'AM' : 'PM';
+  return '$hour12:$minute $period';
+}

@@ -7,10 +7,16 @@ import 'package:fitnation_app/features/auth/data/data_sources/auth_local_data_so
 import 'package:fitnation_app/features/auth/data/models/user_model.dart';
 import 'package:fitnation_app/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:fitnation_app/features/auth/presentation/providers/auth_providers.dart';
+import 'package:fitnation_app/features/attendance/presentation/providers/check_in_providers.dart';
+import 'package:fitnation_app/features/memberships/presentation/providers/membership_providers.dart';
+import 'package:fitnation_app/features/payments/presentation/providers/payment_providers.dart';
 import 'package:fitnation_app/features/plans/presentation/providers/plan_assignment_providers.dart';
 import 'package:fitnation_app/router/app_router.dart';
 
+import '../../../../helpers/attendance_fakes.dart';
 import '../../../../helpers/fakes.dart';
+import '../../../../helpers/membership_fakes.dart';
+import '../../../../helpers/payment_fakes.dart';
 import '../../../../helpers/plan_assignment_fakes.dart';
 
 void main() {
@@ -18,6 +24,9 @@ void main() {
   late FakeFirebaseAuthClient firebase;
   late AuthLocalDataSource local;
   late FakePlanAssignmentRemoteDataSource planRemote;
+  late FakeAttendanceRemoteDataSource attendanceRemote;
+  late FakeMembershipRemoteDataSource membershipRemote;
+  late FakePaymentRemoteDataSource paymentRemote;
   late ProviderContainer container;
 
   setUp(() async {
@@ -26,6 +35,9 @@ void main() {
     remote = FakeAuthRemoteDataSource();
     firebase = FakeFirebaseAuthClient();
     planRemote = FakePlanAssignmentRemoteDataSource();
+    attendanceRemote = FakeAttendanceRemoteDataSource();
+    membershipRemote = FakeMembershipRemoteDataSource();
+    paymentRemote = FakePaymentRemoteDataSource();
     container = ProviderContainer(
       overrides: [
         authLocalDataSourceProvider.overrideWithValue(local),
@@ -33,6 +45,12 @@ void main() {
         authRemoteDataSourceProvider.overrideWithValue(remote),
         planAssignmentRepositoryProvider
             .overrideWithValue(FakePlanAssignmentRepository(planRemote)),
+        attendanceRepositoryProvider
+            .overrideWithValue(FakeAttendanceRepository(attendanceRemote)),
+        membershipRepositoryProvider
+            .overrideWithValue(FakeMembershipRepository(membershipRemote)),
+        paymentRepositoryProvider
+            .overrideWithValue(FakePaymentRepository(paymentRemote)),
       ],
     );
   });
@@ -89,6 +107,45 @@ void main() {
     expect(find.text('Workouts'), findsWidgets);
     expect(find.text('Diet'), findsWidgets);
     expect(find.text('Attendance'), findsNothing); // no permission
+    // The placeholder Quick Stats grid is gone (#95).
+    expect(find.text('Quick Stats'), findsNothing);
+  });
+
+  testWidgets('home shows the member check-in state (#95)', (tester) async {
+    attendanceRemote.checkInResult = [attendanceRecord()];
+    loginAs(user, const []);
+    await pumpApp(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.text('You\'re checked in'), findsOneWidget);
+    expect(find.text('Since 6:04 PM at Main'), findsOneWidget);
+  });
+
+  testWidgets('home dues card surfaces pending dues (#95)', (tester) async {
+    paymentRemote.pendingResult = [pendingPayment()];
+    membershipRemote.membershipResult = [membership()];
+    loginAs(user, const []);
+    await pumpApp(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.text('₹1,500 due'), findsOneWidget);
+    expect(find.text('Monthly'), findsOneWidget);
+    expect(find.text('Active till 01 Nov 2026'), findsOneWidget);
+  });
+
+  testWidgets('tapping the workout plan row opens the workouts tab (#95)', (
+    tester,
+  ) async {
+    planRemote.workoutResult = [workoutAssignment()];
+    loginAs(user, const ['workouts.view_workout', 'diets.view_diet']);
+    await pumpApp(tester);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Workout plans'));
+    await tester.pumpAndSettle();
+
+    // Workouts tab is now showing (plan card + tab title).
+    expect(find.text('Beginner Strength'), findsOneWidget);
   });
 
   testWidgets('workouts tab shows the assigned workout plan (#94)', (
@@ -98,12 +155,18 @@ void main() {
     loginAs(user, const ['workouts.view_workout', 'diets.view_diet']);
     await pumpApp(tester);
 
-    await tester.tap(find.byIcon(Icons.fitness_center_outlined));
+    // The home summary row reuses this icon — target the nav bar only.
+    await tester.tap(find.descendant(
+      of: find.byType(NavigationBar),
+      matching: find.byIcon(Icons.fitness_center_outlined),
+    ));
     await tester.pumpAndSettle();
 
     expect(find.text('Beginner Strength'), findsOneWidget);
     expect(find.text('Active'), findsOneWidget);
-    expect(planRemote.workoutCalls, 1);
+    // The home card primes the plan lists (#95), so the tab's initState
+    // load is the second fetch.
+    expect(planRemote.workoutCalls, 2);
   });
 
   testWidgets('diet tab shows the assigned meal plan (#94)', (tester) async {
@@ -111,11 +174,14 @@ void main() {
     loginAs(user, const ['workouts.view_workout', 'diets.view_diet']);
     await pumpApp(tester);
 
-    await tester.tap(find.byIcon(Icons.restaurant_outlined));
+    await tester.tap(find.descendant(
+      of: find.byType(NavigationBar),
+      matching: find.byIcon(Icons.restaurant_outlined),
+    ));
     await tester.pumpAndSettle();
 
     expect(find.text('High Protein Cut'), findsOneWidget);
-    expect(planRemote.dietCalls, 1);
+    expect(planRemote.dietCalls, 2);
   });
 
   testWidgets('profile tab shows account details and permissions', (
