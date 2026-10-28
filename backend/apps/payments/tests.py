@@ -1211,9 +1211,7 @@ class SendPaymentLinkServiceTests(TestCase):
                 return_value=WhatsAppAttempt(provider="gupshup", sent=True, attempted=True),
             ) as send_template,
         ):
-            result = send_payment_link(
-                self.tenant, self.payment, actor=self.owner, template_status_getter=_approved
-            )
+            result = send_payment_link(self.tenant, self.payment, actor=self.owner, template_status_getter=_approved)
         self.assertEqual(result.status, "sent")
         self.assertEqual(result.channel, "whatsapp")
         self.assertEqual(result.provider, "gupshup")
@@ -1348,7 +1346,6 @@ class SendPaymentLinkServiceTests(TestCase):
         log = NotificationLog.objects.get(notification_type=NotificationLog.NotificationType.PAYMENT_LINK)
         self.assertEqual(log.status, NotificationLog.Status.FAILED)
         self.assertIn("not enabled", log.error_message)
-
 
     def test_unapproved_template_skips_gupshup_and_audits_the_skip(self) -> None:
         """A PENDING Gupshup template steps aside loudly; the email leg carries."""
