@@ -14,4 +14,11 @@ void main() {
     );
     expect(AppConstants.firebaseAuthEndpoint, '/auth/firebase/');
   });
+
+  test('customer home endpoints are the self-scoped API paths (#95)', () {
+    expect(AppConstants.attendanceListEndpoint, '/attendance/attendance/');
+    expect(AppConstants.membershipsEndpoint, '/memberships/memberships/');
+    expect(AppConstants.paymentsEndpoint, '/payments/');
+    expect(AppConstants.pendingPaymentsStatus, 'pending');
+  });
 }

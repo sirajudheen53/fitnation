@@ -56,6 +56,13 @@ class AppConstants {
   static const String dietAssignmentsActiveEndpoint =
       '/diet-assignments/active/';
 
+  /// Customer home (issue #95) — self-scoped server-side for customer-role
+  /// callers.
+  static const String attendanceListEndpoint = '/attendance/attendance/';
+  static const String membershipsEndpoint = '/memberships/memberships/';
+  static const String paymentsEndpoint = '/payments/';
+  static const String pendingPaymentsStatus = 'pending';
+
   /// Storage keys.
   static const String authTokenKey = 'auth_token';
   static const String userProfileKey = 'user_profile';
