@@ -9,6 +9,7 @@ from unittest import mock
 from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -1145,11 +1146,17 @@ class PaymentLinkServiceTests(TestCase):
             razorpay_service.create_payment_link(self.tenant, self.payment, client=mock_client)
 
 
+def _approved(tenant, name: str) -> str:
+    """Test double: the Gupshup approval gate always sees APPROVED (#79)."""
+    return "APPROVED"
+
+
 class SendPaymentLinkServiceTests(TestCase):
     """Tests for the payment-link send orchestration (channels, cooldown, audit)."""
 
     def setUp(self) -> None:
         """Create tenant with Gupshup, Razorpay config, customer, pending payment."""
+        cache.clear()  # approval verdicts cached by earlier tests must not gate these sends
         self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
         self.tenant.is_gupshup_enabled = True
         self.tenant.gupshup_api_key = "gups_key"
@@ -1204,7 +1211,9 @@ class SendPaymentLinkServiceTests(TestCase):
                 return_value=WhatsAppAttempt(provider="gupshup", sent=True, attempted=True),
             ) as send_template,
         ):
-            result = send_payment_link(self.tenant, self.payment, actor=self.owner)
+            result = send_payment_link(
+                self.tenant, self.payment, actor=self.owner, template_status_getter=_approved
+            )
         self.assertEqual(result.status, "sent")
         self.assertEqual(result.channel, "whatsapp")
         self.assertEqual(result.provider, "gupshup")
@@ -1219,6 +1228,7 @@ class SendPaymentLinkServiceTests(TestCase):
         self.assertEqual(args[0][2], "919876543210")
         self.assertEqual(args[0][3], ["Cust Customer", "1500.00", "Iron Peak", "https://rzp.io/i/s1"])
         self.assertEqual(args[1]["gupshup_params"], ["Cust Customer", "1500.00", "Iron Peak", "s1"])
+        self.assertEqual(args[1]["providers"], ["gupshup"])
 
         self.payment.refresh_from_db()
         self.assertEqual(self.payment.razorpay_payment_link_id, "plink_s1")
@@ -1244,9 +1254,9 @@ class SendPaymentLinkServiceTests(TestCase):
                 return_value=WhatsAppAttempt(provider="gupshup", sent=True, attempted=True),
             ) as send_template,
         ):
-            first = send_payment_link(self.tenant, self.payment)
+            first = send_payment_link(self.tenant, self.payment, template_status_getter=_approved)
             self.assertEqual(first.status, "sent")
-            second = send_payment_link(self.tenant, self.payment)
+            second = send_payment_link(self.tenant, self.payment, template_status_getter=_approved)
         self.assertEqual(second.status, "already_sent")
         self.assertIsNotNone(second.resend_allowed_after)
         create_link.assert_called_once()
@@ -1272,8 +1282,8 @@ class SendPaymentLinkServiceTests(TestCase):
             ),
             override_settings(PAYMENT_LINK_RESEND_COOLDOWN_MINUTES=0),
         ):
-            first = send_payment_link(self.tenant, self.payment)
-            second = send_payment_link(self.tenant, self.payment)
+            first = send_payment_link(self.tenant, self.payment, template_status_getter=_approved)
+            second = send_payment_link(self.tenant, self.payment, template_status_getter=_approved)
         self.assertEqual(first.status, "sent")
         self.assertEqual(second.status, "sent")
 
@@ -1340,6 +1350,125 @@ class SendPaymentLinkServiceTests(TestCase):
         self.assertIn("not enabled", log.error_message)
 
 
+    def test_unapproved_template_skips_gupshup_and_audits_the_skip(self) -> None:
+        """A PENDING Gupshup template steps aside loudly; the email leg carries."""
+        with (
+            mock.patch(
+                "apps.payments.razorpay_service.create_payment_link",
+                return_value={"id": "plink_g1", "short_url": "https://rzp.io/i/g1"},
+            ),
+            mock.patch(
+                "apps.payments.services.send_whatsapp_template",
+                return_value=WhatsAppAttempt(attempted=False),
+            ) as send_template,
+            mock.patch("apps.payments.services.send_email", return_value=True),
+            override_settings(SENDGRID_API_KEY="sg_test"),
+        ):
+            result = send_payment_link(
+                self.tenant,
+                self.payment,
+                template_status_getter=lambda tenant, name: "PENDING",
+            )
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.channel, "email")
+        # The unapproved Gupshup leg was removed from the provider order.
+        self.assertEqual(send_template.call_args.kwargs["providers"], [])
+        skipped = NotificationLog.objects.get(status=NotificationLog.Status.SKIPPED)
+        self.assertEqual(skipped.provider, "gupshup")
+        self.assertEqual(skipped.channel, "whatsapp")
+        self.assertIn("not approved", skipped.error_message)
+        self.assertIn("PENDING", skipped.error_message)
+
+    def test_unverifiable_template_fails_loudly_when_no_other_channel(self) -> None:
+        """No approval proof and no emailable address -> failed with the gate reason."""
+        self.customer.email = "9876543210.x@fitnation.local"
+        self.customer.save()
+        with (
+            mock.patch(
+                "apps.payments.razorpay_service.create_payment_link",
+                return_value={"id": "plink_g2", "short_url": "https://rzp.io/i/g2"},
+            ),
+            mock.patch(
+                "apps.payments.services.send_whatsapp_template",
+                return_value=WhatsAppAttempt(attempted=False),
+            ),
+        ):
+            result = send_payment_link(
+                self.tenant,
+                self.payment,
+                template_status_getter=lambda tenant, name: "",
+            )
+        self.assertEqual(result.status, "failed")
+        self.assertIn("not approved", result.reason)
+        self.assertIn("unverifiable", result.reason)
+        self.assertTrue(
+            NotificationLog.objects.filter(
+                status=NotificationLog.Status.SKIPPED,
+                provider="gupshup",
+                notification_type=NotificationLog.NotificationType.PAYMENT_LINK,
+            ).exists()
+        )
+
+    def test_wati_still_carries_when_gupshup_template_is_unapproved(self) -> None:
+        """Only the unapproved Gupshup leg is dropped; WATI stays in policy order."""
+        self.tenant.is_wati_enabled = True
+        self.tenant.wati_api_key = "wati_key"
+        self.tenant.save()
+        with (
+            mock.patch(
+                "apps.payments.razorpay_service.create_payment_link",
+                return_value={"id": "plink_g3", "short_url": "https://rzp.io/i/g3"},
+            ),
+            mock.patch(
+                "apps.payments.services.send_whatsapp_template",
+                return_value=WhatsAppAttempt(provider="wati", sent=True, attempted=True),
+            ) as send_template,
+        ):
+            result = send_payment_link(
+                self.tenant,
+                self.payment,
+                template_status_getter=lambda tenant, name: "PENDING",
+            )
+        self.assertEqual(result.status, "sent")
+        self.assertEqual(result.provider, "wati")
+        self.assertEqual(send_template.call_args.kwargs["providers"], ["wati"])
+
+    def test_approval_verdicts_cache_approved_only(self) -> None:
+        """Verified APPROVED verdicts cache; blocking verdicts are re-asked."""
+        verdicts = iter(["PENDING", "APPROVED"])
+        getter = mock.Mock(side_effect=lambda tenant, name: next(verdicts))
+
+        def fake_send(tenant, name, to, params, *, gupshup_params=None, providers=None, poster=None):
+            if providers:
+                return WhatsAppAttempt(provider=providers[-1], sent=True, attempted=True)
+            return WhatsAppAttempt(attempted=False)
+
+        with (
+            mock.patch(
+                "apps.payments.razorpay_service.create_payment_link",
+                return_value={"id": "plink_g4", "short_url": "https://rzp.io/i/g4"},
+            ),
+            mock.patch("apps.payments.services.send_whatsapp_template", side_effect=fake_send),
+            override_settings(PAYMENT_LINK_RESEND_COOLDOWN_MINUTES=0),
+            mock.patch("apps.payments.services.send_email", return_value=True),
+            override_settings(SENDGRID_API_KEY="sg_test"),
+        ):
+            first = send_payment_link(self.tenant, self.payment, template_status_getter=getter)
+            second = send_payment_link(self.tenant, self.payment, template_status_getter=getter)
+            third = send_payment_link(self.tenant, self.payment, template_status_getter=getter)
+        # First send: PENDING -> Gupshup skipped -> the email leg carries.
+        self.assertEqual(first.status, "sent")
+        self.assertEqual(first.provider, "sendgrid")
+        # Second send: APPROVED -> Gupshup carries; the verdict is cached, so
+        # the third send never consults the getter again.
+        self.assertEqual(second.status, "sent")
+        self.assertEqual(second.provider, "gupshup")
+        self.assertEqual(third.status, "sent")
+        self.assertEqual(third.provider, "gupshup")
+        self.assertEqual(getter.call_count, 2)
+
+
+@override_settings(GUPSHUP_APPROVED_TEMPLATES="fitnation_payment_link")
 class SendPaymentLinkAPITests(APITestCase):
     """Integration tests for POST /payments/{id}/send-link/ (issue #72)."""
 

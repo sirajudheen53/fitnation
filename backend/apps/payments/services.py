@@ -26,14 +26,17 @@ from apps.notifications.services.channels import (
     CHANNEL_EMAIL,
     CHANNEL_SMS,
     CHANNEL_WHATSAPP,
+    PROVIDER_GUPSHUP,
     PROVIDER_MSG91,
     normalize_msisdn,
     post_msg91_flow,
 )
 from apps.notifications.services.router import (
     WHATSAPP_TEMPLATE_NAMES,
+    gupshup_template_approval,
     is_emailable,
     send_whatsapp_template,
+    whatsapp_providers,
 )
 from apps.notifications.services.wati_service import build_message
 from apps.payments import razorpay_service
@@ -130,6 +133,7 @@ def send_payment_link(
     *,
     actor=None,
     poster: Callable[..., Any] | None = None,
+    template_status_getter: Callable[[Any, str], str] | None = None,
 ) -> PaymentLinkResult:
     """Create a Razorpay payment link for a pending payment and deliver it.
 
@@ -137,13 +141,18 @@ def send_payment_link(
     (needs ``MSG91_PAYMENT_LINK_TEMPLATE_ID``) → email (real mailboxes only,
     mirroring the issue #66 "email is last resort" rule). A resend within
     ``PAYMENT_LINK_RESEND_COOLDOWN_MINUTES`` of the last *successful* send is
-    short-circuited to ``already_sent`` so support cannot spam links.
+    short-circuited to ``already_sent`` so support cannot spam links. The
+    Gupshup WhatsApp leg fires only when ``fitnation_payment_link`` is
+    verifiably APPROVED (issue #79) — an unverified template skips loudly
+    with its own audit row instead of 202-acking into the void.
 
     Args:
         tenant: The sending tenant.
         payment: The pending payment (must belong to the tenant).
         actor: The staff user triggering the send (audit trail).
         poster: Injectable WhatsApp/SMS HTTP post callable (tests).
+        template_status_getter: Injectable Gupshup template-approval lookup
+            (tests); defaults to the channels-module gate chain (issue #79).
 
     Returns:
         The :class:`PaymentLinkResult` describing what happened.
@@ -220,6 +229,24 @@ def send_payment_link(
     whatsapp_error = ""
     if phone:
         template_name = WHATSAPP_TEMPLATE_NAMES["payment_link"]
+        providers = whatsapp_providers(tenant, ready_only=True)
+        # Issue #79: the Gupshup leg is gated on the template being verifiably
+        # APPROVED — the provider 202-acks unapproved sends and silently drops
+        # them, so an unverified template steps aside with its own loud audit
+        # row instead of reporting a "sent" that would never deliver (mirrors
+        # the OTP sender's gate). WATI needs no gate: unapproved templates
+        # fail there with a real HTTP error.
+        gate_error = ""
+        if PROVIDER_GUPSHUP in providers:
+            verdict = gupshup_template_approval(tenant, template_name, status_getter=template_status_getter)
+            if verdict != "APPROVED":
+                providers = [name for name in providers if name != PROVIDER_GUPSHUP]
+                gate_error = (
+                    f"Gupshup template '{template_name}' is not approved for this app "
+                    f"(status: {verdict or 'unverifiable'}) — the provider accepts but would never deliver"
+                )
+                logger.warning("Payment-link WhatsApp send skipped: %s", gate_error)
+                _log(NotificationLog.Status.SKIPPED, CHANNEL_WHATSAPP, provider=PROVIDER_GUPSHUP, error=gate_error)
         params = [customer.name or "there", str(payment.amount), tenant.name, link_url]
         attempt = send_whatsapp_template(
             tenant,
@@ -227,6 +254,7 @@ def send_payment_link(
             normalize_msisdn(phone),
             params,
             gupshup_params=[*params[:3], razorpay_service.payment_link_button_suffix(link_url)],
+            providers=providers,
             poster=poster,
         )
         for provider, error in attempt.failures:
@@ -242,7 +270,7 @@ def send_payment_link(
                 payment_link_url=link_url,
                 log=log,
             )
-        whatsapp_error = next((error for _, error in attempt.failures), "")
+        whatsapp_error = next((error for _, error in attempt.failures), "") or gate_error
 
     # SMS leg — platform MSG91 template (WhatsApp is off or both legs failed).
     sms_template_id = getattr(settings, "MSG91_PAYMENT_LINK_TEMPLATE_ID", "")

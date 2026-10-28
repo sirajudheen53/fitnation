@@ -19,6 +19,7 @@ carried it. Sends never raise — failures are returned and logged.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -36,6 +37,7 @@ from apps.notifications.services.channels import (
     PROVIDER_MSG91,
     PROVIDER_SENDGRID,
     PROVIDER_WATI,
+    gupshup_template_status,
     normalize_msisdn,
     post_gupshup_template,
     post_gupshup_text,
@@ -63,6 +65,7 @@ __all__ = [
     "WHATSAPP_TEMPLATE_NAMES",
     "WhatsAppAttempt",
     "gupshup_ready",
+    "gupshup_template_approval",
     "is_emailable",
     "send_verification_message",
     "send_whatsapp_template",
@@ -122,6 +125,56 @@ def whatsapp_providers(tenant: Tenant, *, ready_only: bool = False) -> list[str]
     if tenant is not None and tenant.is_gupshup_enabled and (not ready_only or gupshup_ready(tenant)):
         providers.append(PROVIDER_GUPSHUP)
     return providers
+
+
+def gupshup_template_approval(
+    tenant: Tenant,
+    template_name: str,
+    *,
+    status_getter: Callable[[Any, str], str] | None = None,
+) -> str:
+    """The verifiable approval verdict for one template on the tenant's Gupshup leg.
+
+    Gupshup 202-acks every ``/msg`` submit and silently drops the ones whose
+    template is unapproved (issues #73/#74), so senders that must guarantee
+    delivery gate the Gupshup leg on this check before firing. The verdict
+    comes from
+    :func:`apps.notifications.services.channels.gupshup_template_status`
+    (Meta Graph → portal-key template list → env allow-list, issue #86);
+    WATI needs no such gate — its API rejects unapproved templates with a
+    real HTTP error.
+
+    Cache semantics mirror the OTP sender's gate: only verified APPROVED
+    verdicts are cached (same ``gupshup-tpl:<tenant>:<template>`` key family,
+    ``GUPSHUP_TEMPLATE_CHECK_TTL``, default 30 min) so steady-state sends
+    skip the status GET; blocking verdicts are never cached — approving the
+    template in the console flips delivery on the very next send. Cache
+    trouble must not block a send.
+
+    Args:
+        tenant: The sending tenant (its Gupshup app scopes the check).
+        template_name: The platform-wide approved template slug.
+        status_getter: Injectable verdict lookup (tests); defaults to the
+            channels-module gate chain.
+
+    Returns:
+        ``"APPROVED"`` or the blocking verdict — a raw status word
+        (``PENDING``/``REJECTED``/…) or ``""`` when no gate could verify.
+    """
+    from django.core.cache import cache
+
+    cache_key = f"gupshup-tpl:{tenant.pk}:{template_name}"
+    try:
+        if cache.get(cache_key):
+            return "APPROVED"
+    except Exception:  # noqa: BLE001 - cache trouble must not block sends
+        pass
+    resolve = status_getter or gupshup_template_status
+    verdict = str(resolve(tenant, template_name)).strip().upper()
+    if verdict == "APPROVED":
+        with contextlib.suppress(Exception):  # accounting must never block delivery
+            cache.set(cache_key, True, timeout=int(getattr(settings, "GUPSHUP_TEMPLATE_CHECK_TTL", 1800)))
+    return verdict
 
 
 def is_emailable(email: str | None) -> bool:
