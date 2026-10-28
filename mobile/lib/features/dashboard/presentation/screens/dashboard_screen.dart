@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/providers/auth_notifier.dart';
+import '../../../plans/presentation/screens/diet_plans_screen.dart';
+import '../../../plans/presentation/screens/workout_plans_screen.dart';
 
 /// Customer dashboard scaffold — main screen after login.
 /// Shows bottom navigation with permission-filtered tabs.
@@ -61,25 +63,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       body: _buildHomeBody(),
     ));
 
-    // Workouts tab
+    // Workouts tab — the customer's assigned workout plans (#94)
     if (permissions.contains('workouts.view_workout')) {
       tabs.add(_DashboardTab(
         title: 'Workouts',
         label: 'Workouts',
         icon: Icons.fitness_center_outlined,
         selectedIcon: Icons.fitness_center,
-        body: _buildPlaceholder('Workouts', 'Your workout plans will appear here'),
+        body: const WorkoutPlansScreen(),
       ));
     }
 
-    // Diet tab
+    // Diet tab — the customer's assigned meal plans (#94)
     if (permissions.contains('diets.view_diet')) {
       tabs.add(_DashboardTab(
         title: 'Diet',
         label: 'Diet',
         icon: Icons.restaurant_outlined,
         selectedIcon: Icons.restaurant,
-        body: _buildPlaceholder('Diet Plans', 'Your meal plans will appear here'),
+        body: const DietPlansScreen(),
       ));
     }
 

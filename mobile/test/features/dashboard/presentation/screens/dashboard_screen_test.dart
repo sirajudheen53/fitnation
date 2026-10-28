@@ -7,14 +7,17 @@ import 'package:fitnation_app/features/auth/data/data_sources/auth_local_data_so
 import 'package:fitnation_app/features/auth/data/models/user_model.dart';
 import 'package:fitnation_app/features/auth/presentation/providers/auth_notifier.dart';
 import 'package:fitnation_app/features/auth/presentation/providers/auth_providers.dart';
+import 'package:fitnation_app/features/plans/presentation/providers/plan_assignment_providers.dart';
 import 'package:fitnation_app/router/app_router.dart';
 
 import '../../../../helpers/fakes.dart';
+import '../../../../helpers/plan_assignment_fakes.dart';
 
 void main() {
   late FakeAuthRemoteDataSource remote;
   late FakeFirebaseAuthClient firebase;
   late AuthLocalDataSource local;
+  late FakePlanAssignmentRemoteDataSource planRemote;
   late ProviderContainer container;
 
   setUp(() async {
@@ -22,11 +25,14 @@ void main() {
     ApiClient.reset();
     remote = FakeAuthRemoteDataSource();
     firebase = FakeFirebaseAuthClient();
+    planRemote = FakePlanAssignmentRemoteDataSource();
     container = ProviderContainer(
       overrides: [
         authLocalDataSourceProvider.overrideWithValue(local),
         firebaseAuthClientProvider.overrideWithValue(firebase),
         authRemoteDataSourceProvider.overrideWithValue(remote),
+        planAssignmentRepositoryProvider
+            .overrideWithValue(FakePlanAssignmentRepository(planRemote)),
       ],
     );
   });
@@ -83,6 +89,33 @@ void main() {
     expect(find.text('Workouts'), findsWidgets);
     expect(find.text('Diet'), findsWidgets);
     expect(find.text('Attendance'), findsNothing); // no permission
+  });
+
+  testWidgets('workouts tab shows the assigned workout plan (#94)', (
+    tester,
+  ) async {
+    planRemote.workoutResult = [workoutAssignment()];
+    loginAs(user, const ['workouts.view_workout', 'diets.view_diet']);
+    await pumpApp(tester);
+
+    await tester.tap(find.byIcon(Icons.fitness_center_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Beginner Strength'), findsOneWidget);
+    expect(find.text('Active'), findsOneWidget);
+    expect(planRemote.workoutCalls, 1);
+  });
+
+  testWidgets('diet tab shows the assigned meal plan (#94)', (tester) async {
+    planRemote.dietResult = [dietAssignment()];
+    loginAs(user, const ['workouts.view_workout', 'diets.view_diet']);
+    await pumpApp(tester);
+
+    await tester.tap(find.byIcon(Icons.restaurant_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.text('High Protein Cut'), findsOneWidget);
+    expect(planRemote.dietCalls, 1);
   });
 
   testWidgets('profile tab shows account details and permissions', (
