@@ -34,6 +34,8 @@ import {
   membershipDaysRemaining,
   formatValidityHint,
   summarizeDues,
+  summarizeAttendance,
+  formatCheckIn,
 } from "@/features/customers/components/OverviewTab";
 import { PaymentHistoryTab } from "@/features/customers/components/PaymentHistoryTab";
 import {
@@ -57,6 +59,7 @@ import { ProgressPhotosTab } from "@/features/customers/components/ProgressPhoto
 import type { Customer } from "@/types/customer";
 import type { Payment } from "@/types/payment";
 import type { Membership } from "@/types/membership";
+import type { AttendanceListResponse } from "@/types/attendance";
 import type {
   BodyMeasurement,
   CustomerFitnessGoal,
@@ -462,6 +465,145 @@ describe("OverviewTab memberships card", () => {
     expect(screen.getByText("No memberships on file.")).toBeInTheDocument();
     const assign = screen.getByRole("link", { name: "Assign membership" });
     expect(assign).toHaveAttribute("href", "/memberships/assign");
+  });
+});
+
+/* ── OverviewTab attendance summary (issue #93) ───────────────── */
+
+describe("OverviewTab attendance helpers", () => {
+  /** Local calendar month prefix, matching how the component buckets dates. */
+  const monthPrefix = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  };
+
+  it("derives totals, this-month count and the last check-in", () => {
+    const prefix = monthPrefix();
+    const page = {
+      count: 27,
+      results: [
+        { date: `${prefix}-03`, check_in_time: `${prefix}-03T13:00:00Z` },
+        { date: `${prefix}-01`, check_in_time: `${prefix}-01T09:30:00Z` },
+        { date: "2026-08-30", check_in_time: "2026-08-30T10:00:00Z" },
+      ],
+    };
+    expect(summarizeAttendance(page, new Date())).toEqual({
+      totalVisits: 27,
+      lastCheckIn: `${prefix}-03T13:00:00Z`,
+      thisMonth: 2,
+      thisMonthExact: true,
+    });
+  });
+
+  it("flags the month count as approximate when the page is full and in-month", () => {
+    const prefix = monthPrefix();
+    const results = Array.from({ length: 4 }, (_, i) => ({
+      date: `${prefix}-1${i}`,
+      check_in_time: `${prefix}-1${i}T10:00:00Z`,
+    }));
+    const page = { count: 30, results };
+    const stats = summarizeAttendance(page, new Date());
+    expect(stats.thisMonth).toBe(4);
+    expect(stats.thisMonthExact).toBe(false);
+  });
+
+  it("falls back to the record date when check_in_time is null", () => {
+    const page = { count: 1, results: [{ date: "2026-09-14", check_in_time: null }] };
+    expect(summarizeAttendance(page, new Date()).lastCheckIn).toBe("2026-09-14");
+  });
+
+  it("handles an empty first page", () => {
+    expect(summarizeAttendance({ count: 0, results: [] }, new Date())).toEqual({
+      totalVisits: 0,
+      lastCheckIn: null,
+      thisMonth: 0,
+      thisMonthExact: true,
+    });
+  });
+
+  it("formats check-in timestamps with time and plain dates without", () => {
+    const withTime = formatCheckIn("2026-10-27T18:30:00Z");
+    expect(withTime).toContain("2026");
+    expect(withTime).toContain("·");
+    const dateOnly = formatCheckIn("2026-10-27");
+    expect(dateOnly).toContain("2026");
+    expect(dateOnly).not.toContain("·");
+    expect(formatCheckIn(null)).toBe("—");
+    expect(formatCheckIn("garbage")).toBe("—");
+  });
+});
+
+describe("OverviewTab attendance card", () => {
+  /** Attendance page whose latest records all fall in the current month. */
+  const buildPage = (overrides: Partial<AttendanceListResponse> = {}): AttendanceListResponse => {
+    const prefix = (() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    })();
+    return {
+      count: 12,
+      next: null,
+      previous: null,
+      results: [
+        {
+          id: 1,
+          person_id: 1,
+          person_name: "Arjun Kumar",
+          person_type: "customer",
+          branch_id: null,
+          branch_name: null,
+          check_in_time: `${prefix}-02T18:30:00Z`,
+          check_out_time: null,
+          status: "present",
+          date: `${prefix}-02`,
+          created_at: `${prefix}-02T18:30:00Z`,
+          updated_at: `${prefix}-02T18:30:00Z`,
+        },
+        {
+          id: 2,
+          person_id: 1,
+          person_name: "Arjun Kumar",
+          person_type: "customer",
+          branch_id: null,
+          branch_name: null,
+          check_in_time: `${prefix}-01T09:00:00Z`,
+          check_out_time: null,
+          status: "present",
+          date: `${prefix}-01`,
+          created_at: `${prefix}-01T09:00:00Z`,
+          updated_at: `${prefix}-01T09:00:00Z`,
+        },
+      ],
+      ...overrides,
+    };
+  };
+
+  it("renders the check-in summary stats", () => {
+    render(<OverviewTab customer={customer} summary={null} attendance={buildPage()} />);
+    expect(screen.getByText("Attendance")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.getByText("Total visits")).toBeInTheDocument();
+    // Both page records are in-month with more pages behind → approximate "2+".
+    expect(screen.getByText("2+")).toBeInTheDocument();
+    expect(screen.getByText("This month")).toBeInTheDocument();
+    expect(screen.getByText("Last check-in")).toBeInTheDocument();
+  });
+
+  it("shows the empty state before the first check-in", () => {
+    render(
+      <OverviewTab
+        customer={customer}
+        summary={null}
+        attendance={buildPage({ count: 0, results: [] })}
+      />,
+    );
+    expect(screen.getByText("No check-ins yet.")).toBeInTheDocument();
+  });
+
+  it("hides the card while attendance has not loaded", () => {
+    render(<OverviewTab customer={customer} summary={null} attendance={null} />);
+    expect(screen.queryByText("No check-ins yet.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total visits")).not.toBeInTheDocument();
   });
 });
 

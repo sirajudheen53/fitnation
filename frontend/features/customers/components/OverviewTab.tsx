@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   CalendarDays,
-  User,
+  CalendarCheck,
   Activity,
   CheckCircle2,
   Hash,
@@ -14,6 +14,7 @@ import {
   Target,
   Ruler,
   HeartPulse,
+  Clock,
 } from "lucide-react";
 import { Card, CardHeader, CardBody, Badge, Button, Input } from "@/components/ui";
 import { CustomerAvatar, getCustomerDisplayName } from "./CustomerAvatar";
@@ -30,6 +31,7 @@ import {
 import { RenewMembershipDialog } from "@/features/memberships/components/RenewMembershipDialog";
 import type { Customer } from "@/types/customer";
 import type { Membership, MembershipPlan, MembershipStatus } from "@/types/membership";
+import type { AttendanceListResponse } from "@/types/attendance";
 import type { Payment, PaymentMethod } from "@/types/payment";
 import type { ProgressSummary } from "@/types/customer-detail";
 
@@ -165,6 +167,57 @@ export function summarizeDues(payments: Payment[]): DuesSummary {
   };
 }
 
+/** Check-in stats for the profile attendance card (issue #93). */
+export interface AttendanceSummaryStats {
+  /** Total recorded visits (from the page envelope count — always exact). */
+  totalVisits: number;
+  /** Raw check-in timestamp of the most recent visit, null when none. */
+  lastCheckIn: string | null;
+  /** Visits dated in the calendar month of `today`. */
+  thisMonth: number;
+  /**
+   * False when every record on the first page falls in the current month —
+   * older same-month visits may exist beyond the page, so the UI shows "N+".
+   */
+  thisMonthExact: boolean;
+}
+
+/**
+ * Derive check-in stats from the first page of the customer's attendance
+ * (the backend orders records newest-first). `today` is injectable for tests.
+ */
+export function summarizeAttendance(
+  page: { count: number; results: { date: string; check_in_time: string | null }[] },
+  today: Date = new Date(),
+): AttendanceSummaryStats {
+  const monthPrefix = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  const inMonth = page.results.filter((r) => r.date.startsWith(monthPrefix));
+  const latest = page.results[0];
+  return {
+    totalVisits: page.count,
+    lastCheckIn: latest ? (latest.check_in_time ?? latest.date) : null,
+    thisMonth: inMonth.length,
+    thisMonthExact: !(page.count > page.results.length && inMonth.length === page.results.length),
+  };
+}
+
+/**
+ * "15 Jan 2026 · 6:30 pm" for a check-in timestamp; date-only rendering for
+ * plain YYYY-MM-DD dates; em dash when missing or unparseable.
+ */
+export function formatCheckIn(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const date = d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  if (iso.length <= 10) return date;
+  return `${date} · ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`;
+}
+
 export interface AdmissionFeeInput {
   amount: number;
   method: PaymentMethod;
@@ -197,6 +250,11 @@ interface OverviewTabProps {
   /** Jump to the payment history tab from the dues line. */
   onViewPayments?: () => void;
   /**
+   * First page of this customer's attendance (newest-first) for the
+   * check-in summary. Undefined/null = not loaded → card hidden.
+   */
+  attendance?: AttendanceListResponse | null;
+  /**
    * Renew a membership — the caller POSTs the renewal and updates its own
    * state. Resolves the updated membership (dialog closes) or null (stays
    * open). planId (issue #68) switches the plan before the extension.
@@ -218,6 +276,7 @@ export function OverviewTab({
   membershipPlans = [],
   pendingPayments,
   onViewPayments,
+  attendance,
   onRenewMembership,
 }: OverviewTabProps) {
   const profile = summary?.health_profile ?? null;
@@ -233,6 +292,7 @@ export function OverviewTab({
   const [renewing, setRenewing] = useState(false);
 
   const measurement = summary?.latest_measurement ?? null;
+  const attendanceStats = attendance ? summarizeAttendance(attendance) : null;
 
   const stats: {
     label: string;
@@ -630,32 +690,62 @@ export function OverviewTab({
         />
       )}
 
-      {/* Attendance */}
-      <Card>
-        <CardHeader>
-          <h3 className="text-lg font-semibold text-gray-900">Attendance</h3>
-        </CardHeader>
-        <CardBody>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-                <User className="h-5 w-5" />
+      {/* Attendance / check-in summary (issue #93) */}
+      {attendanceStats !== null && (
+        <Card>
+          <CardHeader>
+            <h3 className="text-lg font-semibold text-gray-900">Attendance</h3>
+          </CardHeader>
+          <CardBody>
+            {attendanceStats.totalVisits === 0 ? (
+              <p className="text-sm text-gray-500">No check-ins yet.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="rounded-xl border border-gray-200 p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                      <CalendarCheck className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {attendanceStats.totalVisits}
+                      </p>
+                      <p className="text-xs text-gray-500">Total visits</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                      <Activity className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {attendanceStats.thisMonth}
+                        {attendanceStats.thisMonthExact ? "" : "+"}
+                      </p>
+                      <p className="text-xs text-gray-500">This month</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-gray-200 p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+                      <Clock className="h-5 w-5" aria-hidden="true" />
+                    </div>
+                    <div>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {formatCheckIn(attendanceStats.lastCheckIn)}
+                      </p>
+                      <p className="text-xs text-gray-500">Last check-in</p>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">
-                  Full attendance history and check-in streak are available from the Attendance
-                  section.
-                </p>
-              </div>
-            </div>
-            <Link href={`/attendance?customer=${encodeURIComponent(customer.email ?? "")}`}>
-              <Badge variant="info" className="cursor-pointer hover:bg-blue-100">
-                View attendance →
-              </Badge>
-            </Link>
-          </div>
-        </CardBody>
-      </Card>
+            )}
+          </CardBody>
+        </Card>
+      )}
     </div>
   );
 }

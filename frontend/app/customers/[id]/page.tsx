@@ -36,12 +36,14 @@ import {
   fetchMemberships,
   fetchMembershipPlans,
   renewMembership,
+  fetchCustomerAttendance,
   errorMessage,
 } from "@/lib/api";
 import { getCustomerDisplayName, getCustomerMembershipStatus } from "@/features/customers/components/CustomerTable";
 import { formatMembershipDate } from "@/features/memberships/components/MembershipTable";
 import type { Customer } from "@/types/customer";
 import type { Membership, MembershipPlan } from "@/types/membership";
+import type { AttendanceListResponse } from "@/types/attendance";
 import type { Payment, PaymentMethod } from "@/types/payment";
 import type {
   BodyMeasurement,
@@ -78,6 +80,8 @@ export default function CustomerDetailPage() {
   const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
   // Pending payments (dues) for the membership card — null = not loaded → line omitted.
   const [pendingPayments, setPendingPayments] = useState<Payment[] | null>(null);
+  // First page of the customer's attendance for the check-in summary (issue #93).
+  const [attendance, setAttendance] = useState<AttendanceListResponse | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,16 +134,13 @@ export default function CustomerDetailPage() {
         } catch {
           /* card stays hidden */
         }
-        // Dues line on the membership card (issue #93) — non-fatal if it fails.
-        try {
-          const pendingRes = await fetchPayments(authToken, {
-            customer: id,
-            status: "pending",
-          });
-          setPendingPayments(pendingRes.results);
-        } catch {
-          setPendingPayments(null);
-        }
+        // Dues + check-in summaries for the overview (issue #93) — non-fatal.
+        const [pendingRes, attendanceRes] = await Promise.allSettled([
+          fetchPayments(authToken, { customer: id, status: "pending" }),
+          fetchCustomerAttendance(id, authToken),
+        ]);
+        setPendingPayments(pendingRes.status === "fulfilled" ? pendingRes.value.results : null);
+        setAttendance(attendanceRes.status === "fulfilled" ? attendanceRes.value : null);
       } catch (err) {
         setError(errorMessage(err));
       } finally {
@@ -446,6 +447,7 @@ export default function CustomerDetailPage() {
                   membershipPlans={membershipPlans}
                   pendingPayments={pendingPayments}
                   onViewPayments={() => setActiveTab("payments")}
+                  attendance={attendance}
                   onRenewMembership={handleRenewMembership}
                 />
                 {/* FBOS-011 F3: app-access entitlement + invite status. */}
