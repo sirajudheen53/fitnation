@@ -5,12 +5,17 @@ from typing import ClassVar
 from django.db import transaction
 from django.db.models import Avg, Sum
 from django.utils import timezone
-from rest_framework import viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.mixins import ListModelMixin, RetrieveModelMixin
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.viewsets import GenericViewSet
 
+from apps.branches.models import Branch
+from apps.customers.serializers import CustomerSerializer
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.trainers.models import TrainerAssignment, TrainerPerformance, TrainerSession
@@ -26,23 +31,77 @@ from apps.users.authentication import TenantTokenAuthentication
 from apps.users.models import Trainer, TrainerSchedule
 
 
-class TrainerViewSet(viewsets.ModelViewSet):
+class TrainerViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
     """Tenant-scoped trainer management.
 
     ``users.Trainer`` carries its tenant via the linked ``User`` record, so the
     queryset is scoped through ``user__tenant`` rather than a ``for_tenant`` manager.
+
+    Read-only (list/retrieve/``performance``) except the issue #73
+    ``add-customer`` action: POST there requires ``customers.create_customer``
+    (owner/manager — the trainer role stays view-only) while reads keep
+    ``trainers.view_trainer``.
     """
 
     authentication_classes: ClassVar[list] = [TenantTokenAuthentication]
     permission_classes: ClassVar[list] = [IsAuthenticated, IsTenantMember, RolePermission]
     required_permission = "trainers.view_trainer"
+    method_permissions: ClassVar[dict] = {"POST": "customers.create_customer"}
     serializer_class = TrainerSerializer
-    http_method_names: ClassVar[list[str]] = ["get", "head", "options"]
+    http_method_names: ClassVar[list[str]] = ["get", "post", "head", "options"]
     pagination_class = None
 
     def get_queryset(self):
         """Return trainers belonging to the request's tenant."""
         return Trainer.objects.select_related("user").filter(user__tenant=self.request.tenant).order_by("-created_at")
+
+    @action(detail=True, methods=["post"], url_path="add-customer")
+    def add_customer(self, request: Request, pk: int) -> Response:
+        """Register a new customer attached to this trainer (issue #73).
+
+        The lightweight path behind the trainer profile's "Add customer"
+        option — the payload is the regular customer-create contract
+        (validated by ``CustomerSerializer``: portal-identity provisioning,
+        ADR-002 phone convergence, E.164, per-tenant duplicate checks), and
+        the fresh member is linked to the trainer via a branch-scoped
+        ``TrainerAssignment`` — the row the profile's Customers tab lists.
+        Owner/manager only (``customers.create_customer``); the trainer and
+        branch must both belong to the request's tenant.
+        """
+        trainer = self.get_object()
+        branch = self._validated_branch(request)
+        serializer = CustomerSerializer(data=request.data, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            customer = serializer.save(tenant=request.tenant)
+            assignment = TrainerAssignment.objects.create(
+                tenant=request.tenant,
+                trainer=trainer,
+                customer=customer,
+                branch=branch,
+            )
+        return Response(
+            {
+                "customer": CustomerSerializer(customer, context=self.get_serializer_context()).data,
+                "assignment": TrainerAssignmentSerializer(assignment).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def _validated_branch(self, request: Request) -> Branch | None:
+        """Return the payload branch scoped to the request's tenant, or None.
+
+        ``CustomerSerializer`` accepts any branch pk, so the tenant check
+        happens here before anything is written — an unknown or foreign
+        branch is the same client error.
+        """
+        branch_id = request.data.get("branch")
+        if branch_id in (None, ""):
+            return None
+        try:
+            return Branch.objects.get(id=int(branch_id), tenant=request.tenant)
+        except (Branch.DoesNotExist, TypeError, ValueError):
+            raise ValidationError({"branch": "Branch does not belong to this tenant."}) from None
 
     @action(detail=True, methods=["get"], url_path="performance")
     def performance(self, request: Request, pk: int) -> Response:

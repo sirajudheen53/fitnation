@@ -7,10 +7,12 @@ from django.test import TestCase
 from rest_framework.test import APITestCase
 
 from apps.branches.models import Branch
+from apps.customers.models import Customer
 from apps.tenants.services import provision_tenant
 from apps.trainers.models import TrainerAssignment, TrainerPerformance
 from apps.users.models import TrainerSchedule, User
 from apps.users.services import (
+    SYNTHETIC_EMAIL_DOMAIN,
     create_owner_user,
     create_user,
     issue_token,
@@ -331,3 +333,204 @@ class TrainerAPITests(APITestCase):
             {"trainer": trainer.id, "customer": customer.id},
         )
         self.assertEqual(response.status_code, 201)
+
+
+class TrainerAddCustomerAPITests(APITestCase):
+    """Integration tests for POST /trainers/{id}/add-customer/ (issue #73).
+
+    The trainer profile's "Add customer" path: a regular customer-create
+    payload (CustomerSerializer contract) plus the trainer linkage — the
+    fresh member lands on the profile's Customers tab as a branch-scoped
+    ``TrainerAssignment``.
+    """
+
+    def setUp(self) -> None:
+        """Create tenant, owner, trainer, branch, and auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+        self.trainer = _make_trainer(self.tenant, "addcust@trainer.test")
+        self.branch = Branch.objects.create(
+            tenant=self.tenant,
+            name="Main",
+            address_line1="MG Road",
+        )
+        self.url = f"/api/v1/trainers/{self.trainer.id}/add-customer/"
+
+    def _payload(self, **overrides: object) -> dict:
+        """Return a valid add-customer payload with optional overrides."""
+        payload = {
+            "first_name": "New",
+            "last_name": "Member",
+            "email": "new.member@customer.test",
+            "phone": "9876543210",
+            "branch": self.branch.id,
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_add_customer_creates_customer_and_assignment(self) -> None:
+        """A valid payload registers the member and links them to the trainer."""
+        response = self.client.post(self.url, self._payload(), format="json")
+        self.assertEqual(response.status_code, 201)
+
+        customer = Customer.objects.get(
+            tenant=self.tenant,
+            email="new.member@customer.test",
+        )
+        self.assertEqual(customer.name, "New Member")
+        self.assertEqual(customer.branch_id, self.branch.id)
+        # Portal identity provisioned: customer-role user, verified email,
+        # unusable password (members authenticate via OTP).
+        self.assertIsNotNone(customer.user)
+        self.assertEqual(customer.user.role, User.Role.CUSTOMER)
+        self.assertEqual(customer.user.email, "new.member@customer.test")
+        self.assertTrue(customer.user.is_email_verified)
+        self.assertFalse(customer.user.has_usable_password())
+
+        assignment = TrainerAssignment.objects.get(tenant=self.tenant, customer=customer)
+        self.assertEqual(assignment.trainer_id, self.trainer.id)
+        self.assertEqual(assignment.branch_id, self.branch.id)
+        self.assertTrue(assignment.is_active)
+        self.assertIsNone(assignment.unassigned_at)
+
+        self.assertEqual(response.data["customer"]["id"], customer.id)
+        self.assertEqual(response.data["customer"]["email"], "new.member@customer.test")
+        self.assertEqual(response.data["assignment"]["id"], assignment.id)
+        self.assertEqual(response.data["assignment"]["customer_name"], "New Member")
+        self.assertEqual(response.data["assignment"]["trainer"], self.trainer.id)
+
+    def test_add_customer_phone_only_uses_synthetic_identity(self) -> None:
+        """No email: the portal user rides the tenant-scoped synthetic OTP email."""
+        response = self.client.post(
+            self.url,
+            self._payload(email="", first_name="Phone", last_name="Only"),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNone(response.data["customer"]["email"])
+
+        customer = Customer.objects.get(tenant=self.tenant, name="Phone Only")
+        self.assertIsNone(customer.email)
+        self.assertIsNotNone(customer.user)
+        self.assertTrue(customer.user.email.endswith(SYNTHETIC_EMAIL_DOMAIN))
+        # Stored E.164 (#88): the bare national number canonicalizes.
+        self.assertEqual(customer.phone, "+919876543210")
+        self.assertEqual(customer.user.phone, "+919876543210")
+
+    def test_add_customer_assignment_shows_on_trainer_assignments(self) -> None:
+        """The new linkage is listed by /trainer-assignments/ — the profile's source."""
+        response = self.client.post(self.url, self._payload(), format="json")
+        self.assertEqual(response.status_code, 201)
+
+        listed = self.client.get("/api/v1/trainer-assignments/")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(len(listed.data), 1)
+        self.assertEqual(listed.data[0]["id"], response.data["assignment"]["id"])
+        self.assertEqual(listed.data[0]["customer_name"], "New Member")
+
+    def test_add_customer_rejects_foreign_branch(self) -> None:
+        """A branch from another tenant is rejected and nothing is written."""
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        foreign_branch = Branch.objects.create(
+            tenant=other_tenant,
+            name="Away",
+            address_line1="Somewhere",
+        )
+
+        response = self.client.post(self.url, self._payload(branch=foreign_branch.id), format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("branch", response.data)
+        self.assertEqual(Customer.objects.filter(tenant=self.tenant).count(), 0)
+        self.assertEqual(TrainerAssignment.objects.filter(tenant=self.tenant).count(), 0)
+
+    def test_add_customer_rejects_unknown_branch(self) -> None:
+        """A nonexistent branch id is the same client error."""
+        response = self.client.post(self.url, self._payload(branch=99999), format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("branch", response.data)
+
+    def test_add_customer_cross_tenant_trainer_blocked(self) -> None:
+        """Another tenant's trainer id is a 404 — no customer is created."""
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_trainer = _make_trainer(other_tenant, "other@trainer.test")
+
+        response = self.client.post(
+            f"/api/v1/trainers/{other_trainer.id}/add-customer/",
+            self._payload(),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(Customer.objects.filter(tenant=self.tenant).count(), 0)
+
+    def test_add_customer_rejects_duplicate_email_within_tenant(self) -> None:
+        """A tenant cannot register two customers with the same email."""
+        _make_customer(self.tenant, "new.member@customer.test")
+
+        response = self.client.post(self.url, self._payload(), format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("email", response.data)
+
+    def test_add_customer_requires_email_or_phone(self) -> None:
+        """A payload with neither email nor phone is rejected."""
+        response = self.client.post(
+            self.url,
+            self._payload(email="", phone=""),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Customer.objects.filter(tenant=self.tenant).count(), 0)
+
+    def test_add_customer_manager_allowed(self) -> None:
+        """Managers hold customers.create_customer and can add customers."""
+        manager = create_user(
+            tenant=self.tenant,
+            email="manager@local.test",
+            first_name="Manager",
+            last_name="One",
+            role=User.Role.MANAGER,
+        )
+        token = issue_token(manager, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        response = self.client.post(self.url, self._payload(), format="json")
+        self.assertEqual(response.status_code, 201)
+
+    def test_add_customer_trainer_role_forbidden(self) -> None:
+        """Trainers lack customers.create_customer — the action stays staff-only."""
+        token = issue_token(self.trainer.user, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        response = self.client.post(self.url, self._payload(), format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(Customer.objects.filter(tenant=self.tenant).count(), 0)
+
+    def test_add_customer_customer_role_forbidden(self) -> None:
+        """Members cannot add customers."""
+        member = _make_customer(self.tenant, "member@customer.test")
+        token = issue_token(member.user, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        response = self.client.post(self.url, self._payload(), format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_add_customer_unauthenticated_rejected(self) -> None:
+        """No credentials means 401."""
+        self.client.credentials()
+        response = self.client.post(self.url, self._payload(), format="json")
+        self.assertEqual(response.status_code, 401)
+
+    def test_trainer_list_rejects_direct_post(self) -> None:
+        """Enabling POST for the action does not open write access elsewhere."""
+        response = self.client.post(
+            "/api/v1/trainers/",
+            {"specialization": "Strength"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 405)
