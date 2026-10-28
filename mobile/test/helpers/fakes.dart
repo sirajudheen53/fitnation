@@ -236,6 +236,16 @@ class FakeDioAdapter implements HttpClientAdapter {
         },
       );
 
+  /// JSON array response body with the given [status] (DRF list endpoints).
+  static ResponseBody jsonList(List<dynamic> items, [int status = 200]) =>
+      ResponseBody.fromString(
+        jsonEncode(items),
+        status,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,

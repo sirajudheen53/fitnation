@@ -49,6 +49,13 @@ class AppConstants {
   static const String logoutEndpoint = '/auth/logout/';
   static const String meEndpoint = '/auth/me/';
 
+  /// Plan assignments (issue #94) — the active variant returns the
+  /// logged-in customer's own active assignments.
+  static const String workoutAssignmentsActiveEndpoint =
+      '/workouts/workout-assignments/active/';
+  static const String dietAssignmentsActiveEndpoint =
+      '/diet-assignments/active/';
+
   /// Storage keys.
   static const String authTokenKey = 'auth_token';
   static const String userProfileKey = 'user_profile';
