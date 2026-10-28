@@ -30,6 +30,10 @@ import {
   formatStatValue,
   measurementAsOf,
   toNumber,
+  resolvePrimaryMembership,
+  membershipDaysRemaining,
+  formatValidityHint,
+  summarizeDues,
 } from "@/features/customers/components/OverviewTab";
 import { PaymentHistoryTab } from "@/features/customers/components/PaymentHistoryTab";
 import {
@@ -52,6 +56,7 @@ import {
 import { ProgressPhotosTab } from "@/features/customers/components/ProgressPhotosTab";
 import type { Customer } from "@/types/customer";
 import type { Payment } from "@/types/payment";
+import type { Membership } from "@/types/membership";
 import type {
   BodyMeasurement,
   CustomerFitnessGoal,
@@ -181,6 +186,32 @@ const pendingAdmission: Payment = {
   created_at: "2026-04-01T10:00:00Z",
 };
 
+/** Membership fixture (issue #93); dates are set per-test below. */
+const membership: Membership = {
+  id: 11,
+  customer_id: 1,
+  customer_name: "Arjun Kumar",
+  plan_id: 4,
+  plan_name: "Quarterly Unlimited",
+  start_date: "2026-10-01",
+  end_date: "2026-11-09",
+  status: "active",
+  price: 6000,
+  created_at: "2026-10-01T00:00:00Z",
+  updated_at: "2026-10-01T00:00:00Z",
+};
+
+const pendingMembershipPayment: Payment = {
+  ...admissionPayment,
+  id: 21,
+  kind: "membership",
+  status: "pending",
+  amount: "3500.00",
+  method: "upi",
+  plan_name: "Quarterly Unlimited",
+  created_at: "2026-10-20T10:00:00Z",
+};
+
 /* ── OverviewTab: address + admission fee card (msg 2438) ─────── */
 
 describe("OverviewTab address block", () => {
@@ -283,6 +314,154 @@ describe("OverviewTab admission fee card", () => {
       <OverviewTab customer={customer} summary={null} admissionPayments={[pendingAdmission]} />,
     );
     expect(screen.queryByRole("button", { name: "Record payment" })).not.toBeInTheDocument();
+  });
+});
+
+/* ── OverviewTab membership helpers (issue #93) ───────────────── */
+
+describe("OverviewTab membership helpers", () => {
+  const TODAY = new Date("2026-10-28T10:00:00Z");
+
+  /** UTC-anchored YYYY-MM-DD N days after the fixed TODAY. */
+  const daysFromToday = (n: number) =>
+    new Date(
+      Date.UTC(2026, 9, 28) + n * 86_400_000,
+    )
+      .toISOString()
+      .slice(0, 10);
+
+  it("picks the active membership with the latest end date as primary", () => {
+    const olderActive = { ...membership, id: 12, end_date: "2026-10-15" };
+    expect(resolvePrimaryMembership([olderActive, membership])).toEqual(membership);
+  });
+
+  it("prefers active over pending/expired regardless of end date", () => {
+    const expired = { ...membership, id: 13, status: "expired" as const, end_date: "2027-01-01" };
+    const pending = { ...membership, id: 14, status: "pending" as const };
+    expect(resolvePrimaryMembership([expired, pending, membership])).toEqual(membership);
+  });
+
+  it("falls back to pending, then expired, when no active membership exists", () => {
+    const expired = { ...membership, id: 13, status: "expired" as const };
+    const pending = { ...membership, id: 14, status: "pending" as const };
+    expect(resolvePrimaryMembership([expired, pending])?.status).toBe("pending");
+    expect(resolvePrimaryMembership([expired])?.status).toBe("expired");
+  });
+
+  it("returns null for an empty list", () => {
+    expect(resolvePrimaryMembership([])).toBeNull();
+  });
+
+  it("counts calendar days until the end date", () => {
+    expect(membershipDaysRemaining("2026-11-09", TODAY)).toBe(12);
+    expect(membershipDaysRemaining("2026-10-28", TODAY)).toBe(0);
+    expect(membershipDaysRemaining("2026-10-25", TODAY)).toBe(-3);
+  });
+
+  it("formats the validity hint across the expiry boundary", () => {
+    expect(formatValidityHint("2026-11-09", TODAY)).toBe("Expires in 12 days");
+    expect(formatValidityHint("2026-10-29", TODAY)).toBe("Expires tomorrow");
+    expect(formatValidityHint("2026-10-28", TODAY)).toBe("Ends today");
+    expect(formatValidityHint("2026-10-27", TODAY)).toBe("Expired yesterday");
+    expect(formatValidityHint("2026-10-25", TODAY)).toBe("Expired 3 days ago");
+  });
+
+  it("omits the hint for missing or unparseable dates", () => {
+    expect(formatValidityHint(null, TODAY)).toBeUndefined();
+    expect(formatValidityHint("", TODAY)).toBeUndefined();
+    expect(formatValidityHint("not-a-date", TODAY)).toBeUndefined();
+  });
+
+  it("summarizes dues from pending payments", () => {
+    expect(summarizeDues([pendingMembershipPayment, pendingAdmission])).toEqual({
+      total: 6000,
+      count: 2,
+    });
+    expect(summarizeDues([])).toEqual({ total: 0, count: 0 });
+  });
+});
+
+/* ── OverviewTab memberships card (issue #93) ─────────────────── */
+
+describe("OverviewTab memberships card", () => {
+  it("shows plan, status badge, validity hint and price", () => {
+    render(<OverviewTab customer={customer} summary={null} memberships={[membership]} />);
+    expect(screen.getByText("Quarterly Unlimited")).toBeInTheDocument();
+    // "Active" shows twice: the account badge and the membership badge.
+    expect(screen.getAllByText("Active").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Expires in 12 days")).toBeInTheDocument();
+    expect(screen.getByText(/₹6,000/)).toBeInTheDocument();
+  });
+
+  it("warns when the active membership expires within a week", () => {
+    const soon = {
+      ...membership,
+      end_date: new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10),
+    };
+    render(<OverviewTab customer={customer} summary={null} memberships={[soon]} />);
+    expect(screen.getByText("Expires in 3 days")).toHaveClass("text-amber-600");
+  });
+
+  it("shows no validity hint for pending or cancelled memberships", () => {
+    const cancelled = { ...membership, status: "cancelled" as const };
+    render(<OverviewTab customer={customer} summary={null} memberships={[cancelled]} />);
+    expect(screen.getByText("Cancelled")).toBeInTheDocument();
+    expect(screen.queryByText(/Expires in/)).not.toBeInTheDocument();
+  });
+
+  it("shows the dues line with the pending total and jumps to payments", () => {
+    const onViewPayments = jest.fn();
+    render(
+      <OverviewTab
+        customer={customer}
+        summary={null}
+        memberships={[membership]}
+        pendingPayments={[pendingMembershipPayment]}
+        onViewPayments={onViewPayments}
+      />,
+    );
+    expect(screen.getByText("₹3,500 pending")).toBeInTheDocument();
+    expect(screen.getByText("1 pending payment")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View payments" }));
+    expect(onViewPayments).toHaveBeenCalledTimes(1);
+  });
+
+  it("pluralizes multiple pending payments", () => {
+    render(
+      <OverviewTab
+        customer={customer}
+        summary={null}
+        memberships={[membership]}
+        pendingPayments={[pendingMembershipPayment, pendingAdmission]}
+      />,
+    );
+    expect(screen.getByText("₹6,000 pending")).toBeInTheDocument();
+    expect(screen.getByText("2 pending payments")).toBeInTheDocument();
+  });
+
+  it("shows the no-dues empty state when nothing is pending", () => {
+    render(
+      <OverviewTab
+        customer={customer}
+        summary={null}
+        memberships={[membership]}
+        pendingPayments={[]}
+      />,
+    );
+    expect(screen.getByText("No pending dues.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View payments" })).not.toBeInTheDocument();
+  });
+
+  it("omits the dues line entirely while payments have not loaded", () => {
+    render(<OverviewTab customer={customer} summary={null} memberships={[membership]} />);
+    expect(screen.queryByText("No pending dues.")).not.toBeInTheDocument();
+  });
+
+  it("offers the assign action in the no-memberships empty state", () => {
+    render(<OverviewTab customer={customer} summary={null} memberships={[]} />);
+    expect(screen.getByText("No memberships on file.")).toBeInTheDocument();
+    const assign = screen.getByRole("link", { name: "Assign membership" });
+    expect(assign).toHaveAttribute("href", "/memberships/assign");
   });
 });
 

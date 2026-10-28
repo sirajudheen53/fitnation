@@ -76,6 +76,8 @@ export default function CustomerDetailPage() {
   // This customer's memberships (null = not loaded / load failed → card hidden).
   const [memberships, setMemberships] = useState<Membership[] | null>(null);
   const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
+  // Pending payments (dues) for the membership card — null = not loaded → line omitted.
+  const [pendingPayments, setPendingPayments] = useState<Payment[] | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +129,16 @@ export default function CustomerDetailPage() {
           setMembershipPlans(planRes.results);
         } catch {
           /* card stays hidden */
+        }
+        // Dues line on the membership card (issue #93) — non-fatal if it fails.
+        try {
+          const pendingRes = await fetchPayments(authToken, {
+            customer: id,
+            status: "pending",
+          });
+          setPendingPayments(pendingRes.results);
+        } catch {
+          setPendingPayments(null);
         }
       } catch (err) {
         setError(errorMessage(err));
@@ -432,6 +444,8 @@ export default function CustomerDetailPage() {
                   onRecordAdmissionFee={recordAdmissionFee}
                   memberships={memberships}
                   membershipPlans={membershipPlans}
+                  pendingPayments={pendingPayments}
+                  onViewPayments={() => setActiveTab("payments")}
                   onRenewMembership={handleRenewMembership}
                 />
                 {/* FBOS-011 F3: app-access entitlement + invite status. */}

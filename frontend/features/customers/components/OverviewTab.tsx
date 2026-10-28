@@ -29,7 +29,7 @@ import {
 } from "@/features/memberships/components/MembershipTable";
 import { RenewMembershipDialog } from "@/features/memberships/components/RenewMembershipDialog";
 import type { Customer } from "@/types/customer";
-import type { Membership, MembershipPlan } from "@/types/membership";
+import type { Membership, MembershipPlan, MembershipStatus } from "@/types/membership";
 import type { Payment, PaymentMethod } from "@/types/payment";
 import type { ProgressSummary } from "@/types/customer-detail";
 
@@ -98,6 +98,73 @@ export function latestAdmissionPayment(
   )[0];
 }
 
+/**
+ * The membership that best represents the customer's current standing:
+ * the active one with the latest end date, falling back through pending,
+ * expired and cancelled in that order (latest end date within each rank).
+ */
+export function resolvePrimaryMembership(
+  memberships: Membership[],
+): Membership | null {
+  if (memberships.length === 0) return null;
+  const statusRank: Record<MembershipStatus, number> = {
+    active: 0,
+    pending: 1,
+    expired: 2,
+    cancelled: 3,
+  };
+  return [...memberships].sort(
+    (a, b) =>
+      statusRank[a.status] - statusRank[b.status] ||
+      b.end_date.localeCompare(a.end_date),
+  )[0];
+}
+
+/** Calendar days from `today` until the membership end date (negative when past). */
+export function membershipDaysRemaining(
+  endDate: string,
+  today: Date = new Date(),
+): number {
+  const end = new Date(endDate);
+  if (Number.isNaN(end.getTime())) return 0;
+  // Compare UTC calendar dates so timezones can't shift the day boundary.
+  const dayUtc = (d: Date) =>
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return Math.round((dayUtc(end) - dayUtc(today)) / 86_400_000);
+}
+
+/**
+ * Validity hint for a membership end date: "Expires in 12 days",
+ * "Ends today", "Expired 3 days ago". Undefined when undated or unparseable.
+ */
+export function formatValidityHint(
+  endDate: string | null | undefined,
+  today: Date = new Date(),
+): string | undefined {
+  if (!endDate) return undefined;
+  if (Number.isNaN(new Date(endDate).getTime())) return undefined;
+  const days = membershipDaysRemaining(endDate, today);
+  if (days > 1) return `Expires in ${days} days`;
+  if (days === 1) return "Expires tomorrow";
+  if (days === 0) return "Ends today";
+  if (days === -1) return "Expired yesterday";
+  return `Expired ${Math.abs(days)} days ago`;
+}
+
+/** Pending-payment totals shown as the membership dues line. */
+export interface DuesSummary {
+  total: number;
+  count: number;
+}
+
+/** Sum the pending amounts and count the pending payments. */
+export function summarizeDues(payments: Payment[]): DuesSummary {
+  return {
+    total: payments.reduce((sum, p) => sum + Number(p.amount || 0), 0),
+    count: payments.length,
+  };
+}
+
 export interface AdmissionFeeInput {
   amount: number;
   method: PaymentMethod;
@@ -122,6 +189,14 @@ interface OverviewTabProps {
   /** Tenant plans, for the renewal duration preview in the confirm dialog. */
   membershipPlans?: MembershipPlan[];
   /**
+   * Pending payments for this customer (?status=pending&customer=) — the
+   * membership dues line. Undefined/null = not loaded → line omitted; an
+   * empty array renders the "no pending dues" empty state.
+   */
+  pendingPayments?: Payment[] | null;
+  /** Jump to the payment history tab from the dues line. */
+  onViewPayments?: () => void;
+  /**
    * Renew a membership — the caller POSTs the renewal and updates its own
    * state. Resolves the updated membership (dialog closes) or null (stays
    * open). planId (issue #68) switches the plan before the extension.
@@ -141,6 +216,8 @@ export function OverviewTab({
   onRecordAdmissionFee,
   memberships,
   membershipPlans = [],
+  pendingPayments,
+  onViewPayments,
   onRenewMembership,
 }: OverviewTabProps) {
   const profile = summary?.health_profile ?? null;
@@ -246,7 +323,7 @@ export function OverviewTab({
         </CardHeader>
         <CardBody className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <div>
-            <p className="mb-2 text-sm font-medium text-gray-700">Membership status</p>
+            <p className="mb-2 text-sm font-medium text-gray-700">Account status</p>
             {customer.is_active ? (
               <Badge variant="success">Active</Badge>
             ) : (
@@ -379,7 +456,7 @@ export function OverviewTab({
         </div>
       )}
 
-      {/* Memberships + renewal */}
+      {/* Memberships + renewal + dues (issue #93) */}
       {memberships !== null && memberships !== undefined && (
         <Card>
           <CardHeader>
@@ -387,35 +464,100 @@ export function OverviewTab({
           </CardHeader>
           <CardBody className="space-y-3">
             {memberships.length === 0 ? (
-              <p className="text-sm text-gray-500">No memberships on file.</p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-gray-500">No memberships on file.</p>
+                <Link href="/memberships/assign">
+                  <Button size="sm" variant="outline">
+                    Assign membership
+                  </Button>
+                </Link>
+              </div>
             ) : (
-              memberships.map((membership) => (
-                <div
-                  key={membership.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 p-4"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900">
-                        {membership.plan_name}
-                      </span>
-                      <Badge variant={STATUS_VARIANTS[membership.status]}>
-                        {getMembershipStatusLabel(membership.status)}
-                      </Badge>
+              memberships.map((membership) => {
+                const hint =
+                  membership.status === "active" || membership.status === "expired"
+                    ? formatValidityHint(membership.end_date)
+                    : undefined;
+                return (
+                  <div
+                    key={membership.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 p-4"
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-gray-900">
+                          {membership.plan_name}
+                        </span>
+                        <Badge variant={STATUS_VARIANTS[membership.status]}>
+                          {getMembershipStatusLabel(membership.status)}
+                        </Badge>
+                        {hint && (
+                          <span
+                            className={
+                              membership.status === "active" && membershipDaysRemaining(membership.end_date) <= 7
+                                ? "text-xs font-medium text-amber-600"
+                                : "text-xs text-gray-500"
+                            }
+                          >
+                            {hint}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {formatMembershipDate(membership.start_date)} –{" "}
+                        {formatMembershipDate(membership.end_date)}
+                        {membership.price != null &&
+                          ` · ₹${Number(membership.price).toLocaleString()}`}
+                      </p>
                     </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {formatMembershipDate(membership.start_date)} –{" "}
-                      {formatMembershipDate(membership.end_date)}
-                    </p>
+                    {(membership.status === "active" || membership.status === "expired") &&
+                      onRenewMembership && (
+                        <Button size="sm" variant="outline" onClick={() => setRenewTarget(membership)}>
+                          Renew
+                        </Button>
+                      )}
                   </div>
-                  {(membership.status === "active" || membership.status === "expired") &&
-                    onRenewMembership && (
-                      <Button size="sm" variant="outline" onClick={() => setRenewTarget(membership)}>
-                        Renew
-                      </Button>
-                    )}
+                );
+              })
+            )}
+            {pendingPayments !== null && pendingPayments !== undefined && (
+              <div
+                className={`flex items-center justify-between gap-3 rounded-xl border p-4 ${
+                  pendingPayments.length > 0
+                    ? "border-amber-200 bg-amber-50"
+                    : "border-gray-200"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                      pendingPayments.length > 0
+                        ? "bg-amber-100 text-amber-600"
+                        : "bg-brand-50 text-brand-600"
+                    }`}
+                  >
+                    <Receipt className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  {pendingPayments.length > 0 ? (
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        ₹{summarizeDues(pendingPayments).total.toLocaleString()} pending
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {pendingPayments.length} pending payment
+                        {pendingPayments.length > 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No pending dues.</p>
+                  )}
                 </div>
-              ))
+                {pendingPayments.length > 0 && onViewPayments && (
+                  <Button size="sm" variant="outline" onClick={onViewPayments}>
+                    View payments
+                  </Button>
+                )}
+              </div>
             )}
           </CardBody>
         </Card>
