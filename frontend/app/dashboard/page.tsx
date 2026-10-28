@@ -27,10 +27,12 @@ import {
   fetchDashboardMemberships,
   fetchDashboardTrainers,
   fetchDashboardPendingPayments,
+  sendPaymentLink,
   errorMessage,
 } from "@/lib/api";
 import { getToken } from "@/lib/auth";
-import { canAccessRoute } from "@/lib/permissions";
+import { canAccessRoute, hasAnyPermission } from "@/lib/permissions";
+import { toast } from "sonner";
 import type {
   DashboardOverview,
   RevenueResponse,
@@ -48,6 +50,7 @@ export default function DashboardPage() {
   const [memberships, setMemberships] = useState<MembershipStatsData | null>(null);
   const [trainers, setTrainers] = useState<TrainerOverviewData[]>([]);
   const [payments, setPayments] = useState<PendingPayment[]>([]);
+  const [sendingPaymentId, setSendingPaymentId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(() => {
@@ -134,6 +137,33 @@ export default function DashboardPage() {
     },
   ];
 
+  /**
+   * Row action on the pending card (issue #79): intimate the member on
+   * WhatsApp — the backend creates the Razorpay link and pushes it over the
+   * gym's configured channels. The cooldown surfaces as "already_sent";
+   * failures toast loudly with the backend reason.
+   */
+  const handleIntimate = async (payment: PendingPayment) => {
+    const token = getToken();
+    if (!token) return;
+    setSendingPaymentId(payment.id);
+    try {
+      const outcome = await sendPaymentLink(payment.id, token);
+      if (outcome.status === "sent") {
+        toast.success(`Payment link sent to ${payment.customer_name} over ${outcome.channel}`);
+      } else if (outcome.status === "already_sent") {
+        toast.info(`A link was sent to ${payment.customer_name} recently — try again later.`);
+      } else {
+        toast.error(outcome.reason || `Could not send a payment link to ${payment.customer_name}`);
+      }
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setSendingPaymentId(null);
+    }
+  };
+
+  const canIntimate = userRole ? hasAnyPermission(userRole, ["payments.record_payment"]) : false;
   const canOnboard = userRole ? canAccessRoute(userRole, "/onboarding/member") : false;
 
   return (
@@ -185,7 +215,13 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-6">
-        <PendingPayments payments={payments} loading={loading} />
+        <PendingPayments
+          payments={payments}
+          loading={loading}
+          onSend={handleIntimate}
+          sendingPaymentId={sendingPaymentId}
+          canSend={canIntimate}
+        />
       </div>
     </DashboardLayout>
   );
