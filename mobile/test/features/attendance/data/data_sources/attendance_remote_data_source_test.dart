@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fitnation_app/core/errors/failures.dart';
-import 'package:fitnation_app/features/auth/data/data_sources/api_client.dart';
 import 'package:fitnation_app/features/attendance/data/data_sources/attendance_remote_data_source.dart';
 
 import '../../../../helpers/fakes.dart';
