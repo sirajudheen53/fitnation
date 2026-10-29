@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from datetime import time as dt_time
 from datetime import timedelta
 
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.attendance.models import AttendanceRecord
 from apps.customers.models import Customer
+from apps.dashboard import services
 from apps.dashboard.models import DashboardCache
 from apps.memberships.models import Membership, MembershipPlan
 from apps.payments.models import Payment
@@ -493,3 +498,180 @@ class PendingPaymentsDuesTests(APITestCase):
 
         cached = DashboardCache.objects.for_tenant(self.tenant).get(metric_name="overview")
         self.assertEqual(cached.metric_value.get("pending_dues_semantics"), "issue-84")
+
+
+class DashboardAggregationTests(TestCase):
+    """Issue #82: bucket/boundary semantics of the SQL-aggregated services.
+
+    The dashboard aggregations used to hydrate every payment/check-in row in
+    Python; they now group in SQL. These tests pin the bucketing semantics
+    that must not drift in that rewrite (week/month boundaries, window edges,
+    mixed plan durations).
+    """
+
+    def setUp(self) -> None:
+        """Create a tenant with one customer and a monthly plan."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.customer = _make_customer(self.tenant, "cust@local.test")
+        self.plan = _make_plan(self.tenant, price="1500.00", duration_days=30)
+
+    def _paid(self, amount, paid_at):
+        """Create a completed payment at a specific moment."""
+        return Payment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            amount=amount,
+            payment_method=Payment.PaymentMethod.UPI,
+            status=Payment.Status.COMPLETED,
+            paid_at=paid_at,
+        )
+
+    def test_revenue_weekly_buckets_split_at_monday_boundary(self) -> None:
+        """A payment one hour before Monday lands in the previous week bucket."""
+        today = timezone.localdate()
+        monday = today - timedelta(days=today.weekday())
+        inside_week = timezone.make_aware(datetime.combine(monday, dt_time(0, 30)))
+        before_week = inside_week - timedelta(hours=1)  # Sunday 23:00
+        self._paid("400.00", before_week)
+        self._paid("600.00", inside_week)
+
+        weekly = {point["label"]: point["amount"] for point in services.get_revenue_breakdown(self.tenant)["weekly"]}
+
+        # Weekly buckets are labelled by their Monday start.
+        self.assertEqual(weekly.get(monday.strftime("%b %d")), 600.0)
+        self.assertEqual(weekly.get((monday - timedelta(days=7)).strftime("%b %d")), 400.0)
+
+    def test_revenue_monthly_buckets_split_at_month_boundary(self) -> None:
+        """A payment one hour past midnight on the 1st lands in the new month."""
+        today = timezone.localdate()
+        first_of_month = today.replace(day=1)
+        prev_month_last = first_of_month - timedelta(days=1)
+        inside_month = timezone.make_aware(datetime.combine(first_of_month, dt_time(0, 30)))
+        before_month = timezone.make_aware(datetime.combine(prev_month_last, dt_time(23, 0)))
+        self._paid("250.00", before_month)
+        self._paid("600.00", inside_month)
+
+        monthly = {point["label"]: point["amount"] for point in services.get_revenue_breakdown(self.tenant)["monthly"]}
+
+        # Monthly buckets are labelled by month start.
+        self.assertEqual(monthly.get(first_of_month.strftime("%b %Y")), 600.0)
+        self.assertEqual(monthly.get(prev_month_last.replace(day=1).strftime("%b %Y")), 250.0)
+
+    def test_revenue_excludes_payments_older_than_the_window(self) -> None:
+        """A 13-month-old payment is outside every series' window."""
+        old = timezone.make_aware(datetime(2020, 1, 15, 10, 0))
+        self._paid("999.00", old)
+        self._paid("250.00", timezone.now())
+
+        data = services.get_revenue_breakdown(self.tenant)
+
+        for series_name in ("daily", "weekly", "monthly"):
+            total = sum(point["amount"] for point in data[series_name])
+            self.assertEqual(total, 250.0, series_name)
+
+    def test_attendance_trend_counts_per_day_and_drops_old_checkins(self) -> None:
+        """The 7-day trend buckets per local day and ignores older check-ins."""
+        today = timezone.localdate()
+        for days_ago, count in ((0, 2), (3, 1), (6, 1)):
+            for _ in range(count):
+                moment = timezone.make_aware(datetime.combine(today - timedelta(days=days_ago), dt_time(7, 30)))
+                AttendanceRecord.objects.create(
+                    tenant=self.tenant,
+                    customer=self.customer,
+                    check_in_time=moment,
+                    date=(today - timedelta(days=days_ago)),
+                )
+        # 7 days ago: outside the trend window entirely.
+        stale = timezone.make_aware(datetime.combine(today - timedelta(days=7), dt_time(8, 0)))
+        AttendanceRecord.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            check_in_time=stale,
+            date=today - timedelta(days=7),
+        )
+
+        data = services.get_attendance_analytics(self.tenant)
+
+        by_label = {point["hour"]: point["check_ins"] for point in data["weekly_trend"]}
+        self.assertEqual(len(data["weekly_trend"]), 7)
+        self.assertEqual(by_label[(today - timedelta(days=0)).strftime("%a")], 2)
+        self.assertEqual(by_label[(today - timedelta(days=3)).strftime("%a")], 1)
+        self.assertEqual(by_label[(today - timedelta(days=6)).strftime("%a")], 1)
+        self.assertEqual(sum(point["check_ins"] for point in data["weekly_trend"]), 4)
+
+    def test_mrr_mixes_plan_durations_and_skips_zero_length_plans(self) -> None:
+        """MRR normalizes each active plan to 30 days; duration 0 contributes 0."""
+        quarterly = _make_plan(self.tenant, name="Quarterly", price="4000.00", duration_days=90)
+        zero = _make_plan(self.tenant, name="Zero", price="5000.00", duration_days=0)
+        today = timezone.localdate()
+        for plan in (self.plan, quarterly, zero):
+            Membership.objects.create(
+                tenant=self.tenant,
+                customer=self.customer,
+                plan=plan,
+                start_date=today,
+                end_date=today + timedelta(days=plan.duration_days),
+                status=Membership.Status.ACTIVE,
+            )
+
+        overview = services.get_overview(self.tenant)
+
+        # MRR normalizes each plan to a 30-day equivalent: 1500*30/30 +
+        # 4000*30/90 = 1500 + 1333.33 = 2833.33 (duration 0 skipped).
+        self.assertAlmostEqual(float(overview["mrr"]), 2833.33, places=2)
+
+    def test_overview_pending_count_matches_pending_list(self) -> None:
+        """The overview's pending count always agrees with the queue list."""
+        today = timezone.localdate()
+        lapsed = Membership.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            plan=self.plan,
+            start_date=today - timedelta(days=60),
+            end_date=today - timedelta(days=5),
+        )
+        Payment.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            amount="300.00",
+            payment_method=Payment.PaymentMethod.CASH,
+            status=Payment.Status.PENDING,
+            kind=Payment.Kind.ADMISSION,  # does not cover the renewal
+        )
+        other = _make_customer(self.tenant, "other@local.test")
+        Payment.objects.create(
+            tenant=self.tenant,
+            customer=other,
+            amount="1500.00",
+            payment_method=Payment.PaymentMethod.CASH,
+            status=Payment.Status.PENDING,
+            kind=Payment.Kind.MEMBERSHIP,  # covers other's due
+        )
+        Membership.objects.create(
+            tenant=self.tenant,
+            customer=other,
+            plan=self.plan,
+            start_date=today - timedelta(days=40),
+            end_date=today - timedelta(days=2),
+        )
+        self.assertIsNotNone(lapsed.id)
+
+        overview = services.get_overview(self.tenant)
+
+        self.assertEqual(overview["pending_payments"], len(services.get_pending_payments(self.tenant)))
+        # 2 explicit pending rows (admission + other's membership charge)
+        # plus 1 uncovered due (the customer's lapsed membership).
+        self.assertEqual(overview["pending_payments"], 3)
+
+    def test_revenue_endpoint_row_volume_does_not_scale_queries(self) -> None:
+        """GET revenue/ issues a constant, small number of queries (#82)."""
+        today = timezone.localdate()
+        for i in range(40):
+            moment = timezone.make_aware(datetime.combine(today, dt_time(10, i % 60)))
+            self._paid(f"{10 + i}.00", moment)
+
+        with CaptureQueriesContext(connection) as ctx:
+            services.get_revenue_breakdown(self.tenant)
+        # One aggregate query per series (daily/weekly/monthly), regardless
+        # of how many payments fall in the window.
+        self.assertLessEqual(len(ctx.captured_queries), 6)

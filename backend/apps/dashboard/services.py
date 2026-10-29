@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from django.db.models import Count
-from django.db.models.functions import ExtractHour
+from django.db.models import Count, DateField, DecimalField, ExpressionWrapper, F, Q, Sum, Value
+from django.db.models.functions import ExtractHour, TruncDate, TruncMonth, TruncWeek
 from django.utils import timezone
 
 from apps.attendance.models import AttendanceRecord
@@ -54,25 +54,40 @@ def get_overview(tenant: Any) -> dict:
     total_members = Customer.objects.for_tenant(tenant).count()
     active_memberships = Membership.objects.for_tenant(tenant).filter(status=Membership.Status.ACTIVE).count()
 
-    # MRR: active memberships normalized to a 30-day equivalent.
-    mrr_total = Decimal(0)
-    active_qs = Membership.objects.for_tenant(tenant).filter(status=Membership.Status.ACTIVE).select_related("plan")
-    for membership in active_qs:
-        plan = membership.plan
-        if plan is not None and plan.duration_days:
-            mrr_total += Decimal(str(plan.price or 0)) * Decimal(30) / Decimal(plan.duration_days)
+    # MRR: active memberships normalized to a 30-day equivalent. One SQL
+    # aggregation (SUM(price * 30 / duration_days)) instead of loading every
+    # active membership + plan into Python (#82).
+    mrr_total = (
+        Membership.objects.for_tenant(tenant)
+        .filter(status=Membership.Status.ACTIVE, plan__duration_days__gt=0)
+        .aggregate(
+            total=Sum(
+                ExpressionWrapper(
+                    # 30.0 (not 30): SQLite does integer division for
+                    # int/int operands, truncating the 30-day normalization.
+                    F("plan__price") * Value(30.0) / F("plan__duration_days"),
+                    output_field=DecimalField(max_digits=21, decimal_places=6),
+                )
+            )
+        )["total"]
+    ) or Decimal(0)
 
     # Revenue summary (completed payments only).
     paid_qs = Payment.objects.for_tenant(tenant).filter(status=Payment.Status.COMPLETED)
-    total_revenue = _sum(paid_qs.values_list("amount", flat=True))
+    total_revenue = paid_qs.aggregate(total=Sum("amount"))["total"] or Decimal(0)
     month_start = timezone.make_aware(datetime.combine(today.replace(day=1), datetime.min.time()))
-    this_month = _sum(paid_qs.filter(paid_at__gte=month_start).values_list("amount", flat=True))
+    this_month = paid_qs.filter(paid_at__gte=month_start).aggregate(total=Sum("amount"))["total"] or Decimal(0)
 
     today_attendance = AttendanceRecord.objects.for_tenant(tenant).filter(date=today).count()
 
     trainer_count = User.objects.filter(tenant=tenant, role=User.Role.TRAINER, trainer_profile__isnull=False).count()
 
-    pending_payments = len(get_pending_payments(tenant))
+    # Count without materializing the queue rows (#82): explicit pending
+    # payments plus one due per customer, matching get_pending_payments().
+    pending_payments = (
+        Payment.objects.for_tenant(tenant).filter(status=Payment.Status.PENDING).count()
+        + _dues_queryset(tenant).aggregate(count=Count("customer_id", distinct=True))["count"]
+    )
 
     data = {
         "total_members": total_members,
@@ -120,26 +135,16 @@ def get_revenue_breakdown(tenant: Any, period: str | None = None) -> dict:
         cursor = (cursor - timedelta(days=1)).replace(day=1)
     month_starts.reverse()
 
-    daily_totals = {day: Decimal(0) for day in daily_days}
-    weekly_totals = {start: Decimal(0) for start in weekly_starts}
-    monthly_totals = {start: Decimal(0) for start in month_starts}
-
     earliest = timezone.make_aware(datetime.combine(month_starts[0], datetime.min.time()))
     paid = Payment.objects.for_tenant(tenant).filter(
         status=Payment.Status.COMPLETED, paid_at__isnull=False, paid_at__gte=earliest
     )
 
-    for payment in paid.iterator(chunk_size=500):
-        day = timezone.localtime(payment.paid_at).date()
-        amount = Decimal(payment.amount or 0)
-        if day in daily_totals:
-            daily_totals[day] += amount
-        week_start = day - timedelta(days=day.weekday())
-        if week_start in weekly_totals:
-            weekly_totals[week_start] += amount
-        month_key = day.replace(day=1)
-        if month_key in monthly_totals:
-            monthly_totals[month_key] += amount
+    daily_totals = _bucket_totals(paid, TruncDate("paid_at"), daily_days)
+    # TruncWeek/TruncMonth truncate to datetimes by default — force a date
+    # output so buckets match the Python date keys.
+    weekly_totals = _bucket_totals(paid, TruncWeek("paid_at", output_field=DateField()), weekly_starts)
+    monthly_totals = _bucket_totals(paid, TruncMonth("paid_at", output_field=DateField()), month_starts)
 
     return {
         "daily": [{"label": day.strftime("%b %d"), "amount": round(float(daily_totals[day]), 2)} for day in daily_days],
@@ -168,12 +173,16 @@ def get_attendance_analytics(tenant: Any) -> dict:
     peak_qs = qs.annotate(hour=ExtractHour("check_in_time")).values("hour").annotate(count=Count("id")).order_by("hour")
     peak_hours = [{"hour": _hour_label(int(row["hour"] or 0)), "check_ins": row["count"]} for row in peak_qs]
 
+    # 7-day trend: grouped in SQL over the indexed date column, filtered to
+    # the window — previously this pulled every check-in the tenant ever had
+    # into Python (#82). ``date`` is always the local date of ``check_in_time``
+    # (model save() and every writer derive it that way).
     today = timezone.localdate()
     day_counts = {today - timedelta(days=offset): 0 for offset in range(6, -1, -1)}
-    for check_in in qs.values_list("check_in_time", flat=True).iterator(chunk_size=500):
-        day = timezone.localtime(check_in).date()
-        if day in day_counts:
-            day_counts[day] += 1
+    trend_rows = qs.filter(date__gte=today - timedelta(days=6)).values("date").annotate(count=Count("id"))
+    for row in trend_rows:
+        if row["date"] in day_counts:
+            day_counts[row["date"]] = row["count"]
 
     weekly_trend = [{"hour": day.strftime("%a"), "check_ins": day_counts[day]} for day in day_counts]
 
@@ -194,10 +203,16 @@ def get_membership_stats(tenant: Any) -> dict:
     """Return membership status breakdown and per-plan distribution."""
     qs = Membership.objects.for_tenant(tenant)
 
+    # One pass for the status counts (#82) instead of a query per status.
+    counts = qs.aggregate(
+        active=Count("id", filter=Q(status=Membership.Status.ACTIVE)),
+        expired=Count("id", filter=Q(status=Membership.Status.EXPIRED)),
+        cancelled=Count("id", filter=Q(status=Membership.Status.CANCELLED)),
+    )
     breakdown = {
-        "active": qs.filter(status=Membership.Status.ACTIVE).count(),
-        "expired": qs.filter(status=Membership.Status.EXPIRED).count(),
-        "cancelled": qs.filter(status=Membership.Status.CANCELLED).count(),
+        "active": counts["active"],
+        "expired": counts["expired"],
+        "cancelled": counts["cancelled"],
     }
 
     plan_rows = list(qs.values("plan__name").annotate(count=Count("id")).order_by("-count"))
@@ -320,47 +335,69 @@ def get_pending_payments(tenant: Any) -> list[dict]:
 
 def _membership_dues(tenant: Any) -> list[dict]:
     """Derived pending dues for lapsed memberships without a covering charge."""
-    covered_customers = set(
-        Payment.objects.for_tenant(tenant)
-        .filter(status=Payment.Status.PENDING, kind=Payment.Kind.MEMBERSHIP)
-        .values_list("customer_id", flat=True)
+    # One values() pass instead of instantiating every lapsed membership +
+    # customer + plan (#82). First row per customer wins, i.e. the most
+    # recently lapsed membership (query orders by -end_date, -id).
+    rows = _dues_queryset(tenant).values(
+        "id",
+        "customer_id",
+        "end_date",
+        "plan__price",
+        "customer__name",
+        "customer__deleted_at",
     )
-    lapsed = (
-        Membership.objects.for_tenant(tenant)
-        .filter(end_date__lt=timezone.localdate())
-        .exclude(status=Membership.Status.CANCELLED)
-        .select_related("customer", "plan")
-        .order_by("-end_date", "-id")
-    )
-    # First hit per customer wins, i.e. the most recently lapsed membership.
-    latest_by_customer: dict[int, Membership] = {}
-    for membership in lapsed:
-        if membership.customer_id in covered_customers:
-            continue
-        latest_by_customer.setdefault(membership.customer_id, membership)
+    latest_by_customer: dict[int, dict] = {}
+    for row in rows:
+        latest_by_customer.setdefault(row["customer_id"], row)
 
     dues = [
         {
-            "id": -membership.id,
-            "customer_name": membership.customer.name,
-            "customer_is_deleted": membership.customer.deleted_at is not None,
-            "amount": round(float(membership.plan.price), 2),
-            "due_date": membership.end_date.isoformat(),
+            "id": -row["id"],
+            "customer_name": row["customer__name"],
+            "customer_is_deleted": bool(row["customer__deleted_at"]),
+            "amount": round(float(row["plan__price"] or 0), 2),
+            "due_date": row["end_date"].isoformat(),
         }
-        for membership in sorted(latest_by_customer.values(), key=lambda m: m.end_date)
+        for row in sorted(latest_by_customer.values(), key=lambda r: r["end_date"])
     ]
     return dues
 
 
-def _sum(values: Any) -> Decimal:
-    """Sum an iterable of Decimal amounts safely, returning Decimal zero on empty."""
-    total = Decimal(0)
-    for value in values:
-        try:
-            total += Decimal(value or 0)
-        except (TypeError, ValueError):
-            continue
-    return total
+def _dues_queryset(tenant: Any):
+    """Lapsed, non-cancelled memberships with no covering pending charge.
+
+    Shared by the dues list (:func:`_membership_dues`) and the overview's
+    pending count so both always agree on what counts as a due (issue #84
+    semantics). A customer with an explicit pending membership-kind payment
+    has their charge tracked, so their memberships are excluded here.
+    """
+    covered_customers = (
+        Payment.objects.for_tenant(tenant)
+        .filter(status=Payment.Status.PENDING, kind=Payment.Kind.MEMBERSHIP)
+        .values("customer_id")
+    )
+    return (
+        Membership.objects.for_tenant(tenant)
+        .filter(end_date__lt=timezone.localdate())
+        .exclude(status=Membership.Status.CANCELLED)
+        .exclude(customer_id__in=covered_customers)
+    )
+
+
+def _bucket_totals(paid: Any, truncation: Any, buckets: list[dt.date]) -> dict[dt.date, Decimal]:
+    """Sum completed payments into date buckets in SQL (#82).
+
+    Groups by the truncated ``paid_at`` (day / Monday-start week / calendar
+    month — matching the previous Python-side bucketing) and returns a
+    zero-filled ``{bucket: total}`` map. Buckets outside the truncated rows
+    (future dates, older payments beyond the window) stay at Decimal zero.
+    """
+    totals = dict.fromkeys(buckets, Decimal(0))
+    rows = paid.annotate(bucket=truncation).values("bucket").annotate(total=Sum("amount"))
+    for row in rows:
+        if row["bucket"] in totals:
+            totals[row["bucket"]] += row["total"] or Decimal(0)
+    return totals
 
 
 def _read(tenant: Any, name: str) -> dict | None:
