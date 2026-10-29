@@ -81,8 +81,11 @@ class MembershipViewSet(ModelViewSet):
         """Return memberships scoped to the request tenant.
 
         Customer-role users see only their own memberships.
+
+        The list serializer reads customer and plan fields — join them so a
+        page costs one query instead of three per row (#82).
         """
-        queryset = Membership.objects.for_tenant(self.request.tenant)
+        queryset = Membership.objects.for_tenant(self.request.tenant).select_related("customer", "plan")
         if self.request.user.role == User.Role.CUSTOMER:
             queryset = queryset.filter(customer__user=self.request.user)
         return queryset

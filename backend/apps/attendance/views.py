@@ -67,8 +67,11 @@ class AttendanceRecordViewSet(ModelViewSet):
         """Return attendance records scoped to the tenant with optional filters.
 
         Customer-role users see only their own attendance.
+
+        The list serializer renders customer and branch names — join them so
+        a page is one query instead of two per row (#82).
         """
-        queryset = AttendanceRecord.objects.for_tenant(self.request.tenant)
+        queryset = AttendanceRecord.objects.for_tenant(self.request.tenant).select_related("customer", "branch")
         if self.request.user.role == User.Role.CUSTOMER:
             queryset = queryset.filter(customer__user=self.request.user)
         else:
@@ -220,8 +223,12 @@ class TrainerAttendanceViewSet(ModelViewSet):
     serializer_class = TrainerAttendanceSerializer
 
     def get_queryset(self) -> TrainerAttendance:
-        """Return trainer attendance scoped to the tenant with optional filters."""
-        queryset = TrainerAttendance.objects.for_tenant(self.request.tenant)
+        """Return trainer attendance scoped to the tenant with optional filters.
+
+        The list serializer renders the trainer's user identity and branch —
+        join both (#82).
+        """
+        queryset = TrainerAttendance.objects.for_tenant(self.request.tenant).select_related("trainer__user", "branch")
         date = self.request.query_params.get("date")
         if date:
             queryset = queryset.filter(date=date)
@@ -374,8 +381,8 @@ class StaffAttendanceViewSet(ModelViewSet):
     serializer_class = StaffAttendanceSerializer
 
     def get_queryset(self) -> StaffAttendance:
-        """Return staff attendance records scoped to the tenant."""
-        return StaffAttendance.objects.for_tenant(self.request.tenant)
+        """Return staff attendance records scoped to the tenant (#82: join user+branch)."""
+        return StaffAttendance.objects.for_tenant(self.request.tenant).select_related("user", "branch")
 
     def create(self, request: Request) -> Response:
         """Log a new staff attendance record."""

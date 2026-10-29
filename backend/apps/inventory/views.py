@@ -68,8 +68,8 @@ class InventoryItemViewSet(ModelViewSet):
     serializer_class = InventoryItemSerializer
 
     def get_queryset(self):
-        """Return inventory items scoped to the request tenant."""
-        return InventoryItem.objects.for_tenant(self.request.tenant)
+        """Return inventory items scoped to the request tenant (#82: join equipment)."""
+        return InventoryItem.objects.for_tenant(self.request.tenant).select_related("equipment")
 
     def create(self, request: Request) -> Response:
         """Create a new inventory item."""
@@ -124,8 +124,8 @@ class MaintenanceLogViewSet(ModelViewSet):
     serializer_class = MaintenanceLogSerializer
 
     def get_queryset(self):
-        """Return maintenance logs scoped to the request tenant."""
-        return MaintenanceLog.objects.for_tenant(self.request.tenant)
+        """Return maintenance logs scoped to the request tenant (#82: join equipment)."""
+        return MaintenanceLog.objects.for_tenant(self.request.tenant).select_related("equipment")
 
     def create(self, request: Request) -> Response:
         """Create a new maintenance log."""

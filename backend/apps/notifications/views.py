@@ -30,8 +30,12 @@ class NotificationLogViewSet(ReadOnlyModelViewSet):
     serializer_class = NotificationLogSerializer
 
     def get_queryset(self) -> NotificationLog:
-        """Return logs scoped to the request tenant with optional filters."""
-        queryset = NotificationLog.objects.for_tenant(self.request.tenant)
+        """Return logs scoped to the request tenant with optional filters.
+
+        The list serializer renders the customer name — join it (#82); this
+        table grows one row per send attempt so the N+1 compounds fast.
+        """
+        queryset = NotificationLog.objects.for_tenant(self.request.tenant).select_related("customer")
         status_param = self.request.query_params.get("status")
         if status_param:
             queryset = queryset.filter(status=status_param)

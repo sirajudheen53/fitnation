@@ -273,8 +273,16 @@ class PaymentViewSet(ModelViewSet):
         """Return payments scoped to the request tenant with optional filters.
 
         Customer-role users see only their own payments.
+
+        The list serializer reads customer fields, the plan name and the
+        payment's invoices, so the join/prefetch here keeps a page at a
+        constant query count instead of ~4 queries per row (#82).
         """
-        queryset = Payment.objects.for_tenant(self.request.tenant)
+        queryset = (
+            Payment.objects.for_tenant(self.request.tenant)
+            .select_related("customer", "membership", "membership__plan")
+            .prefetch_related("invoices")
+        )
         if self.request.user.role == User.Role.CUSTOMER:
             queryset = queryset.filter(customer__user=self.request.user)
         else:
@@ -385,8 +393,8 @@ class InvoiceViewSet(ModelViewSet):
     serializer_class = InvoiceSerializer
 
     def get_queryset(self) -> Invoice:
-        """Return invoices scoped to the request tenant."""
-        return Invoice.objects.for_tenant(self.request.tenant)
+        """Return invoices scoped to the request tenant (#82: join customer)."""
+        return Invoice.objects.for_tenant(self.request.tenant).select_related("customer")
 
     @action(detail=False, methods=["post"])
     def generate(self, request: Request) -> Response:
