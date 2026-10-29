@@ -2,6 +2,7 @@
 
 from typing import ClassVar
 
+from django.db.models import F
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -102,16 +103,17 @@ class InventoryItemViewSet(ModelViewSet):
         """Return inventory items below their low-stock threshold.
 
         Only items with ``track_inventory=True`` and
-        ``stock_quantity <= low_stock_threshold`` are returned.
+        ``stock_quantity <= low_stock_threshold`` are returned — filtered in
+        SQL with an F() expression instead of loading every item and testing
+        the Python property (#82).
         """
         self.required_permission = "inventory.view_inventory"
-        queryset = self.get_queryset().filter(track_inventory=True)
-        low_stock_items = [item for item in queryset if item.is_low_stock]
-        page = self.paginate_queryset(low_stock_items)
+        queryset = self.get_queryset().filter(track_inventory=True, stock_quantity__lte=F("low_stock_threshold"))
+        page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(low_stock_items, many=True)
+        serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
 

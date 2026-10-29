@@ -1,10 +1,13 @@
 """Tests for the attendance app."""
 
+import datetime as dt
+
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.attendance.models import AttendanceRecord, TrainerAttendance
+from apps.attendance.selectors import attendance_stats
 from apps.branches.models import Branch
 from apps.customers.models import Customer
 from apps.tenants.services import provision_tenant
@@ -556,3 +559,114 @@ class StaffAttendanceTests(APITestCase):
             format="json",
         )
         self.assertEqual(res.status_code, 400)
+
+
+class AttendanceStatsAggregationTests(TestCase):
+    """Issue #82: the stats selector aggregates in SQL over all person types.
+
+    Pins the metrics that used to be computed by hydrating a week of rows:
+    today count, peak hour (today only), weekly distribution, weekly total,
+    and the most frequent check-out hour — across customers, trainers and
+    staff, with the 7-day window edges.
+    """
+
+    def setUp(self) -> None:
+        """Create a tenant with one member of each person type."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.customer = _make_customer(self.tenant, "cust@local.test")
+        self.trainer = _make_trainer(self.tenant, "trainer@local.test")
+        self.staff = create_user(
+            tenant=self.tenant,
+            email="staff@local.test",
+            first_name="Staff",
+            last_name="User",
+            role=User.Role.MANAGER,
+        )
+
+    def _customer_check_in(self, days_ago: int, hour: int, **extra):
+        """Create a customer check-in N days ago at a given local hour."""
+        moment = timezone.make_aware(
+            dt.datetime.combine(
+                timezone.localdate() - dt.timedelta(days=days_ago),
+                dt.time(hour, 0),
+            )
+        )
+        return AttendanceRecord.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            check_in_time=moment,
+            check_out_time=extra.pop("check_out_time", moment + dt.timedelta(hours=1)),
+            date=moment.date(),
+            **extra,
+        )
+
+    def test_stats_across_person_types_and_window_edges(self) -> None:
+        """Counts merge all three tables; the 7-day window cuts at 6 days ago."""
+        # Today: two customer check-ins at 7:00 and one at 18:00.
+        self._customer_check_in(0, 7)
+        self._customer_check_in(0, 7)
+        self._customer_check_in(0, 18)
+        # Trainer + staff today at 7:00 — same hour as the customers.
+        trainer_in = timezone.make_aware(dt.datetime.combine(timezone.localdate(), dt.time(7, 0)))
+        TrainerAttendance.objects.create(
+            tenant=self.tenant,
+            trainer=self.trainer,
+            check_in_time=trainer_in,
+            check_out_time=trainer_in + dt.timedelta(hours=1),
+            date=trainer_in.date(),
+        )
+        from apps.attendance.models import StaffAttendance
+
+        StaffAttendance.objects.create(
+            tenant=self.tenant,
+            user=self.staff,
+            check_in_time=trainer_in,
+            check_out_time=trainer_in + dt.timedelta(hours=1),
+            date=trainer_in.date(),
+        )
+        # Window edges: 6 days ago counts, 7 days ago does not.
+        self._customer_check_in(6, 9)
+        self._customer_check_in(7, 9)
+
+        stats = attendance_stats(self.tenant)
+
+        # 3 customers + 1 trainer + 1 staff today = 5.
+        self.assertEqual(stats["stats"]["today_count"], 5)
+        # 7:00 has 4 check-ins (2 customers + trainer + staff) vs 18:00's 1.
+        self.assertEqual(stats["stats"]["peak_hour"], "07:00")
+        self.assertEqual(stats["stats"]["peak_hour_count"], 4)
+        # Weekly: today's 5 + 6-days-ago 1 = 6 (7-days-ago excluded).
+        self.assertEqual(stats["stats"]["weekly_check_ins"], 6)
+        self.assertEqual(stats["stats"]["avg_daily_check_ins"], round(6 / 7, 1))
+        self.assertEqual(stats["summary"]["check_ins"][-1], 5)  # today's bucket
+        self.assertEqual(stats["summary"]["check_ins"][0], 1)  # 6 days ago
+        self.assertNotIn(7, stats["summary"]["check_ins"])  # 7 days ago cut
+        # Dropouts: every check-out lands one hour after its check-in, so
+        # 8:00 holds today's four 7:00 check-outs (customers + trainer +
+        # staff); the 6-days-ago 9:00 check-out at 10:00 and 19:00 trail.
+        self.assertEqual(stats["stats"]["most_frequent_dropout_hour"], "08:00")
+
+    def test_empty_tenant_zeroes(self) -> None:
+        """A tenant with no attendance gets well-formed zeros."""
+        stats = attendance_stats(self.tenant)
+        self.assertEqual(stats["stats"]["today_count"], 0)
+        self.assertIsNone(stats["stats"]["peak_hour"])
+        self.assertEqual(stats["stats"]["peak_hour_count"], 0)
+        self.assertEqual(stats["stats"]["weekly_check_ins"], 0)
+        self.assertIsNone(stats["stats"]["most_frequent_dropout_hour"])
+        self.assertEqual(stats["summary"]["check_ins"], [0] * 7)
+
+    def test_tenant_isolation(self) -> None:
+        """Another tenant's check-ins never leak into the stats."""
+        other = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        other_customer = _make_customer(other, "other@local.test")
+        moment = timezone.now()
+        AttendanceRecord.objects.create(
+            tenant=other,
+            customer=other_customer,
+            check_in_time=moment,
+            date=moment.date(),
+        )
+        stats = attendance_stats(self.tenant)
+        self.assertEqual(stats["stats"]["today_count"], 0)
+        self.assertEqual(stats["stats"]["weekly_check_ins"], 0)

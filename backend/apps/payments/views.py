@@ -3,6 +3,7 @@
 from decimal import Decimal
 from typing import ClassVar
 
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
@@ -240,13 +241,9 @@ class RevenueSummaryView(APIView):
         month_start = today_start.replace(day=1)
 
         def _sum(qs):
-            total = Decimal(0)
-            for value in qs.values_list("amount", flat=True):
-                try:
-                    total += Decimal(value or 0)
-                except (TypeError, ValueError):
-                    continue
-            return round(float(total), 2)
+            # SQL SUM instead of shipping every amount to Python (#82).
+            total = qs.aggregate(total=Sum("amount"))["total"]
+            return round(float(total or 0), 2)
 
         data = {
             "today": _sum(membership_paid.filter(paid_at__gte=today_start)),
