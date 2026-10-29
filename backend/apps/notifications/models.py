@@ -99,6 +99,12 @@ class NotificationLog(TenantModelMixin):
                 name="idx_notif_type",
             ),
             models.Index(fields=["tenant", "status"], name="idx_notif_status"),
+            # Issue #82: the app-invite status card + its list prefetch seek
+            # a customer's logs by type, newest first.
+            models.Index(
+                fields=["customer", "notification_type", "created_at"],
+                name="idx_notif_cust_type_created",
+            ),
         ]
 
     def __str__(self) -> str:

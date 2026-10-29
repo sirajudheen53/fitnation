@@ -108,6 +108,11 @@ class Customer(TenantModelMixin):
                 name="uq_customer_tenant_email",
             ),
         ]
+        indexes: ClassVar[list] = [
+            # Issue #82: the member list orders by -created_at within a
+            # tenant on every page load.
+            models.Index(fields=["tenant", "created_at"], name="idx_customer_tenant_created"),
+        ]
 
     @property
     def is_deleted(self) -> bool:

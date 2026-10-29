@@ -84,6 +84,12 @@ class AttendanceRecord(TenantModelMixin):
                 fields=["tenant", "branch", "date"],
                 name="idx_att_branch_date",
             ),
+            # Issue #82: today's-count and weekly-trend dashboard queries
+            # range over (tenant, date).
+            models.Index(
+                fields=["tenant", "date"],
+                name="idx_att_tenant_date",
+            ),
         ]
 
     def save(self, *args: Any, **kwargs: Any) -> None:

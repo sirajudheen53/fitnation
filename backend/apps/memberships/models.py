@@ -111,6 +111,10 @@ class Membership(TenantModelMixin):
         ordering: ClassVar[list[str]] = ["-created_at"]
         indexes: ClassVar[list] = [
             models.Index(fields=["tenant", "customer"], name="idx_membership_tenant_customer"),
+            # Issue #82: status breakdown counts filter by status; the
+            # pending-dues scan ranges over end_date within a tenant.
+            models.Index(fields=["tenant", "status"], name="idx_membership_tenant_status"),
+            models.Index(fields=["tenant", "end_date"], name="idx_membership_tenant_end"),
         ]
 
     def __str__(self) -> str:

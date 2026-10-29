@@ -107,6 +107,11 @@ class Payment(TenantModelMixin):
             models.Index(fields=["tenant", "customer"], name="idx_payment_tenant_customer"),
             models.Index(fields=["tenant", "status"], name="idx_payment_tenant_status"),
             models.Index(fields=["tenant", "razorpay_order_id"], name="idx_payment_order_id"),
+            # Issue #82: the dashboard revenue series and revenue-summary
+            # filter completed payments by paid_at; the pending queue orders
+            # by created_at within a status.
+            models.Index(fields=["tenant", "status", "paid_at"], name="idx_pay_tenant_status_paid"),
+            models.Index(fields=["tenant", "status", "created_at"], name="idx_pay_tenant_status_created"),
         ]
 
     def __str__(self) -> str:
