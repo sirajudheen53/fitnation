@@ -39,6 +39,14 @@ describe("GymCodeCard", () => {
     expect(screen.getByTestId("gym-code-card")).toHaveTextContent(/specify their gym/i);
   });
 
+  it("tells owners the code is how first-time members sign in (#87)", async () => {
+    mockedFetchTenant.mockResolvedValue({ gym_code: "H4SHFIT" });
+    render(<GymCodeCard />);
+    expect(await screen.findByTestId("gym-code-help")).toHaveTextContent(
+      /first-time members type this code/i,
+    );
+  });
+
   it("treats a missing gym_code as absent instead of rendering 'null'", async () => {
     mockedFetchTenant.mockResolvedValue({});
     render(<GymCodeCard />);

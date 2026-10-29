@@ -9,8 +9,10 @@ import { getToken } from "@/lib/auth";
 
 /**
  * Gym code — the short code members type when the app asks "Specify your gym
- * to continue" during phone-OTP login (issue #60). Shown on the settings page
- * so owners/front-desk can copy it and share it with members.
+ * to continue" during phone-OTP login (issue #60), including first-time
+ * members joining from scratch (issue #87: the typed code now anchors their
+ * sign-in). Shown on the settings page so owners/front-desk can copy it and
+ * share it with members.
  */
 export function GymCodeCard() {
   const [gymCode, setGymCode] = useState<string | null>(null);
@@ -42,9 +44,9 @@ export function GymCodeCard() {
       <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <h2 className="font-semibold text-gray-900">Gym code</h2>
-          <p className="text-sm text-gray-500">
-            Members type this code when the app asks them to specify their gym.
-            Share it with your members.
+          <p className="text-sm text-gray-500" data-testid="gym-code-help">
+            First-time members type this code when the app asks them to specify
+            their gym — it signs them into your gym. Share it with your members.
           </p>
           {error && (
             <p className="text-sm text-red-600" data-testid="gym-code-error">
