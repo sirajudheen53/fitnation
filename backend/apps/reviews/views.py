@@ -16,6 +16,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.customers.models import Customer
+from apps.customers.serializers import app_invite_log_prefetch
 from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import FeatureFlagRequired, RolePermission
 from apps.reviews.models import Review, ReviewResponse
@@ -75,6 +76,9 @@ class ReviewViewSet(viewsets.ModelViewSet):
             "response",
             "response__author",
         )
+        # The nested CustomerSerializer renders the member's app-invite
+        # state — prefetch it once for the page instead of per row (#82).
+        queryset = queryset.prefetch_related(app_invite_log_prefetch("customer__notification_logs"))
         if self.request.user.role == User.Role.CUSTOMER:
             queryset = queryset.filter(customer__user=self.request.user)
         branch_id = self.request.query_params.get("branch_id")

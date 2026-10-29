@@ -19,6 +19,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from apps.customers.models import Customer
+from apps.customers.serializers import app_invite_log_prefetch
 from apps.feedback.models import Feedback, FeedbackResponse, FeedbackSurvey
 from apps.feedback.serializers import (
     FeedbackSerializer,
@@ -90,6 +91,9 @@ class FeedbackViewSet(viewsets.ModelViewSet):
         Customers only see their own feedback; staff roles see all tenant feedback.
         """
         queryset = Feedback.objects.for_tenant(self.request.tenant).select_related("customer", "response_by")
+        # Nested CustomerSerializer renders app-invite state — one prefetch
+        # for the page instead of one query per row (#82).
+        queryset = queryset.prefetch_related(app_invite_log_prefetch("customer__notification_logs"))
         if self.request.user.role == User.Role.CUSTOMER:
             queryset = queryset.filter(customer__user=self.request.user)
         category = self.request.query_params.get("category")

@@ -3,6 +3,7 @@
 from typing import ClassVar
 
 from django.db import IntegrityError, transaction
+from django.db.models import Prefetch
 from rest_framework import serializers
 from rest_framework.fields import SerializerMethodField
 
@@ -16,6 +17,7 @@ from apps.customers.models import (
     HealthProfile,
     ProgressPhoto,
 )
+from apps.notifications.models import NotificationLog
 from apps.users.models import User
 from apps.users.phone import normalize_e164, phone_lookup_candidates
 from apps.users.services import SYNTHETIC_EMAIL_DOMAIN, synthetic_otp_email
@@ -23,6 +25,29 @@ from apps.users.services import SYNTHETIC_EMAIL_DOMAIN, synthetic_otp_email
 # FBOS-026 part 1: profile photo constraints (JPEG/PNG/WebP, max 5 MB).
 ALLOWED_PROFILE_PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}
 MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024
+
+
+def app_invite_log_prefetch(lookup: str = "notification_logs") -> Prefetch:
+    """Prefetch the app-invite logs a customer list page will render (#82).
+
+    ``CustomerSerializer.get_app_invite_status`` needs each customer's latest
+    ``app_invite`` notification; any list that nests the customer serializer
+    (members, reviews, feedback) previously paid one query per row for it.
+    Apply this prefetch on the queryset serving the list — through
+    ``notification_logs`` for customer querysets or
+    ``customer__notification_logs`` when the rows reference customers.
+
+    The result lands in ``obj.app_invite_logs`` newest-first (the serializer
+    reads entry 0); rows without the prefetch fall back to a per-row query,
+    so single-object responses stay correct.
+    """
+    return Prefetch(
+        lookup,
+        queryset=NotificationLog.objects.filter(notification_type=NotificationLog.NotificationType.APP_INVITE).order_by(
+            "-created_at"
+        ),
+        to_attr="app_invite_logs",
+    )
 
 
 class DeletedCustomerFlagMixin(serializers.Serializer):
@@ -127,6 +152,10 @@ class CustomerSerializer(serializers.ModelSerializer):
         Consumed by the customer-detail card and the onboarding wizard's
         returning-member path (FBOS-011 §5.1b).
 
+        Reads the :func:`app_invite_log_prefetch` list when the queryset
+        provided it (list pages pay zero per-row queries); otherwise falls
+        back to a single query (#82).
+
         Args:
             obj: The customer.
 
@@ -134,12 +163,11 @@ class CustomerSerializer(serializers.ModelSerializer):
             ``{"status", "channel", "sent_at", "error_message"}`` for the most
             recent invite log, or ``None`` when the member was never invited.
         """
-        log = (
-            obj.notification_logs.filter(notification_type="app_invite")
-            .select_related("customer")
-            .order_by("-created_at")
-            .first()
-        )
+        prefetched = getattr(obj, "app_invite_logs", None)
+        if prefetched is not None:
+            log = prefetched[0] if prefetched else None
+        else:
+            log = obj.notification_logs.filter(notification_type="app_invite").order_by("-created_at").first()
         if log is None:
             return None
         return {

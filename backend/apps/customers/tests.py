@@ -3162,3 +3162,110 @@ class OptionalContactCustomerTests(APITestCase):
         synthetic_user.refresh_from_db()
         self.assertTrue(synthetic_user.email.endswith("@fitnation.local"))  # untouched synthetic
         self.assertEqual(customer.name, "Ravi Kumar")
+
+
+class AppInviteStatusPrefetchTests(APITestCase):
+    """Issue #82: ``app_invite_status`` must not cost a query per row.
+
+    The member list (and the reviews/feedback lists that nest the customer
+    serializer) render each member's latest app-invite state. A filtered
+    prefetch on the serving queryset feeds the serializer; these tests pin
+    both the payload semantics and the query budget.
+    """
+
+    def setUp(self) -> None:
+        """Create tenant, owner, two customers, and the auth token."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+        self.invited = Customer.objects.create(tenant=self.tenant, name="Invited", email="invited@local.test")
+        self.never_invited = Customer.objects.create(tenant=self.tenant, name="Fresh", email="fresh@local.test")
+
+    def _invite_log(self, customer, created_at, status="sent"):
+        """Create an app_invite notification log at a specific moment."""
+        return NotificationLog.objects.create(
+            tenant=self.tenant,
+            customer=customer,
+            notification_type=NotificationLog.NotificationType.APP_INVITE,
+            status=status,
+            channel="whatsapp",
+            error_message="boom" if status == "failed" else "",
+            created_at=created_at,
+        )
+
+    def test_list_reports_latest_invite(self) -> None:
+        """The newest invite log wins, payload shape unchanged."""
+        older = self._invite_log(self.invited, timezone.now() - timedelta(days=2), status="failed")
+        newer = self._invite_log(self.invited, timezone.now() - timedelta(days=1))
+
+        response = self.client.get("/api/v1/customers/customers/")
+        self.assertEqual(response.status_code, 200)
+        rows = {row["name"]: row for row in response.data["results"]}
+        self.assertEqual(
+            rows["Invited"]["app_invite_status"],
+            {
+                "status": newer.status,
+                "channel": newer.channel,
+                "sent_at": newer.created_at,
+                "error_message": None,
+            },
+        )
+        self.assertGreater(newer.created_at, older.created_at)
+        self.assertIsNone(rows["Fresh"]["app_invite_status"])
+
+    def test_customers_list_query_budget(self) -> None:
+        """25 members with mixed notification logs list in single-digit queries."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        now = timezone.now()
+        for i in range(25):
+            customer = Customer.objects.create(tenant=self.tenant, name=f"Member {i}", email=f"m{i}@local.test")
+            NotificationLog.objects.create(
+                tenant=self.tenant,
+                customer=customer,
+                notification_type=NotificationLog.NotificationType.CHECK_IN,
+                status=NotificationLog.Status.SENT,
+                created_at=now,
+            )
+            self._invite_log(customer, now - timedelta(minutes=i))
+
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get("/api/v1/customers/customers/")
+        self.assertEqual(response.status_code, 200)
+        # Auth + count + page + one filtered prefetch; an N+1 regression
+        # lands at ~50 queries with 25 members.
+        self.assertLessEqual(len(ctx.captured_queries), 8, f"customers list issued {len(ctx.captured_queries)}")
+
+    def test_reviews_list_query_budget_with_nested_customers(self) -> None:
+        """/reviews/ renders nested customer payloads without an N+1 (#82)."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from apps.reviews.models import Review
+
+        branch = Branch.objects.create(tenant=self.tenant, name="Main", address_line1="MG Road")
+        now = timezone.now()
+        for i in range(20):
+            customer = Customer.objects.create(tenant=self.tenant, name=f"Reviewer {i}", email=f"rev{i}@local.test")
+            self._invite_log(customer, now - timedelta(minutes=i))
+            Review.objects.create(
+                tenant=self.tenant,
+                customer=customer,
+                branch=branch,
+                rating=4,
+                text="Great equipment",
+            )
+
+        with CaptureQueriesContext(connection) as ctx:
+            response = self.client.get("/api/v1/reviews/")
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(len(ctx.captured_queries), 8, f"reviews list issued {len(ctx.captured_queries)}")
+        row = response.data["results"][0]
+        self.assertIsNotNone(row["customer_detail"]["app_invite_status"])

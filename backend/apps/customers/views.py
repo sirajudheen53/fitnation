@@ -27,6 +27,7 @@ from apps.customers.serializers import (
     FitnessGoalSerializer,
     HealthProfileSerializer,
     ProgressPhotoSerializer,
+    app_invite_log_prefetch,
 )
 from apps.permissions.entitlements import EntitlementRequired
 from apps.permissions.permissions import RolePermission
@@ -73,8 +74,12 @@ class CustomerViewSet(ModelViewSet):
         members, must not be assignable in wizards/pickers, and their detail
         endpoints 404. Historical rows that still reference them (payments,
         attendance, …) surface the deletion via the serializers instead.
+
+        The app-invite prefetch feeds ``CustomerSerializer`` without a
+        per-row notification query on list pages (#82).
         """
         queryset = Customer.objects.for_tenant(self.request.tenant).filter(deleted_at__isnull=True)
+        queryset = queryset.prefetch_related(app_invite_log_prefetch())
 
         # Customers can only access their own record
         if getattr(self.request.user, "role", None) == "customer":
