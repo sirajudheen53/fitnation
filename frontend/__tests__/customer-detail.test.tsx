@@ -197,7 +197,10 @@ const membership: Membership = {
   plan_id: 4,
   plan_name: "Quarterly Unlimited",
   start_date: "2026-10-01",
-  end_date: "2026-11-09",
+  // 12 days out from "now" (UTC date, matching the component's day math) so
+  // the "Expires in 12 days" hint can't date-drift like the old hardcoded
+  // 2026-11-09 fixture did.
+  end_date: new Date(Date.now() + 12 * 86_400_000).toISOString().slice(0, 10),
   status: "active",
   price: 6000,
   created_at: "2026-10-01T00:00:00Z",
