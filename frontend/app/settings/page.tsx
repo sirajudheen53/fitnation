@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CreditCard } from "lucide-react";
+import { CreditCard, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardBody } from "@/components/ui";
@@ -30,12 +30,18 @@ export default function SettingsPage() {
     setReady(true);
   }, [router]);
 
-  const billingItems = [
+  const settingLinks = [
     {
       href: "/settings/razorpay",
       title: "Razorpay",
       description: "Accept online payments for memberships and services.",
       icon: CreditCard,
+    },
+    {
+      href: "/settings/roles",
+      title: "Roles & permissions",
+      description: "See what each role in your gym can do, in plain language.",
+      icon: ShieldCheck,
     },
   ];
 
@@ -50,7 +56,7 @@ export default function SettingsPage() {
           <WhatsAppChannels />
           <section className="pt-2">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {billingItems.map((item) => (
+              {settingLinks.map((item) => (
                 <Link key={item.href} href={item.href} className="group">
                   <Card className="h-full transition-colors group-hover:border-brand-400">
                     <CardBody className="space-y-2">

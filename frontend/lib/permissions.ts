@@ -154,6 +154,8 @@ export const ROUTE_PERMISSIONS: Record<string, string[]> = {
   "/settings/whatsapp": ["tenants.edit_tenant"],
   // Issue #67: Gupshup WhatsApp config — same owner-only gate as WATI.
   "/settings/gupshup": ["tenants.edit_tenant"],
+  // Issue #92: roles & permissions overview — same owner-only gate.
+  "/settings/roles": ["tenants.edit_tenant"],
   "/feedback": ["feedback.view_feedback"],
   "/feedback/new": ["feedback.create_feedback"],
   "/feedback/analytics": ["feedback.view_feedback"],
