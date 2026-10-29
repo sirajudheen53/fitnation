@@ -294,6 +294,117 @@ class LoginToleranceEndpointTests(APITestCase):
         self.assertEqual(AuthToken.objects.get(key=response.data["token"]).user, user)
 
 
+class GymCodeAnchorTests(APITestCase):
+    """The #87 first-time dead-end: a phone with no customer row in ANY gym
+    used to 400 with "Specify your gym to continue" and no way forward. The
+    anchor now also accepts the gym's short signup code (the one owners share
+    from the dashboard's Gym Code card), so the typed recovery path resolves
+    and auto-provisions exactly like a uuid anchor."""
+
+    def setUp(self) -> None:
+        """Fresh tenant + cleared caches (throttle counters leak otherwise)."""
+        cache.clear()
+        self.tenant = provision_tenant(name="Hash Fit", contact_email="hash@local.test", features=FLAG_ON)
+
+    def _firebase_login(self, claim: str, gym: str | None = None):
+        """POST the firebase route with the verifier mocked to ``claim``."""
+        payload = {"id_token": "firebase-id-token"}
+        if gym:
+            payload["gym"] = gym
+        with patch("apps.users.views.firebase_verify_phone", return_value=claim):
+            return self.client.post("/api/v1/auth/firebase/", payload, format="json")
+
+    def _otp_verify(self, phone: str, gym: str | None = None):
+        """Run the real OTP request+verify flow and return the verify response."""
+        payload = {"phone": phone}
+        if gym:
+            payload["gym"] = gym
+        overrides = {"DEBUG": True, "OTP_SENDER": "stub", "OTP_RESEND_COOLDOWN_SECONDS": 0}
+        with self.settings(**overrides):
+            issued = self.client.post("/api/v1/users/auth/otp/request/", payload, format="json")
+            assert issued.status_code == 200, issued.data
+            payload["otp"] = issued.data["otp"]
+            return self.client.post("/api/v1/users/auth/otp/verify/", payload, format="json")
+
+    def test_first_time_phone_anchors_by_typed_gym_code_over_firebase(self) -> None:
+        """THE #87 recovery path: unknown phone + hand-typed gym code (messy
+        case/spacing included) resolves, auto-provisions and issues a token —
+        no dead end. A non-UUID anchor used to die as a DRF shape error."""
+        typed = f" {self.tenant.gym_code.lower()}-"  # " px3ctjy-" style entry
+        before = User.objects.count()
+
+        response = self._firebase_login("+919900700001", gym=typed)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        user = User.objects.get(pk=response.data["user"]["id"])
+        self.assertEqual(user.tenant, self.tenant)
+        self.assertEqual(User.objects.count(), before + 1)  # auto-provisioned once
+        self.assertNotIn("app.access", response.data["permissions"])  # entitlement none
+        self.assertEqual(response.data["entitlement"]["status"], "none")
+
+    def test_first_time_phone_anchors_by_gym_code_over_otp(self) -> None:
+        """The OTP route shares the ladder: request AND verify bind to the
+        gym the code names, so the same recovery works pre-token."""
+        before = User.objects.count()
+
+        verified = self._otp_verify("9900700002", gym=self.tenant.gym_code)
+
+        self.assertEqual(verified.status_code, 200, verified.data)
+        user = User.objects.get(pk=verified.data["user"]["id"])
+        self.assertEqual(user.tenant, self.tenant)
+        self.assertEqual(User.objects.count(), before + 1)
+
+    def test_gym_code_anchors_to_its_own_gym_not_the_first(self) -> None:
+        """Two gyms: the code of gym B anchors there — never first-tenant-wins."""
+        other = provision_tenant(name="Gym B", contact_email="b@local.test", features=FLAG_ON)
+
+        response = self._firebase_login("+919900700003", gym=other.gym_code)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        user = User.objects.get(pk=response.data["user"]["id"])
+        self.assertEqual(user.tenant, other)
+
+    def test_unknown_gym_code_is_a_plain_400_creating_nothing(self) -> None:
+        """A code that matches no gym stays the explicit anchor failure —
+        never silently ignored, nothing auto-provisioned."""
+        before = User.objects.count()
+
+        response = self._firebase_login("+919900700004", gym="ZZZZZZZ")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["gym"], "Unknown gym.")
+        self.assertEqual(User.objects.count(), before)
+
+    def test_blank_gym_value_keeps_the_no_anchor_behavior(self) -> None:
+        """An empty string anchor (CharField tolerance) is NO anchor: the
+        zero-match reply stays the generic non-enumerating 400."""
+        response = self._firebase_login("+919900700005", gym="  ")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Specify your gym", str(response.data))
+
+    def test_registered_phone_with_gym_code_converges_not_duplicates(self) -> None:
+        """An existing member typing their gym's code converges to their row —
+        the code anchor is a resolution path, not a new-identity path."""
+        phone = "+919900700006"
+        email = f"{phone.strip('+')}.{self.tenant.uuid}@fitnation.local"
+        member = User.objects.create_user(
+            email=email,
+            password="x",
+            first_name="Mem",
+            last_name="Ber",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+            phone=phone,
+        )
+        Customer.objects.create(tenant=self.tenant, user=member, name="Mem Ber", phone=phone)
+
+        response = self._firebase_login(phone, gym=self.tenant.gym_code)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["user"]["id"], member.pk)
+
+
 class CustomerConvergenceToleranceTests(APITestCase):
     """ERP customer create/edit converges identities across BOTH phone
     formats (ADR-002 rule 1) — raw payload ↔ E.164 row and back."""

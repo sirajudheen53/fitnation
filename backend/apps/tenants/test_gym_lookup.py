@@ -16,6 +16,7 @@ from apps.tenants.gym_codes import (
     GYM_CODE_LENGTH,
     assign_gym_code,
     backfill_gym_codes_for,
+    canonical_gym_code,
     generate_gym_code,
     gym_code_candidates,
 )
@@ -54,6 +55,39 @@ class GymCodeGenerationTests(APITestCase):
         pool |= {next(walk_b) for _ in range(100)}
 
         self.assertEqual(len(pool), 200)
+
+
+class CanonicalGymCodeTests(APITestCase):
+    """The shared typed-code canonicalization (#87 login anchor + lookup):
+    one normalizer so both surfaces accept the same hand-typed input."""
+
+    def test_hand_typed_shapes_canonicalize(self) -> None:
+        """Case, spaces and punctuation from real typing/pasting all fold to
+        the stored uppercase-alphanumeric form."""
+        cases = {
+            "PX3CTJY": "PX3CTJY",  # verbatim
+            "px3ctjy": "PX3CTJY",  # lowercase typing
+            " px3-ctjy ": "PX3CTJY",  # dash + surrounding spaces
+            "px3 ctjy": "PX3CTJY",  # the poster-read shape
+            "\tPX3.CTJY\n": "PX3CTJY",  # punctuation + whitespace
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(canonical_gym_code(raw), expected)
+
+    def test_blank_and_punctuation_only_are_empty(self) -> None:
+        """Nothing alphanumeric → empty string (callers treat as absent)."""
+        for raw in ["", "   ", None, " - . "]:
+            with self.subTest(raw=raw):
+                self.assertEqual(canonical_gym_code(raw), "")
+
+    def test_uuid_strings_survive_unchanged_enough_to_never_match(self) -> None:
+        """A 36-char uuid anchor canonicalizes to 32 hex chars — structurally
+        unable to match a 7-char gym code, so the code-anchor branch can never
+        widen the uuid branch in the login ladder."""
+        uuid_text = "3F7C2E55-7BBD-4A63-A1E7-95D1D1BD3A44"
+
+        self.assertEqual(canonical_gym_code(uuid_text), "3F7C2E557BBD4A63A1E795D1D1BD3A44")
 
 
 class GymCodeModelTests(APITestCase):

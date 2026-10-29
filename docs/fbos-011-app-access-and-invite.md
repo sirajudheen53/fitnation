@@ -226,7 +226,7 @@ Change: after verify, the created user gets **no permissions beyond the role set
 
 ### 3.2 (b) Phone unknown + no anchor
 
-Unchanged: `resolve_tenant_for_otp` raises the generic, non-enumerating 400 `{"detail": "Specify your gym to continue."}` (`apps/users/services.py:249-250`). The app responds by offering the gym-code entry (§5.4) or the invite link. With the gym code the client re-requests with `gym: <uuid>` — converging to case (a).
+Unchanged: `resolve_tenant_for_otp` raises the generic, non-enumerating 400 `{"detail": "Specify your gym to continue."}` (`apps/users/services.py:249-250`). The app responds by offering the gym-code entry (§5.4) or the invite link. With the gym code the client re-requests with `gym: <uuid>` — converging to case (a). (#87: the anchor also accepts the gym code itself, canonicalized like the lookup endpoint, so the app's free-text panel can re-exchange directly without a lookup round-trip.)
 
 ### 3.3 (c) Phone known, no active membership
 

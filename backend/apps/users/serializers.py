@@ -166,10 +166,18 @@ class LoginSerializer(serializers.Serializer):
 
 
 class OTPRequestSerializer(serializers.Serializer):
-    """OTP request — explicit gym anchors only (FBOS-011 §3/§4)."""
+    """OTP request — explicit gym anchors only (FBOS-011 §3/§4).
+
+    The ``gym`` anchor is the tenant uuid (device-bound capture) or the gym's
+    short signup code (#87 — the zero-match recovery path): a first-time
+    member types the code their gym shared, and the anchor ladder resolves it
+    like the install-flow lookup endpoint does.
+    """
 
     phone = serializers.CharField(max_length=20)
-    gym = serializers.UUIDField(required=False)  # device-bound gym anchor
+    # Validated downstream by resolve_tenant_for_otp (uuid OR gym code) —
+    # kept a tolerant string so hand-typed codes are never a DRF shape error.
+    gym = serializers.CharField(required=False, allow_blank=True, max_length=64)
 
     def validate_phone(self, value: str) -> str:
         """Canonicalize to E.164 (#88) so the code binds to the same string
@@ -178,11 +186,15 @@ class OTPRequestSerializer(serializers.Serializer):
 
 
 class OTPVerifySerializer(serializers.Serializer):
-    """OTP verification — explicit gym anchors only (FBOS-011 §3/§4)."""
+    """OTP verification — explicit gym anchors only (FBOS-011 §3/§4).
+
+    Same ``gym`` anchor contract as :class:`OTPRequestSerializer` (uuid or
+    gym code, #87), so request and verify bind to the same gym.
+    """
 
     phone = serializers.CharField(max_length=20)
     otp = serializers.CharField(max_length=6)
-    gym = serializers.UUIDField(required=False)
+    gym = serializers.CharField(required=False, allow_blank=True, max_length=64)
     device_type = serializers.ChoiceField(
         choices=AuthToken.DeviceType.choices,
         required=False,
@@ -200,11 +212,14 @@ class FirebaseAuthSerializer(serializers.Serializer):
     The mobile app authenticates the member with Firebase phone OTP in its
     own Firebase project and POSTs the ID token (plus the same optional gym
     anchor and device_type as otp request/verify): ``{"id_token": ...,
-    "gym": "<tenant uuid>", "device_type": "android"}``.
+    "gym": "<tenant uuid or gym code>", "device_type": "android"}``. The
+    anchor accepts the gym's short signup code (#87) so the zero-match
+    first-time flow can anchor from hand-typed input.
     """
 
     id_token = serializers.CharField(max_length=8192)
-    gym = serializers.UUIDField(required=False)  # device-bound gym anchor
+    # Validated downstream by resolve_tenant_for_otp (uuid OR gym code).
+    gym = serializers.CharField(required=False, allow_blank=True, max_length=64)
     device_type = serializers.ChoiceField(
         choices=AuthToken.DeviceType.choices,
         required=False,

@@ -22,6 +22,24 @@ GYM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 GYM_CODE_LENGTH = 7
 
 
+def canonical_gym_code(raw: str) -> str:
+    """Canonicalize a hand-typed gym code the way every consumer matches.
+
+    Members type codes by hand (or paste them from a poster/WhatsApp), so the
+    canonical form uppercases and strips everything but alphanumerics
+    (``" px3-ctjy "`` → ``PX3CTJY``). Shared by the install-flow lookup
+    endpoint and the #87 login anchor so both surfaces accept the same input.
+
+    Args:
+        raw: The typed code, verbatim.
+
+    Returns:
+        The canonical code (possibly empty for blank/punctuation-only input).
+    """
+    upper = (raw or "").strip().upper()
+    return "".join(ch for ch in upper if ch.isalnum())
+
+
 def generate_gym_code(seed: str) -> str:
     """Deterministically derive a gym code from ``seed``.
 

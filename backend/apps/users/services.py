@@ -20,6 +20,7 @@ from apps.customers.models import (
     ProgressPhoto,
 )
 from apps.notifications.models import DeviceToken
+from apps.tenants.gym_codes import canonical_gym_code
 from apps.tenants.models import Tenant
 from apps.users.auth import AuthToken
 from apps.users.models import EmailVerificationToken, OtpCode, User
@@ -451,7 +452,10 @@ def resolve_tenant_for_otp(phone: str, gym_anchor: str | None, ip: str | None = 
     """Resolve the tenant for an OTP flow — explicit anchors ONLY (FBOS-011 §3).
 
     Ladder:
-    1. Device-bound gym anchor (tenant uuid) → explicit, validated.
+    1. Device-bound gym anchor — tenant uuid (deep-link/install capture) or,
+       since #87, the gym's short signup code (the zero-match recovery path:
+       a first-time member types the code their gym shared, canonicalized
+       exactly like ``GET /tenants/lookup/``) → explicit, validated.
     2. Rate-limited cross-tenant phone lookup: exactly one customer user →
        auto-pin; several → a minimal disambiguation list (tenant uuid +
        display name only, throttled, non-enumerating shape); zero matches →
@@ -465,10 +469,27 @@ def resolve_tenant_for_otp(phone: str, gym_anchor: str | None, ip: str | None = 
     """
     if gym_anchor:
         _throttle_lookup(phone, ip)
+        # UUID branch: only when the anchor parses as one — Django's UUIDField
+        # raises ValidationError (not ValueError) on hand-typed strings, and
+        # the gym-code branch below must get its chance (#87).
         try:
-            return Tenant.objects.get(uuid=gym_anchor), None
-        except (Tenant.DoesNotExist, ValueError, TypeError):
-            raise TenantResolutionError({"gym": "Unknown gym."}, status_code=400) from None
+            anchor_uuid = uuid.UUID(str(gym_anchor))
+        except ValueError:
+            anchor_uuid = None
+        if anchor_uuid is not None:
+            try:
+                return Tenant.objects.get(uuid=anchor_uuid), None
+            except Tenant.DoesNotExist:
+                pass  # not a known uuid — fall through to the gym-code anchor (#87)
+        # Hand-typed signup code: same canonicalization as the lookup endpoint,
+        # so " px3-ctjy " anchors like PX3CTJY. A uuid string can never match a
+        # 7-char code, so this never widens the uuid branch above.
+        code = canonical_gym_code(gym_anchor)
+        if code:
+            tenant = Tenant.objects.filter(gym_code=code).first()
+            if tenant is not None:
+                return tenant, None
+        raise TenantResolutionError({"gym": "Unknown gym."}, status_code=400) from None
 
     _throttle_lookup(phone, ip)
     # phone__in over every storage format (#88): Firebase hands the claim in

@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 
 from apps.permissions.permissions import RolePermission
 from apps.tenants.features import apply_feature_overrides
+from apps.tenants.gym_codes import canonical_gym_code
 from apps.tenants.models import Tenant
 from apps.tenants.permissions import IsTenantMember
 from apps.tenants.selectors import tenant_get_by_id
@@ -207,11 +208,10 @@ class TenantLookupView(APIView):
             ``{uuid, name}`` for the gym, or a generic 404 / 429 response.
         """
         throttle_gym_lookup(_client_ip(request))
-        # Codes are uppercase alphanumerics (safe alphabet); members type them
-        # by hand, so strip spaces/punctuation before the exact match
-        # ("hash fit", "px3-ctjy" → canonical form). Stored codes match as-is.
-        raw = (request.query_params.get("code") or "").strip().upper()
-        code = "".join(ch for ch in raw if ch.isalnum())
+        # Members type codes by hand, so canonicalize ("hash fit", "px3-ctjy" →
+        # PX3CTJY) before the exact match; stored codes match as-is. Shared
+        # with the login anchor (#87) so both surfaces accept the same input.
+        code = canonical_gym_code(request.query_params.get("code") or "")
         if not code:
             return Response({"detail": "Gym not found."}, status=404)
         tenant = Tenant.objects.filter(gym_code=code).first()
