@@ -5,10 +5,12 @@ retained-but-non-identifying business records (Google Play deletion mandate).
 
 from datetime import timedelta
 
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.attendance.models import AttendanceRecord
+from apps.branches.models import Branch
 from apps.customers.models import BodyMeasurement, Customer, HealthProfile
 from apps.memberships.models import Membership, MembershipPlan
 from apps.notifications.models import DeviceToken
@@ -314,3 +316,144 @@ class DeleteAccountTests(DeleteAccountTestBase):
         orphan.refresh_from_db()
         self.assertFalse(orphan.is_active)
         self.assertEqual(orphan.phone, "")
+
+
+class PostDeleteReAddTests(APITestCase):
+    """Issue #72: the gym can re-add a member after their in-app deletion.
+
+    The GDPR delete anonymizes the ``User`` row in place (email →
+    ``deleted-<uuid>@deleted.invalid``, phone → empty, ``is_active`` off) and
+    soft-deletes + scrubs the ``Customer`` row. The identity is therefore
+    freed, not destroyed: the ERP add-customer flow provisions a FRESH
+    identity for the same phone/email and never resurrects the anonymized
+    one.
+    """
+
+    PHONE = "+919900077001"
+
+    def setUp(self) -> None:
+        """Tenant, owner (ERP session), branch."""
+        self.tenant = provision_tenant(name="Hash Fit", contact_email="hash@local.test")
+        self.owner = User.objects.create_user(
+            email="owner@hash.local",
+            password="F1tNati0n!",
+            first_name="Own",
+            last_name="Er",
+            role=User.Role.GYM_OWNER,
+            tenant=self.tenant,
+            is_owner=True,
+        )
+        self.branch = Branch.objects.create(tenant=self.tenant, name="Main", address_line1="MG Road")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self._owner_token().key}")
+
+    def _owner_token(self) -> AuthToken:
+        """A fresh ERP session for the owner."""
+        return AuthToken.objects.create(user=self.owner, tenant=self.tenant)
+
+    def _add_customer(self, **payload) -> object:
+        """POST the ERP add-customer shape."""
+        payload.setdefault("first_name", "Asha")
+        payload.setdefault("last_name", "Nair")
+        payload.setdefault("branch", self.branch.id)
+        return self.client.post("/api/v1/customers/customers/", payload, format="json")
+
+    def _member_deletes_own_account(self, customer: Customer) -> None:
+        """The member deletes their own account through the app endpoint."""
+        token = AuthToken.objects.create(user=customer.user, tenant=self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        response = self.client.post("/api/v1/users/auth/delete-account/", {}, format="json")
+        assert response.status_code == 200, response.data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self._owner_token().key}")
+
+    def test_owner_readd_same_phone_and_email_after_in_app_delete(self) -> None:
+        """In-app delete, then the owner re-adds the SAME phone+email → 201.
+
+        The old identity stays anonymized (never reused); the re-add
+        provisions a fresh customer-role user and a fresh live profile.
+        """
+        create_response = self._add_customer(phone=self.PHONE, email="returnee@local.test")
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        customer = Customer.objects.get(pk=create_response.data["id"])
+        old_user_id = customer.user_id
+
+        self._member_deletes_own_account(customer)
+
+        readd_response = self._add_customer(phone=self.PHONE, email="returnee@local.test")
+        self.assertEqual(readd_response.status_code, 201, str(readd_response.data))
+
+        # Fresh identity — not the anonymized row.
+        new_customer = Customer.objects.get(pk=readd_response.data["id"])
+        self.assertNotEqual(new_customer.user_id, old_user_id)
+        self.assertIsNone(new_customer.deleted_at)
+        self.assertEqual(new_customer.phone, self.PHONE)
+        self.assertEqual(new_customer.email, "returnee@local.test")
+        # Exactly one live member with that identity; the old row stays as a
+        # soft-deleted marker for the history that references it.
+        self.assertEqual(
+            Customer.objects.filter(tenant=self.tenant, deleted_at__isnull=True, phone=self.PHONE).count(),
+            1,
+        )
+        old_user = User.objects.get(pk=old_user_id)
+        self.assertFalse(old_user.is_active)
+        self.assertEqual(old_user.phone, "")
+        self.assertIn("@deleted.invalid", old_user.email)
+
+    def test_owner_readd_phone_only_after_in_app_delete(self) -> None:
+        """In-app delete, then a phone-only re-add → 201 on a fresh identity.
+
+        Regression for the Siju report shape: the synthetic email of the new
+        identity cannot collide with the deleted one (scrubbed to
+        ``deleted-<uuid>@deleted.invalid``).
+        """
+        from apps.users.services import SYNTHETIC_EMAIL_DOMAIN
+
+        create_response = self._add_customer(phone=self.PHONE)
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        customer = Customer.objects.get(pk=create_response.data["id"])
+        old_user_id = customer.user_id
+
+        self._member_deletes_own_account(customer)
+
+        readd_response = self._add_customer(phone=self.PHONE)
+        self.assertEqual(readd_response.status_code, 201, str(readd_response.data))
+        new_customer = Customer.objects.get(pk=readd_response.data["id"])
+        self.assertNotEqual(new_customer.user_id, old_user_id)
+        self.assertTrue(new_customer.user.email.endswith(SYNTHETIC_EMAIL_DOMAIN))
+        self.assertEqual(User.objects.filter(tenant=self.tenant, phone=self.PHONE).count(), 1)
+
+    @override_settings(DEBUG=True, OTP_SENDER="stub")
+    def test_member_otps_back_and_owner_add_converges(self) -> None:
+        """In-app delete → member OTPs back in → owner re-add: SAME identity.
+
+        The OTP verify auto-provisions a fresh synthetic identity for the
+        freed phone; the owner's add must LINK that identity (ADR-002 rule
+        1), not provision a second user.
+        """
+        create_response = self._add_customer(phone=self.PHONE)
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        customer = Customer.objects.get(pk=create_response.data["id"])
+        old_user_id = customer.user_id
+
+        self._member_deletes_own_account(customer)
+
+        self.client.credentials()  # OTP endpoints are anonymous
+        request_response = self.client.post(
+            "/api/v1/users/auth/otp/request/",
+            {"phone": self.PHONE, "gym": str(self.tenant.uuid)},
+            format="json",
+        )
+        self.assertEqual(request_response.status_code, 200)
+        verify_response = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": self.PHONE, "otp": request_response.data["otp"], "gym": str(self.tenant.uuid)},
+            format="json",
+        )
+        self.assertEqual(verify_response.status_code, 200, str(verify_response.data))
+        otp_user_id = verify_response.data["user"]["id"]
+        self.assertNotEqual(otp_user_id, old_user_id)  # fresh auto-provision
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self._owner_token().key}")
+        readd_response = self._add_customer(phone=self.PHONE, email="returnee@local.test")
+        self.assertEqual(readd_response.status_code, 201, str(readd_response.data))
+        self.assertEqual(readd_response.data["user"], otp_user_id)  # converged
+        self.assertEqual(User.objects.filter(tenant=self.tenant, phone=self.PHONE).count(), 1)

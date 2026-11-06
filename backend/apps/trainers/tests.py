@@ -502,6 +502,45 @@ class TrainerAddCustomerAPITests(APITestCase):
         response = self.client.post(self.url, self._payload(), format="json")
         self.assertEqual(response.status_code, 201)
 
+    def test_add_customer_after_customer_was_deleted(self) -> None:
+        """Issue #72: the trainer route re-adds a phone the gym deleted.
+
+        The ERP delete scrubs the soft-deleted row and removes the portal
+        user — the same phone (and email) must register cleanly again as a
+        fresh member, with a live assignment for the trainer.
+        """
+        first = self.client.post(
+            self.url,
+            self._payload(email="readd.member@customer.test", phone="+919876543210"),
+            format="json",
+        )
+        self.assertEqual(first.status_code, 201)
+        first_customer_id = first.data["customer"]["id"]
+
+        delete_response = self.client.delete(f"/api/v1/customers/customers/{first_customer_id}/")
+        self.assertEqual(delete_response.status_code, 204)
+
+        readd = self.client.post(
+            self.url,
+            self._payload(email="readd.member@customer.test", phone="+919876543210"),
+            format="json",
+        )
+        self.assertEqual(readd.status_code, 201, str(readd.data))
+
+        customer = Customer.objects.get(pk=readd.data["customer"]["id"])
+        self.assertNotEqual(customer.id, first_customer_id)  # fresh row
+        self.assertIsNone(customer.deleted_at)
+        self.assertEqual(customer.phone, "+919876543210")
+        # The deleted row scrubbed its phone — only the live row carries it.
+        self.assertEqual(Customer.objects.filter(tenant=self.tenant, phone="+919876543210").count(), 1)
+        self.assertEqual(
+            Customer.objects.filter(tenant=self.tenant, email="readd.member@customer.test").count(),
+            1,
+        )
+        assignment = TrainerAssignment.objects.get(tenant=self.tenant, customer=customer)
+        self.assertEqual(assignment.trainer_id, self.trainer.id)
+        self.assertTrue(assignment.is_active)
+
     def test_add_customer_trainer_role_forbidden(self) -> None:
         """Trainers lack customers.create_customer — the action stays staff-only."""
         token = issue_token(self.trainer.user, self.tenant)
