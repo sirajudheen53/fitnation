@@ -806,6 +806,46 @@ export function updateTrainer(
   });
 }
 
+/** Response of POST /trainers/{id}/add-customer/ (issue #73): the freshly
+ * registered customer plus the branch-scoped assignment linking them. */
+export interface TrainerAddCustomerResponse {
+  customer: Customer;
+  assignment: BranchTrainerAssignment;
+}
+
+/**
+ * Register a new customer attached to a trainer (issue #73) — the
+ * lightweight path behind the trainer profile's "Add customer" option.
+ * Same customer-create contract as POST /customers/customers/ (email or
+ * phone required, E.164 phone); the server links the member to the trainer
+ * and returns both rows.
+ */
+export function addTrainerCustomer(
+  trainerId: number | string,
+  data: {
+    first_name: string;
+    last_name?: string;
+    email?: string;
+    phone?: string;
+    branch_id?: number;
+  },
+  token: string,
+): Promise<TrainerAddCustomerResponse> {
+  // ADR-001: the wire field for the branch is `branch`; the form state is
+  // `branch_id` — translated here like buildCustomerBody does.
+  const body: Record<string, unknown> = {
+    first_name: data.first_name,
+    last_name: data.last_name ?? "",
+    email: data.email ?? "",
+  };
+  if (data.phone) body.phone = data.phone;
+  if (data.branch_id !== undefined) body.branch = data.branch_id;
+  return request<TrainerAddCustomerResponse>(
+    `/trainers/${trainerId}/add-customer/`,
+    { method: "POST", body, token },
+  );
+}
+
 /**
  * List branch-scoped trainer↔customer assignments (trainers app).
  * The endpoint has no query filters — filter by trainer/customer client-side.
