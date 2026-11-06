@@ -34,7 +34,7 @@ from apps.notifications.models import NotificationLog
 from apps.payments.models import Invoice, Payment
 from apps.tenants.services import provision_tenant
 from apps.trainers.models import TrainerAssignment, TrainerSession
-from apps.users.models import Trainer
+from apps.users.models import OtpCode, Trainer
 from apps.users.services import create_owner_user, delete_customer_account, issue_token
 from apps.workouts.models import WorkoutAssignment, WorkoutPlan
 
@@ -2587,6 +2587,153 @@ class PostDeleteReAddCustomerTests(APITestCase):
         self.assertIn("phone", readd_response.data)
         trainer_user.refresh_from_db()
         self.assertEqual(trainer_user.phone, "+919999000009")  # never mutated
+
+    def test_readd_different_phone_with_same_email_after_delete(self) -> None:
+        """Delete, then add a DIFFERENT phone carrying the SAME email → 201.
+
+        The delete frees the (tenant, email) pair on the soft-deleted row
+        (email scrubbed to NULL), so the email is reusable on a fresh row.
+        """
+        create_response = self._add_customer(phone="+919999000030", email="asha30@local.test")
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        self.assertEqual(self._delete_customer(create_response.data["id"]).status_code, 204)
+
+        readd_response = self._add_customer(phone="+919999000031", email="asha30@local.test")
+        self.assertEqual(readd_response.status_code, 201, str(readd_response.data))
+        self.assertEqual(readd_response.data["email"], "asha30@local.test")
+
+    def test_readd_email_only_after_delete(self) -> None:
+        """Delete an email-only customer, then re-add the same email → 201."""
+        create_response = self._add_customer(email="asha32@local.test")
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        self.assertEqual(self._delete_customer(create_response.data["id"]).status_code, 204)
+
+        readd_response = self._add_customer(email="asha32@local.test")
+        self.assertEqual(readd_response.status_code, 201, str(readd_response.data))
+        self.assertEqual(readd_response.data["email"], "asha32@local.test")
+        self.assertEqual(readd_response.data["phone"], "")
+
+    def test_readd_survives_repeated_delete_cycles(self) -> None:
+        """Delete → re-add → delete → re-add: every cycle lands on 201.
+
+        Each delete must free the identity again (no state accumulates that
+        blocks the next add).
+        """
+        first = self._add_customer(phone="+919999000033", email="asha33@local.test")
+        self.assertEqual(first.status_code, 201, str(first.data))
+        self.assertEqual(self._delete_customer(first.data["id"]).status_code, 204)
+
+        second = self._add_customer(phone="+919999000033", email="asha33@local.test")
+        self.assertEqual(second.status_code, 201, str(second.data))
+        self.assertEqual(self._delete_customer(second.data["id"]).status_code, 204)
+
+        third = self._add_customer(phone="+919999000033", email="asha33@local.test")
+        self.assertEqual(third.status_code, 201, str(third.data))
+        self.assertEqual(
+            Customer.objects.filter(tenant=self.tenant, phone="+919999000033", deleted_at__isnull=True).count(),
+            1,
+        )
+
+    def test_delete_purges_outstanding_otp_codes(self) -> None:
+        """The ERP delete purges unused OTP codes for the freed phone (#72).
+
+        Same hygiene as the in-app GDPR deletion — and tenant-scoped for the
+        same reason: the phone may still be a live member at another gym
+        (ADR-002 rule 2), whose codes must survive.
+        """
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        expiry = timezone.now() + timedelta(minutes=10)
+        OtpCode.objects.create(
+            phone="+919999000034",
+            tenant=self.tenant,
+            code_hash="a" * 64,
+            expires_at=expiry,
+        )
+        OtpCode.objects.create(
+            phone="+919999000034",
+            tenant=other_tenant,
+            code_hash="b" * 64,
+            expires_at=expiry,
+        )
+
+        create_response = self._add_customer(phone="+919999000034")
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        self.assertEqual(self._delete_customer(create_response.data["id"]).status_code, 204)
+
+        self.assertFalse(OtpCode.objects.filter(tenant=self.tenant, phone="+919999000034").exists())
+        self.assertTrue(OtpCode.objects.filter(tenant=other_tenant, phone="+919999000034").exists())
+
+    @override_settings(DEBUG=True, OTP_SENDER="stub")  # stub requires DEBUG (FBOS-011 §4.3)
+    def test_pre_delete_otp_code_cannot_authenticate_after_delete(self) -> None:
+        """A code issued before the delete verifies nothing afterwards (#72).
+
+        ``verify_otp`` matches any unused, unexpired code for the phone —
+        without the purge, the removed member could walk back in through the
+        gym anchor within the code's expiry window and be auto-provisioned a
+        fresh profile.
+        """
+        create_response = self._add_customer(phone="+919999000035")
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        user_id = create_response.data["user"]
+
+        self.client.credentials()  # OTP endpoints are anonymous
+        request_response = self.client.post(
+            "/api/v1/users/auth/otp/request/",
+            {"phone": "+919999000035", "gym": str(self.tenant.uuid)},
+            format="json",
+        )
+        self.assertEqual(request_response.status_code, 200)
+        otp_code = request_response.data["otp"]  # stub sender echoes the code
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+        self.assertEqual(self._delete_customer(create_response.data["id"]).status_code, 204)
+
+        self.client.credentials()
+        verify_response = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": "+919999000035", "otp": otp_code, "gym": str(self.tenant.uuid)},
+            format="json",
+        )
+        self.assertEqual(verify_response.status_code, 400)
+        self.assertIn("No active code", str(verify_response.data["detail"]))
+        # No identity was auto-provisioned for the removed member.
+        self.assertEqual(User.objects.filter(tenant=self.tenant, phone="+919999000035").count(), 0)
+        self.assertFalse(User.objects.filter(pk=user_id).exists())
+
+    @override_settings(DEBUG=True, OTP_SENDER="stub")
+    def test_readd_converges_when_member_otp_logged_in_after_delete(self) -> None:
+        """Delete → member OTPs back in → owner re-adds: SAME identity (#72).
+
+        The OTP verify auto-provisions a fresh synthetic identity for the
+        freed phone; the owner's re-add must LINK that identity and adopt the
+        real email (ADR-002 rule 1), never provision a second user.
+        """
+        create_response = self._add_customer(phone="+919999000036")
+        self.assertEqual(create_response.status_code, 201, str(create_response.data))
+        old_user_id = create_response.data["user"]
+        self.assertEqual(self._delete_customer(create_response.data["id"]).status_code, 204)
+
+        self.client.credentials()
+        request_response = self.client.post(
+            "/api/v1/users/auth/otp/request/",
+            {"phone": "+919999000036", "gym": str(self.tenant.uuid)},
+            format="json",
+        )
+        self.assertEqual(request_response.status_code, 200)
+        verify_response = self.client.post(
+            "/api/v1/users/auth/otp/verify/",
+            {"phone": "+919999000036", "otp": request_response.data["otp"], "gym": str(self.tenant.uuid)},
+            format="json",
+        )
+        self.assertEqual(verify_response.status_code, 200, str(verify_response.data))
+        otp_user_id = verify_response.data["user"]["id"]
+        self.assertNotEqual(otp_user_id, old_user_id)  # old identity was deleted
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+        readd_response = self._add_customer(phone="+919999000036", email="asha36@local.test")
+        self.assertEqual(readd_response.status_code, 201, str(readd_response.data))
+        self.assertEqual(readd_response.data["user"], otp_user_id)  # converged
+        self.assertEqual(User.objects.filter(tenant=self.tenant, phone="+919999000036").count(), 1)
 
 
 class SoftDeleteDeletedUserTests(APITestCase):

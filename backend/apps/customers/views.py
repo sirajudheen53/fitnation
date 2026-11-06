@@ -34,7 +34,8 @@ from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.trainers.selectors import get_pt_entitlement
 from apps.users.authentication import TenantTokenAuthentication
-from apps.users.models import User
+from apps.users.models import OtpCode, User
+from apps.users.phone import phone_lookup_candidates
 
 
 class CustomerViewSet(ModelViewSet):
@@ -196,13 +197,20 @@ class CustomerViewSet(ModelViewSet):
         adoption never sees a soft-deleted row because its phone/email are
         blank and its user link is severed. Only a customer-role user is
         removed; a profile deliberately linked to a staff account leaves that
-        account untouched.
+        account untouched. Their session/verification plumbing dies with the
+        user (AuthToken / DeviceToken / EmailVerificationToken all cascade),
+        but ``OtpCode`` rows are phone-keyed with no user FK — a code issued
+        moments before the delete would still verify afterwards and
+        auto-provision the removed member a fresh profile (#72: same purge
+        the in-app GDPR deletion does, tenant-scoped because the phone may
+        still be a live member at another gym).
 
         A hard delete of the row itself is impossible through this API — and
         the cross-app history FKs are PROTECT, so even a manual ``.delete()``
         fails loudly instead of silently destroying history.
         """
         user = instance.user
+        phone = instance.phone
         with transaction.atomic():
             instance.deleted_at = timezone.now()
             instance.name = DELETED_USER_LABEL
@@ -224,6 +232,11 @@ class CustomerViewSet(ModelViewSet):
             instance.save()
             if user is not None and user.role == User.Role.CUSTOMER:
                 user.delete()
+            if phone:
+                OtpCode.objects.filter(
+                    tenant=instance.tenant,
+                    phone__in=phone_lookup_candidates(phone),
+                ).delete()
 
     @action(detail=True, methods=["get", "put", "patch"], url_path="health-profile")
     def health_profile(self, request: Request, pk: int) -> Response:
