@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Pencil, Star, Users } from "lucide-react";
+import { ArrowLeft, Pencil, Star, UserPlus, Users } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge, DeletedUserBadge, Button, Card, CardBody, CardHeader, Spinner } from "@/components/ui";
 import {
@@ -16,6 +16,7 @@ import {
 import { getToken, getStoredUser } from "@/lib/auth";
 import { canAccessRoute, hasPermission } from "@/lib/permissions";
 import { ConfirmDialog } from "@/features/admin/components/ConfirmDialog";
+import { AddCustomerDialog } from "@/features/trainers/components/AddCustomerDialog";
 import { TrainerFormDialog } from "@/features/trainers/components/TrainerFormDialog";
 import { TrainerScheduleSection } from "@/features/trainers/components/TrainerScheduleSection";
 import {
@@ -51,6 +52,7 @@ export default function TrainerProfilePage() {
   const [user] = useState(() => (typeof window !== "undefined" ? getStoredUser() : null));
   const [assignmentFilter, setAssignmentFilter] = useState<"all" | "active" | "inactive">("all");
   const [formOpen, setFormOpen] = useState(false);
+  const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState(false);
   const [toggling, setToggling] = useState(false);
 
@@ -134,6 +136,11 @@ export default function TrainerProfilePage() {
   }
 
   const canEdit = user ? hasPermission(user.role, "users.edit_user") : false;
+  // Issue #73: registering a member from the profile mirrors the backend's
+  // customers.create_customer gate (owner/manager; trainers stay view-only).
+  const canAddCustomer = user
+    ? hasPermission(user.role, "customers.create_customer")
+    : false;
   const photo = trainer ? resolveTrainerPhoto(trainer) : null;
 
   return (
@@ -324,24 +331,33 @@ export default function TrainerProfilePage() {
                 <h3 className="text-lg font-semibold text-gray-900">
                   Assigned customers
                 </h3>
-                <select
-                  value={assignmentFilter}
-                  onChange={(e) =>
-                    setAssignmentFilter(e.target.value as typeof assignmentFilter)
-                  }
-                  aria-label="Filter assignments"
-                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none"
-                >
-                  <option value="all">All</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={assignmentFilter}
+                    onChange={(e) =>
+                      setAssignmentFilter(e.target.value as typeof assignmentFilter)
+                    }
+                    aria-label="Filter assignments"
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-brand-500 focus:outline-none"
+                  >
+                    <option value="all">All</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                  {canAddCustomer && (
+                    <Button variant="primary" size="sm" onClick={() => setAddCustomerOpen(true)}>
+                      <UserPlus className="mr-2 h-4 w-4" /> Add customer
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardBody className="p-0">
                 {filteredAssignments.length === 0 ? (
                   <p className="px-4 py-10 text-center text-sm text-gray-500">
                     {trainerAssignments.length === 0
-                      ? "No customers assigned yet. Assign one from the customer's profile."
+                      ? canAddCustomer
+                        ? "No customers assigned yet. Add a new member here, or assign an existing customer from their profile."
+                        : "No customers assigned yet. Assign one from the customer's profile."
                       : "No assignments match this filter."}
                   </p>
                 ) : (
@@ -398,6 +414,19 @@ export default function TrainerProfilePage() {
             setFormOpen(false);
             replaceTrainer(saved);
             toast.success(`${trainerName(saved)} updated`);
+          }}
+        />
+      )}
+
+      {addCustomerOpen && trainer && (
+        <AddCustomerDialog
+          trainer={trainer}
+          onClose={() => setAddCustomerOpen(false)}
+          onSaved={(customer, assignment) => {
+            setAddCustomerOpen(false);
+            // The fresh linkage lands on this tab — append instead of refetching.
+            setAssignments((prev) => [...prev, assignment]);
+            toast.success(`${customer.name} added to ${trainerName(trainer)}.`);
           }}
         />
       )}
