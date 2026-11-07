@@ -17,10 +17,193 @@ export class ApiError extends Error {
   }
 }
 
+/** Display label for a field that appears in DRF validation errors (#96). */
+const FIELD_LABELS: Record<string, string> = {
+  phone: "Phone",
+  name: "Name",
+  first_name: "First name",
+  last_name: "Last name",
+  email: "Email",
+  branch: "Branch",
+  plan: "Plan",
+  start_date: "Start date",
+  end_date: "End date",
+  method: "Payment method",
+  amount: "Amount",
+  notes: "Notes",
+  device: "Device",
+  device_user_id: "Device user ID",
+  credential_type: "Credential type",
+  customer: "Customer",
+  membership: "Membership",
+  payment: "Payment",
+  biometrics: "Biometrics",
+  date_of_birth: "Date of birth",
+  emergency_contact_name: "Emergency contact name",
+  emergency_contact_phone: "Emergency contact phone",
+};
+
+/** Nested wizard blocks — too generic to headline a field label. */
+const BLOCK_FIELDS = new Set(["customer", "membership", "payment"]);
+
+/** DRF containers whose messages stand alone — no "Label:" prefix. */
+const UNLABELLED_FIELDS = new Set(["non_field_errors", "detail"]);
+
+/** One field's validation errors, flattened out of a DRF error body. */
+export interface ApiFieldError {
+  /** Dotted path from the response root, e.g. "customer.phone". */
+  field: string;
+  /** Human label built from the path, e.g. "Biometrics #1 Device user ID". */
+  label: string;
+  messages: string[];
+}
+
+function prettifyField(segment: string): string {
+  return (
+    FIELD_LABELS[segment] ?? (segment.charAt(0).toUpperCase() + segment.slice(1))
+  );
+}
+
+function labelForPath(parts: string[]): string {
+  const [head, ...rest] = parts;
+  const shown = rest.length > 0 && BLOCK_FIELDS.has(head) ? rest : parts;
+  return shown
+    .map((part) => (/^\d+$/.test(part) ? `#${Number(part) + 1}` : prettifyField(part)))
+    .join(" ");
+}
+
+/** Stringify one DRF error leaf — `ErrorDetail` serialises as plain strings. */
+function messageText(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
+/**
+ * Flatten a DRF validation-error body into per-field message lists (#96).
+ *
+ * Tolerates every shape DRF emits: `{"field": ["msg"]}` (also a bare
+ * string), nested serializer blocks (`{"customer": {"name": [...]}}`),
+ * list serializers (`{"biometrics": [{"device_user_id": [...]}, {}]}`), and
+ * `non_field_errors`. Returns [] for anything else so callers can fall back
+ * to the generic message.
+ */
+export function extractFieldErrors(data: unknown): ApiFieldError[] {
+  const walk = (node: unknown, path: string[]): ApiFieldError[] => {
+    if (typeof node !== "object" || node === null || Array.isArray(node)) return [];
+    const out: ApiFieldError[] = [];
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      // FBOS/DRF message containers — handled before extraction in the
+      // fallback chain, never field errors.
+      if (path.length === 0 && (key === "error" || key === "detail")) continue;
+      const nextPath = [...path, key];
+      if (Array.isArray(value)) {
+        // A message list, or a list-serializer's per-item error objects.
+        const messages = value.map(messageText).filter((m): m is string => m !== null);
+        if (messages.length > 0) {
+          out.push({
+            field: nextPath.join("."),
+            label: labelForPath(nextPath),
+            messages,
+          });
+        }
+        value.forEach((item, index) => {
+          if (typeof item === "object" && item !== null && !Array.isArray(item)) {
+            out.push(...walk(item, [...nextPath, String(index)]));
+          }
+        });
+      } else if (typeof value === "object" && value !== null) {
+        out.push(...walk(value, nextPath));
+      } else {
+        const message = messageText(value);
+        if (message !== null) {
+          out.push({
+            field: nextPath.join("."),
+            label: labelForPath(nextPath),
+            messages: [message],
+          });
+        }
+      }
+    }
+    return out;
+  };
+  return walk(data, []);
+}
+
+/**
+ * The DRF message the backend raises when a phone belongs to another
+ * account (ADR-002, code `phone_already_registered` — the code is not part
+ * of the rendered body, so match on the text).
+ */
+const PHONE_CONFLICT_MESSAGE = "This phone is already registered to a different account";
+
+/** True when a DRF error body carries the phone-already-registered conflict. */
+export function isPhoneConflict(data: unknown): boolean {
+  return extractFieldErrors(data).some((fieldError) =>
+    fieldError.messages.some((m) => m.startsWith(PHONE_CONFLICT_MESSAGE)),
+  );
+}
+
+/** Same, for a caught value (an ApiError or anything a promise rejected with). */
+export function isPhoneConflictError(err: unknown): boolean {
+  return err instanceof ApiError && isPhoneConflict(err.data);
+}
+
+/**
+ * Rewrite one DRF field message into desk-actionable copy (#96). Returns
+ * null when the raw message is already fine.
+ */
+function rewriteFieldMessage(message: string, label: string): string | null {
+  if (message.startsWith(PHONE_CONFLICT_MESSAGE)) {
+    return (
+      "This phone number is already registered to another account. Clear it and re-enter " +
+      "the number — the returning-member lookup will find them so their profile is " +
+      "updated instead of duplicated — or ask the member for a different number."
+    );
+  }
+  if (message === "This field is required.") return `${label} is required.`;
+  if (/A user with this email already exists/i.test(message)) {
+    return (
+      "This email already has a login. Leave the email blank (the phone is their login) " +
+      "or use a different one."
+    );
+  }
+  if (/Provide a name/i.test(message)) return "Enter the member's name to continue.";
+  if (/enter a valid email/i.test(message)) {
+    return `${label} is not a valid email address — leave it blank or fix it.`;
+  }
+  return null;
+}
+
+/**
+ * Render a DRF validation-error body as a human-readable, actionable string
+ * (#96) — one line per failing field. Returns null for bodies it doesn't
+ * recognise so callers keep their generic fallback.
+ */
+export function describeValidationErrors(data: unknown): string | null {
+  const fields = extractFieldErrors(data);
+  if (fields.length === 0) return null;
+  const lines = fields.map(({ field, label, messages }) => {
+    const rewritten = messages.map((m) => rewriteFieldMessage(m, label));
+    const text = rewritten.map((m, i) => m ?? messages[i]).join(" ");
+    // Rewrites already name the field in plain words — only raw DRF text
+    // needs the "Label:" prefix to be attributable.
+    const leaf = field.split(".").pop() ?? field;
+    const needsPrefix =
+      !UNLABELLED_FIELDS.has(leaf) && rewritten.every((m) => m === null);
+    return `${needsPrefix ? `${label}: ` : ""}${text}`;
+  });
+  return lines.join("\n");
+}
+
 /** Extract a human-readable error message from an unknown caught value. */
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
-    return (err.data?.error as string | undefined) || err.message;
+    return (
+      (err.data?.error as string | undefined) ||
+      describeValidationErrors(err.data) ||
+      err.message
+    );
   }
   if (err instanceof Error) {
     // fetch() rejects with a bare TypeError on network/CORS failures — the
@@ -107,17 +290,24 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   const res = await fetch(`${API_BASE_URL}${path}`, config);
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const parsed = (await res.json().catch(() => ({}))) as unknown;
 
   if (!res.ok) {
+    // Some error bodies are a bare JSON string (e.g. the 502 OnboardingError
+    // detail) — wrap them so the message chain sees {detail: "..."}.
+    const data: Record<string, unknown> =
+      typeof parsed === "string" ? { detail: parsed } : ((parsed ?? {}) as Record<string, unknown>);
+    // Field-error bodies render through the #96 extraction so even
+    // `err.message` consumers (logs, plain `.catch`) get readable copy.
     const message =
       (data.error as string) ||
       (data.detail as string) ||
+      describeValidationErrors(data) ||
       `Request failed with status ${res.status}`;
     throw new ApiError(res.status, data, message);
   }
 
-  return data as T;
+  return parsed as T;
 }
 
 /* ── Auth endpoints ────────────────────────────────────────────── */

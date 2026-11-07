@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Alert, Spinner } from "@/components/ui";
+import { Alert, Button, Spinner } from "@/components/ui";
 import { StepWho } from "./StepWho";
 import { StepPlanPayment } from "./StepPlanPayment";
 import { StepBiometric } from "./StepBiometric";
@@ -15,6 +15,7 @@ import {
   fetchBranches,
   fetchDevices,
   fetchMembershipPlans,
+  isPhoneConflictError,
   onboardMember,
   searchCustomers,
   sendAppInvite,
@@ -62,6 +63,8 @@ export function OnboardingWizard({ initialBranchId = null }: OnboardingWizardPro
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** The 400 was the phone-already-registered conflict (#96) — dedicated guidance. */
+  const [phoneConflict, setPhoneConflict] = useState(false);
   const [result, setResult] = useState<OnboardingResult | null>(null);
   /** Saved between the razorpay POST and verify for the retry path. */
   const [pendingOrder, setPendingOrder] = useState<OnboardingResult | null>(null);
@@ -190,9 +193,16 @@ export function OnboardingWizard({ initialBranchId = null }: OnboardingWizardPro
         router.replace("/login?next=/onboarding/member");
         return;
       }
+      // Failsafe behind StepWho's validation — a cleared name must never
+      // become a round-trip 400 (issue #96 client-side guard).
+      if (state.name.trim() === "") {
+        setSubmitError("Enter the member's name before finishing.");
+        return;
+      }
       const authToken: string = token;
       setSubmitting(true);
       setSubmitError(null);
+      setPhoneConflict(false);
       try {
         const payload = buildOnboardingPayload(
           enrollBiometrics ? state : { ...state, deviceId: null, deviceUserId: "" },
@@ -214,6 +224,7 @@ export function OnboardingWizard({ initialBranchId = null }: OnboardingWizardPro
         }
       } catch (err) {
         setSubmitError(errorMessage(err));
+        setPhoneConflict(isPhoneConflictError(err));
       } finally {
         setSubmitting(false);
       }
@@ -257,6 +268,7 @@ export function OnboardingWizard({ initialBranchId = null }: OnboardingWizardPro
     setResult(null);
     setPendingOrder(null);
     setSubmitError(null);
+    setPhoneConflict(false);
     setStep(1);
   }, [state.branchId]);
 
@@ -308,7 +320,32 @@ export function OnboardingWizard({ initialBranchId = null }: OnboardingWizardPro
         })}
       </ol>
 
-      {submitError && <Alert variant="error">{submitError}</Alert>}
+      {submitError && !phoneConflict && (
+        <Alert variant="error" className="whitespace-pre-line">
+          {submitError}
+        </Alert>
+      )}
+      {submitError && phoneConflict && (
+        <Alert variant="error" className="space-y-2" data-testid="phone-conflict-alert">
+          <p className="font-medium">{submitError}</p>
+          <p>
+            Their profile shows up via the returning-member lookup in step 1 — go back,
+            re-enter the phone, and the membership lands on the existing profile instead of
+            creating a duplicate.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSubmitError(null);
+              setPhoneConflict(false);
+              setStep(1);
+            }}
+          >
+            Edit member details
+          </Button>
+        </Alert>
+      )}
       {submitting && (
         <div className="flex items-center gap-2 text-sm text-gray-500" role="status">
           <Spinner className="h-4 w-4" /> Saving member…

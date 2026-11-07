@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { OnboardingWizard } from "@/features/onboarding/components/OnboardingWizard";
+import { ApiError } from "@/lib/api";
 import {
   fetchBranches,
   fetchMembershipPlans,
@@ -7,15 +8,16 @@ import {
   searchCustomers,
   onboardMember,
   sendAppInvite,
-  errorMessage,
 } from "@/lib/api";
 import type { Customer } from "@/types/customer";
 import type { MembershipPlan } from "@/types/membership";
 import type { OnboardingResult } from "@/types/onboarding";
 import { todayISO, addDays } from "@/features/onboarding/lib/validity";
 
+// Real errorMessage/describeValidationErrors stay live (issue #96) — only
+// the network surface is mocked.
 jest.mock("@/lib/api", () => ({
-  errorMessage: jest.fn((err) => (err instanceof Error ? err.message : "error")),
+  ...jest.requireActual("@/lib/api"),
   fetchBranches: jest.fn(),
   fetchMembershipPlans: jest.fn(),
   fetchDevices: jest.fn(),
@@ -160,6 +162,67 @@ describe("OnboardingWizard — step 1 (Who)", () => {
     fireEvent.blur(screen.getByLabelText("Phone number"));
     await waitFor(() => expect(mockedSearchCustomers).toHaveBeenCalledWith(expect.anything(), "9876543210"));
     expect(screen.queryByTestId("returning-member-banner")).not.toBeInTheDocument();
+  });
+});
+
+describe("OnboardingWizard — submit errors (#96)", () => {
+  it("renders the phone-already-registered 400 as guidance toward the returning-member lookup", async () => {
+    mockedOnboardMember.mockRejectedValue(
+      new ApiError(
+        400,
+        { phone: ["This phone is already registered to a different account. Resolve manually."] },
+        "Request failed with status 400",
+      ),
+    );
+    await gotoStep3();
+    await screen.findByLabelText("Device");
+    fireEvent.click(screen.getByTestId("skip-biometric"));
+
+    const alert = await screen.findByTestId("phone-conflict-alert");
+    expect(alert).toHaveTextContent(/already registered to another account/i);
+    expect(alert).toHaveTextContent(/returning-member lookup/i);
+    expect(screen.queryByText(/Resolve manually/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/error 400/i)).not.toBeInTheDocument();
+
+    // The CTA returns to step 1 with state intact so the phone lookup can run.
+    fireEvent.click(screen.getByRole("button", { name: /Edit member details/i }));
+    expect(await screen.findByTestId("step-who")).toBeInTheDocument();
+    expect(screen.getByLabelText("Phone number")).toHaveValue("9876543210");
+  });
+
+  it("renders nested DRF field errors as plain-language lines, not a bare 400", async () => {
+    mockedOnboardMember.mockRejectedValue(
+      new ApiError(
+        400,
+        { customer: { name: ["Provide a name (or first/last name)."] } },
+        "Request failed with status 400",
+      ),
+    );
+    await gotoStep3();
+    await screen.findByLabelText("Device");
+    fireEvent.click(screen.getByTestId("skip-biometric"));
+
+    expect(await screen.findByText(/Enter the member's name to continue/)).toBeInTheDocument();
+    expect(screen.queryByTestId("phone-conflict-alert")).not.toBeInTheDocument();
+    expect(screen.queryByText(/status 400/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the generic alert for non-field 400 bodies", async () => {
+    mockedOnboardMember.mockRejectedValue(
+      new ApiError(
+        502,
+        { error: "Payment order could not be created. Retry or take cash at the desk." },
+        "Payment order could not be created. Retry or take cash at the desk.",
+      ),
+    );
+    await gotoStep3();
+    await screen.findByLabelText("Device");
+    fireEvent.click(screen.getByTestId("skip-biometric"));
+
+    expect(
+      await screen.findByText(/Payment order could not be created/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("phone-conflict-alert")).not.toBeInTheDocument();
   });
 });
 

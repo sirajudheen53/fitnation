@@ -5,12 +5,18 @@
  * and the analytics crash (`t is not iterable` with DRF envelopes).
  */
 import {
+  ApiError,
+  describeValidationErrors,
   errorMessage,
+  extractFieldErrors,
   fetchDashboardTrainers,
   fetchRevenueReport,
   fetchAttendanceHeatmap,
   fetchMembershipFunnel,
   fetchTopCustomers,
+  isPhoneConflict,
+  isPhoneConflictError,
+  login,
   unwrapList,
   unwrapNotificationLogs,
 } from "@/lib/api";
@@ -75,6 +81,112 @@ describe("errorMessage", () => {
     expect(errorMessage(new Error("Something specific happened"))).toBe(
       "Something specific happened",
     );
+  });
+
+  it("renders DRF field errors human-readably instead of 'error 400' (#96)", () => {
+    const err = new ApiError(
+      400,
+      { phone: ["This phone is already registered to a different account. Resolve manually."] },
+      "Request failed with status 400",
+    );
+    const rendered = errorMessage(err);
+    expect(rendered).toContain("already registered to another account");
+    expect(rendered).toContain("returning-member lookup");
+    expect(rendered).not.toContain("Resolve manually");
+    expect(rendered).not.toContain("status 400");
+  });
+
+  it("falls back to the generic message when the body has no field errors", () => {
+    const err = new ApiError(502, {}, "Payment gateway is down");
+    expect(errorMessage(err)).toBe("Payment gateway is down");
+  });
+});
+
+describe("DRF field-error extraction (#96)", () => {
+  it("flattens flat message lists with a label", () => {
+    expect(
+      describeValidationErrors({ branch: ["This field is required.", "Invalid pk."] }),
+    ).toBe("Branch is required. Invalid pk.");
+  });
+
+  it("unwraps nested wizard blocks without the block prefix", () => {
+    expect(
+      describeValidationErrors({
+        customer: { name: ["Provide a name (or first/last name)."] },
+      }),
+    ).toBe("Enter the member's name to continue.");
+    expect(
+      describeValidationErrors({ membership: { plan: ["This field is required."] } }),
+    ).toBe("Plan is required.");
+  });
+
+  it("renders the known backend 400s with actionable copy", () => {
+    expect(
+      describeValidationErrors({
+        phone: ["This phone is already registered to a different account. Resolve manually."],
+      }),
+    ).toMatch(/returning-member lookup/i);
+    expect(
+      describeValidationErrors({ email: ["A user with this email already exists."] }),
+    ).toMatch(/Leave the email blank/);
+    expect(
+      describeValidationErrors({ email: ["Enter a valid email address."] }),
+    ).toMatch(/not a valid email address/);
+    expect(describeValidationErrors({ name: ["Provide a name (or first/last name)."] })).toBe(
+      "Enter the member's name to continue.",
+    );
+  });
+
+  it("walks list-serializer items with an index label", () => {
+    const rendered = describeValidationErrors({
+      biometrics: [{ device_user_id: ["This field is required."] }, {}],
+    });
+    expect(rendered).toBe("Biometrics #1 Device user ID is required.");
+    expect(extractFieldErrors({ biometrics: [{}, {}] })).toEqual([]);
+  });
+
+  it("handles bare-string values and non_field_errors", () => {
+    expect(describeValidationErrors({ phone: "This field is required." })).toBe(
+      "Phone is required.",
+    );
+    expect(describeValidationErrors({ non_field_errors: ["Nope."] })).toBe("Nope.");
+  });
+
+  it("returns null for bodies without field errors", () => {
+    expect(describeValidationErrors({ error: "Payment order could not be created." })).toBeNull();
+    expect(describeValidationErrors({ detail: "Not found." })).toBeNull();
+    expect(describeValidationErrors({})).toBeNull();
+    expect(describeValidationErrors(null)).toBeNull();
+    expect(describeValidationErrors(undefined)).toBeNull();
+  });
+
+  it("detects the phone-already-registered conflict for body and caught values", () => {
+    const body = {
+      phone: ["This phone is already registered to a different account. Resolve manually."],
+    };
+    expect(isPhoneConflict(body)).toBe(true);
+    expect(isPhoneConflictError(new ApiError(400, body, "400"))).toBe(true);
+    expect(isPhoneConflict({ name: ["Provide a name (or first/last name)."] })).toBe(false);
+    expect(isPhoneConflictError(new Error("nope"))).toBe(false);
+  });
+
+  it("builds the readable copy into ApiError.message at request time", async () => {
+    mockFetchOnce({ customer: { name: ["Provide a name (or first/last name)."] } }, 400);
+    await expect(login({ email: "a@b.c", password: "x" })).rejects.toThrow(
+      /Enter the member's name to continue/,
+    );
+  });
+
+  it("keeps extractFieldErrors paths faithful for programmatic use", () => {
+    const fields = extractFieldErrors({
+      customer: { phone: ["This field is required."] },
+      biometrics: [{ device: ["A valid integer is required."] }],
+    });
+    expect(fields.map((f) => f.field)).toEqual([
+      "customer.phone",
+      "biometrics.0.device",
+    ]);
+    expect(fields[1]?.label).toBe("Biometrics #1 Device");
   });
 });
 
