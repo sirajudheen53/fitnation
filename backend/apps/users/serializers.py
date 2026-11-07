@@ -8,7 +8,7 @@ from rest_framework import serializers
 from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.users.auth import AuthToken
 from apps.users.models import Trainer, TrainerCustomerAssignment, TrainerSchedule, User
-from apps.users.phone import normalize_e164
+from apps.users.phone import normalize_e164, phone_lookup_candidates
 
 
 def _reject_duplicate_email(email: str) -> None:
@@ -19,6 +19,37 @@ def _reject_duplicate_email(email: str) -> None:
     """
     if email and User.objects.filter(email__iexact=email.strip()).exists():
         raise serializers.ValidationError({"email": "A user with this email already exists."})
+
+
+def reject_registered_phone(tenant, phone: str, *, exclude_user: User | None = None) -> None:
+    """Reject a phone already held by another account in the tenant (#97).
+
+    The ADR-002 customers rule, applied to staff-profile edits: a 400
+    ``phone_already_registered`` when ANY other tenant user holds the number.
+    That deliberately includes live accounts, staff/other-role accounts, and
+    synthetic OTP identities — a profile edit can never dedupe, adopt, or
+    reassign identities the way customer create does, and two tenant users
+    sharing one phone would corrupt the exact-match OTP login ladders
+    (``order_by("id").first()``). Tenant-scoped (ADR-002 rule 3): the same
+    number at another gym is fine. Candidate-tolerant (#88): a legacy raw
+    stored row matches its E.164 payload form.
+    """
+    if not (phone or "").strip() or tenant is None:
+        return
+    queryset = User.objects.filter(tenant=tenant, phone__in=phone_lookup_candidates(phone))
+    if exclude_user is not None:
+        queryset = queryset.exclude(pk=exclude_user.pk)
+    if queryset.exists():
+        raise serializers.ValidationError(
+            {
+                "phone": [
+                    serializers.ErrorDetail(
+                        "This phone is already registered to a different " "account. Resolve manually.",
+                        code="phone_already_registered",
+                    )
+                ]
+            },
+        )
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -337,7 +368,17 @@ class TrainerCreateSerializer(serializers.Serializer):
 
 
 class TrainerUpdateSerializer(serializers.ModelSerializer):
-    """Serializer for updating an existing trainer profile."""
+    """Serializer for updating an existing trainer profile.
+
+    ``phone`` (issue #97) edits the linked user's login phone: normalized to
+    E.164 (#88) and rejected with ``phone_already_registered`` when another
+    tenant account holds the number (ADR-002) — see
+    :func:`reject_registered_phone`. ``update_trainer`` applies it to
+    ``trainer.user`` and purges outstanding OTP codes for the freed old
+    phone (#72 hygiene).
+    """
+
+    phone = serializers.CharField(required=False, allow_blank=True, max_length=20)
 
     class Meta:
         """Serializer metadata."""
@@ -351,7 +392,21 @@ class TrainerUpdateSerializer(serializers.ModelSerializer):
             "experience_years",
             "profile_photo",
             "max_clients",
+            "phone",
         ]
+
+    def validate_phone(self, value: str) -> str:
+        """Canonicalize the phone to E.164 (#88) like every other write path."""
+        return normalize_e164(value)
+
+    def validate(self, data: dict) -> dict:
+        """ADR-002 conflict check when the payload carries a phone (#97)."""
+        if "phone" in data:
+            request = self.context.get("request")
+            tenant = getattr(request, "tenant", None) if request else None
+            exclude_user = self.instance.user if self.instance is not None else None
+            reject_registered_phone(tenant, data["phone"], exclude_user=exclude_user)
+        return data
 
 
 class TrainerCustomerAssignmentSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer):

@@ -13,8 +13,9 @@ from apps.branches.models import Branch
 from apps.customers.models import Customer
 from apps.permissions.models import UserRoleAssignment
 from apps.tenants.services import provision_tenant
-from apps.users.models import Trainer, TrainerCustomerAssignment, TrainerSchedule
+from apps.users.models import OtpCode, Trainer, TrainerCustomerAssignment, TrainerSchedule
 from apps.users.otp import GupshupOtpSender, Msg91OtpSender, OtpDeliveryError
+from apps.users.phone import phone_lookup_candidates
 from apps.users.services import (
     create_owner_user,
     create_user,
@@ -855,6 +856,192 @@ class TrainerAPITests(APITestCase):
             f"/api/v1/users/trainers/{self.trainer.id}/unassign-customer/99999/",
         )
         self.assertEqual(response.status_code, 404)
+
+
+class TrainerPhoneUpdateTests(APITestCase):
+    """PATCH /users/trainers/{id}/ phone editing (issue #97).
+
+    The trainer's phone lives on the linked user and is a login/OTP key, so
+    an edit must land E.164-normalized (#88), 400 on the ADR-002 conflict
+    (any OTHER tenant account holding the number — live, staff, or synthetic
+    identity), never clobber the holder, stay tenant-scoped, and purge
+    outstanding OTP codes bound to the freed old number (#72 hygiene).
+    """
+
+    ORIGINAL_CERTS = [{"name": "ACE-CPT", "issuer": "ACE", "year": 2020, "expiry": None}]
+
+    def setUp(self) -> None:
+        """Create tenant, owner, token, and a trainer with a full profile."""
+        self.tenant = provision_tenant(name="Gym", contact_email="gym@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+        self.trainer = create_trainer(
+            tenant=self.tenant,
+            email="trainer@local.test",
+            first_name="John",
+            last_name="Doe",
+            phone="918606806956",
+            specialization="Strength",
+            bio="Original bio",
+            certifications=self.ORIGINAL_CERTS,
+            experience_years=5,
+            max_clients=30,
+        )
+
+    def _trainer_user(self) -> User:
+        """The trainer's user row, fresh from the database."""
+        self.trainer.refresh_from_db()
+        return self.trainer.user
+
+    def test_patch_phone_normalizes_to_e164_and_updates_user(self) -> None:
+        """A raw-typed phone lands E.164 on the user and stays lookup-compatible."""
+        response = self.client.patch(
+            f"/api/v1/users/trainers/{self.trainer.id}/",
+            {"phone": "08606806956"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["phone"], "+918606806956")
+        user = self._trainer_user()
+        self.assertEqual(user.phone, "+918606806956")
+        # Login/OTP compatibility: the ladder every phone lookup uses (#88)
+        # resolves the edited number to the trainer's account.
+        self.assertIn(
+            user.pk,
+            list(
+                User.objects.filter(
+                    tenant=self.tenant,
+                    phone__in=phone_lookup_candidates("+918606806956"),
+                ).values_list("pk", flat=True)
+            ),
+        )
+
+    def test_patch_phone_preserves_untouched_profile_fields(self) -> None:
+        """A phone-only PATCH leaves every profile field alone."""
+        response = self.client.patch(
+            f"/api/v1/users/trainers/{self.trainer.id}/",
+            {"phone": "8606806956"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.trainer.refresh_from_db()
+        self.assertEqual(self.trainer.specialization, "Strength")
+        self.assertEqual(self.trainer.bio, "Original bio")
+        self.assertEqual(self.trainer.experience_years, 5)
+        self.assertEqual(self.trainer.max_clients, 30)
+        self.assertEqual(self.trainer.certifications, self.ORIGINAL_CERTS)
+        self.assertTrue(self.trainer.is_active)
+        self.assertEqual(response.data["bio"], "Original bio")
+        self.assertEqual(response.data["specialization"], "Strength")
+
+    def test_patch_phone_owned_by_customer_returns_400(self) -> None:
+        """A number held by another tenant account is rejected, holder untouched."""
+        holder = create_user(
+            tenant=self.tenant,
+            email="holder@local.test",
+            first_name="Held",
+            last_name="Elsewhere",
+            role=User.Role.CUSTOMER,
+            phone="8888888888",
+        )
+        response = self.client.patch(
+            f"/api/v1/users/trainers/{self.trainer.id}/",
+            {"phone": "8888888888"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            str(response.data["phone"][0]),
+            "This phone is already registered to a different account. Resolve manually.",
+        )
+        self.assertEqual(response.data["phone"][0].code, "phone_already_registered")
+        holder.refresh_from_db()
+        self.assertEqual(holder.phone, "+918888888888")
+        self.assertEqual(self._trainer_user().phone, "+918606806956")
+
+    def test_patch_phone_owned_by_staff_account_returns_400(self) -> None:
+        """A staff/other-role holder is never clobbered either."""
+        manager = create_user(
+            tenant=self.tenant,
+            email="manager@local.test",
+            first_name="Manny",
+            last_name="Ger",
+            role=User.Role.MANAGER,
+            phone="7777777777",
+        )
+        response = self.client.patch(
+            f"/api/v1/users/trainers/{self.trainer.id}/",
+            {"phone": "+917777777777"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["phone"][0].code, "phone_already_registered")
+        manager.refresh_from_db()
+        self.assertEqual(manager.phone, "+917777777777")
+        self.assertEqual(self._trainer_user().phone, "+918606806956")
+
+    def test_patch_phone_same_number_resubmission_succeeds(self) -> None:
+        """Re-submitting the trainer's own number (any typed form) is a no-op, not a conflict."""
+        response = self.client.patch(
+            f"/api/v1/users/trainers/{self.trainer.id}/",
+            {"phone": "+91 86068 06956"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._trainer_user().phone, "+918606806956")
+
+    def test_patch_phone_held_in_other_tenant_succeeds(self) -> None:
+        """The conflict check is tenant-scoped (ADR-002 rule 3)."""
+        other = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        create_user(
+            tenant=other,
+            email="taken@local.test",
+            first_name="Taken",
+            last_name="Elsewhere",
+            role=User.Role.CUSTOMER,
+            phone="8888888888",
+        )
+        response = self.client.patch(
+            f"/api/v1/users/trainers/{self.trainer.id}/",
+            {"phone": "8888888888"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._trainer_user().phone, "+918888888888")
+
+    def test_phone_change_purges_outstanding_otp_for_old_number(self) -> None:
+        """Freed old phone loses its unused codes in-tenant; other tenants keep theirs."""
+        OtpCode.objects.create(
+            phone="+918606806956",
+            tenant=self.tenant,
+            code_hash="a" * 64,
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+        other = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        foreign_code = OtpCode.objects.create(
+            phone="+918606806956",
+            tenant=other,
+            code_hash="b" * 64,
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+        response = self.client.patch(
+            f"/api/v1/users/trainers/{self.trainer.id}/",
+            {"phone": "9999999999"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(
+            OtpCode.objects.filter(tenant=self.tenant, is_used=False).exists(),
+            "outstanding codes for the freed phone must be purged",
+        )
+        foreign_code.refresh_from_db()
+        self.assertIsNotNone(foreign_code.pk)
 
 
 class EmailVerificationTests(APITestCase):

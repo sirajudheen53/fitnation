@@ -83,16 +83,42 @@ def update_trainer(
 ) -> Trainer:
     """Update trainer profile fields.
 
+    ``phone`` (issue #97) is a user-level field: it writes
+    ``trainer.user.phone`` (the model save canonicalizes to E.164, #88).
+    When the number actually changes, outstanding OTP codes bound to the
+    freed old phone are purged within the tenant (#72 hygiene — codes are
+    phone-keyed with no user FK, so they would otherwise outlive the change
+    and verify against whatever identity later holds the number). Matching
+    every storage form via ``phone_lookup_candidates`` (#88), other tenants'
+    codes untouched.
+
     Args:
         trainer: The Trainer instance to update.
-        **fields: Fields to update.
+        **fields: Fields to update (``phone`` targets the linked user).
 
     Returns:
         The updated ``Trainer`` instance.
     """
+    from apps.users.models import OtpCode
+    from apps.users.phone import normalize_e164, phone_lookup_candidates
+
+    phone = fields.pop("phone", None)
     for key, value in fields.items():
         if hasattr(trainer, key):
             setattr(trainer, key, value)
+
+    if phone is not None:
+        old_phone = trainer.user.phone
+        number_changed = normalize_e164(old_phone) != phone
+        trainer.user.phone = phone
+        trainer.user.save(update_fields=["phone", "updated_at"])
+        if number_changed and old_phone:
+            OtpCode.objects.filter(
+                tenant_id=trainer.user.tenant_id,
+                phone__in=phone_lookup_candidates(old_phone),
+                is_used=False,
+            ).delete()
+
     trainer.save()
     return trainer
 

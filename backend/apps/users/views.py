@@ -752,6 +752,7 @@ class TrainerViewSet(ViewSet):
             trainer,
             data=request.data,
             partial=True,
+            context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
         trainer = update_trainer(trainer, **serializer.validated_data)
