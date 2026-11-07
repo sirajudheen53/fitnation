@@ -1,4 +1,8 @@
-import { deriveAppAccessDisplay, describeInviteStatus } from "@/features/customers/lib/appAccess";
+import {
+  deriveAppAccessDisplay,
+  describeInviteStatus,
+  inviteOutcomeToast,
+} from "@/features/customers/lib/appAccess";
 import type { Customer } from "@/types/customer";
 import type { Membership, MembershipPlan } from "@/types/membership";
 
@@ -184,5 +188,107 @@ describe("describeInviteStatus", () => {
     });
     expect(display.variant).toBe("warning");
     expect(display.detail).toContain("WhatsApp not configured");
+  });
+
+  // #102: the raw machine outcome ("Last invite: not_applicable") read like
+  // "not available" and contradicted the card's Entitled badge. These pin the
+  // explicit per-reason copy and the no-CTA behaviour.
+  describe("not_applicable (#102)", () => {
+    const invite = (reason: string | null) => ({
+      status: "not_applicable",
+      channel: null,
+      sent_at: null,
+      error_message: reason,
+    });
+
+    it("names the rollout flag as the blocker for flag_off", () => {
+      const display = describeInviteStatus(invite("flag_off"));
+      expect(display.status).toBe("not_applicable");
+      expect(display.label).toBe("App invites not enabled for this gym");
+      expect(display.detail).toContain("App access is not enabled for this gym");
+    });
+
+    it("names the plan for plan_excludes_app", () => {
+      const display = describeInviteStatus(invite("plan_excludes_app"));
+      expect(display.label).toBe("Plan does not include the app");
+      expect(display.detail).toContain("plan does not include app access");
+    });
+
+    it("stays explicit for an unrecognized reason", () => {
+      const display = describeInviteStatus(invite("something_new"));
+      expect(display.label).toBe("Invite not applicable to this member");
+      expect(display.label).not.toContain("_");
+    });
+
+    it("drops the CTA — resending returns the same verdict", () => {
+      for (const reason of ["flag_off", "plan_excludes_app", null]) {
+        expect(describeInviteStatus(invite(reason)).actionLabel).toBeNull();
+      }
+    });
+
+    it("never leaks the raw machine code into the label", () => {
+      for (const reason of ["flag_off", "plan_excludes_app", null, "mystery"]) {
+        expect(describeInviteStatus(invite(reason)).label).not.toContain("not_applicable");
+      }
+    });
+  });
+
+  it("shows already_sent as its own explicit state instead of the raw code", () => {
+    const display = describeInviteStatus({
+      status: "already_sent",
+      channel: "whatsapp",
+      sent_at: "2026-11-07T04:47:22Z",
+      error_message: null,
+    });
+    expect(display.label).toBe("Invite already sent");
+    expect(display.variant).toBe("success");
+    expect(display.actionLabel).toBe("Resend invite");
+    expect(display.force).toBe(true);
+    expect(display.detail).toContain("Last sent");
+  });
+
+  it("never shows a bare machine status for unknown outcomes", () => {
+    const display = describeInviteStatus({
+      status: "mystery_state",
+      channel: null,
+      sent_at: null,
+      error_message: null,
+    });
+    expect(display.label).toBe("Unknown invite state");
+    expect(display.detail).toContain('recorded as "mystery_state"');
+  });
+
+  describe("inviteOutcomeToast (#102)", () => {
+    it("toasts success with the channel for a sent invite", () => {
+      expect(
+        inviteOutcomeToast({ status: "sent", channel: "whatsapp", sent_at: null, error_message: null }),
+      ).toEqual({ kind: "success", message: "Invite sent via WhatsApp" });
+    });
+
+    it("toasts the flag blocker copy for not_applicable", () => {
+      const toast = inviteOutcomeToast({
+        status: "not_applicable",
+        channel: null,
+        sent_at: null,
+        error_message: "flag_off",
+      });
+      expect(toast.kind).toBe("warning");
+      expect(toast.message).toContain("App access is not enabled for this gym");
+    });
+
+    it("toasts the skipped nudge and surfaces the failure reason on failed", () => {
+      expect(
+        inviteOutcomeToast({ status: "skipped", channel: null, sent_at: null, error_message: null }),
+      ).toMatchObject({ kind: "warning" });
+      expect(
+        inviteOutcomeToast({ status: "failed", channel: null, sent_at: null, error_message: "Gupshup down" }),
+      ).toEqual({ kind: "error", message: "Invite failed: Gupshup down" });
+    });
+
+    it("quotes an unknown status as a system value, never as the outcome itself", () => {
+      const toast = inviteOutcomeToast({ status: "mystery_state", channel: null, sent_at: null, error_message: null });
+      expect(toast.kind).toBe("warning");
+      expect(toast.message).toBe('Invite outcome was "mystery_state" — no message went out.');
+    });
   });
 });

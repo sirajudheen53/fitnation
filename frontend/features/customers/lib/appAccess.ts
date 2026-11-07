@@ -128,12 +128,76 @@ export function deriveAppAccessDisplay(
 export interface InviteDisplay {
   /** Short chip label for the last invite attempt. */
   label: string;
+  /** The machine outcome this chip describes (null = never invited). */
+  status: string | null;
   variant: "success" | "warning" | "danger" | "default";
   /** CTA text; null when the backend contract makes a send pointless. */
   actionLabel: "Send app invite" | "Resend invite" | "Retry invite" | null;
   /** Whether the CTA must force (`resend: true`) past the 24 h dedupe. */
   force: boolean;
   detail: string | null;
+}
+
+/**
+ * Human copy for the backend's `not_applicable` reasons (#102). The invite
+ * service returns these before any send is attempted, so resending cannot
+ * change the outcome — the chip must say WHY and drop the CTA.
+ */
+const NOT_APPLICABLE_COPY: Record<string, { label: string; detail: string }> = {
+  flag_off: {
+    label: "App invites not enabled for this gym",
+    detail: "App access is not enabled for this gym yet — the invite cannot go out until it is.",
+  },
+  plan_excludes_app: {
+    label: "Plan does not include the app",
+    detail: "This member's plan does not include app access.",
+  },
+};
+
+function notApplicableCopy(reason: string | null): { label: string; detail: string } {
+  return (
+    NOT_APPLICABLE_COPY[reason ?? ""] ?? {
+      label: "Invite not applicable to this member",
+      detail: "The server declined the invite for this member's current plan or gym settings.",
+    }
+  );
+}
+
+/** Toast copy for the outcome of one send attempt (#102). */
+export interface InviteOutcomeToast {
+  kind: "success" | "warning" | "error";
+  message: string;
+}
+
+/** Map an `app_invite` response block onto the send toast (never raw codes). */
+export function inviteOutcomeToast(invite: AppInviteStatusSummary): InviteOutcomeToast {
+  switch (invite.status) {
+    case "sent":
+      return {
+        kind: "success",
+        message: `Invite sent via ${invite.channel === "sms" ? "SMS" : "WhatsApp"}`,
+      };
+    case "already_sent":
+      return { kind: "success", message: "Invite was already sent recently" };
+    case "not_applicable":
+      return {
+        kind: "warning",
+        message: notApplicableCopy(invite.error_message).detail,
+      };
+    case "skipped":
+      return {
+        kind: "warning",
+        message:
+          invite.error_message ?? "Invite not sent — WhatsApp is not configured for this gym yet.",
+      };
+    case "failed":
+      return {
+        kind: "error",
+        message: invite.error_message ? `Invite failed: ${invite.error_message}` : "Invite failed",
+      };
+    default:
+      return { kind: "warning", message: `Invite outcome was "${invite.status}" — no message went out.` };
+  }
 }
 
 /** Map `Customer.app_invite_status` onto the panel's chip + CTA. */
@@ -143,6 +207,7 @@ export function describeInviteStatus(
   if (!invite) {
     return {
       label: "Never invited",
+      status: null,
       variant: "default",
       actionLabel: "Send app invite",
       force: false,
@@ -157,6 +222,7 @@ export function describeInviteStatus(
     case "sent":
       return {
         label: `Invite sent via ${channel}`,
+        status: invite.status,
         variant: "success",
         actionLabel: "Resend invite",
         force: true,
@@ -165,6 +231,7 @@ export function describeInviteStatus(
     case "failed":
       return {
         label: "Invite failed",
+        status: invite.status,
         variant: "danger",
         actionLabel: "Retry invite",
         force: false,
@@ -173,18 +240,45 @@ export function describeInviteStatus(
     case "skipped":
       return {
         label: "Invite not sent",
+        status: invite.status,
         variant: "warning",
         actionLabel: "Send app invite",
         force: false,
         detail: invite.error_message ?? "WhatsApp not configured for this gym yet.",
       };
-    default:
+    case "not_applicable": {
+      // #102: the raw machine value ("not_applicable") read like "not
+      // available" next to the card's "Entitled" badge. Name the actual
+      // blocker and drop the CTA — resending returns the same verdict.
+      const copy = notApplicableCopy(invite.error_message);
       return {
-        label: `Last invite: ${invite.status}`,
+        label: copy.label,
+        status: invite.status,
+        variant: "warning",
+        actionLabel: null,
+        force: false,
+        detail: copy.detail,
+      };
+    }
+    case "already_sent":
+      return {
+        label: "Invite already sent",
+        status: invite.status,
+        variant: "success",
+        actionLabel: "Resend invite",
+        force: true,
+        detail: sentAt ? `Last sent ${sentAt}` : null,
+      };
+    default:
+      // Unknown machine status: never surface the bare code as the state —
+      // quote it as a system value so the owner knows what to report (#102).
+      return {
+        label: "Unknown invite state",
+        status: invite.status,
         variant: "default",
         actionLabel: "Resend invite",
         force: true,
-        detail: sentAt,
+        detail: sentAt ? `Last invite recorded as "${invite.status}" · ${sentAt}` : `Last invite recorded as "${invite.status}"`,
       };
   }
 }
