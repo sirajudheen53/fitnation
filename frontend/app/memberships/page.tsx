@@ -11,6 +11,7 @@ import {
   formatMembershipDate,
 } from "@/features/memberships/components/MembershipTable";
 import { RenewMembershipDialog } from "@/features/memberships/components/RenewMembershipDialog";
+import { UpgradeMembershipDialog } from "@/features/memberships/components/UpgradeMembershipDialog";
 import { RenewalHint } from "@/features/memberships/components/RenewalHint";
 import { Button, Alert, Spinner, Card, CardHeader, CardBody, Badge } from "@/components/ui";
 import {
@@ -33,6 +34,7 @@ export default function MembershipsPage() {
   const [cancelling, setCancelling] = useState<number | null>(null);
   const [renewTarget, setRenewTarget] = useState<Membership | null>(null);
   const [renewing, setRenewing] = useState(false);
+  const [upgradeTarget, setUpgradeTarget] = useState<Membership | null>(null);
   const [userRole, setUserRole] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const storedUser = localStorage.getItem("fbos_user");
@@ -111,6 +113,17 @@ export default function MembershipsPage() {
     } finally {
       setRenewing(false);
     }
+  };
+
+  /**
+   * Upgrade (#105) swaps the plan within the paid window and records the
+   * desk-entered amount; the dialog owns the API call and its #96 error
+   * treatment, the page just refreshes the row and confirms.
+   */
+  const handleUpgradeSaved = (updated: Membership) => {
+    setMemberships((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    toast.success(`Upgraded to ${updated.plan_name}`);
+    setUpgradeTarget(null);
   };
 
   return (
@@ -207,6 +220,7 @@ export default function MembershipsPage() {
                 memberships={memberships}
                 onCancel={handleCancel}
                 onRenew={setRenewTarget}
+                onUpgrade={setUpgradeTarget}
                 loading={cancelling !== null}
               />
               {cancelling !== null && (
@@ -226,6 +240,14 @@ export default function MembershipsPage() {
           busy={renewing}
           onConfirm={handleRenew}
           onClose={() => setRenewTarget(null)}
+        />
+      )}
+      {upgradeTarget && (
+        <UpgradeMembershipDialog
+          key={upgradeTarget.id}
+          membership={upgradeTarget}
+          onSaved={handleUpgradeSaved}
+          onClose={() => setUpgradeTarget(null)}
         />
       )}
     </DashboardLayout>

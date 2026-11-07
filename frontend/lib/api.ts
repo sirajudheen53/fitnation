@@ -591,6 +591,9 @@ import {
   MembershipPlan,
   MembershipPlanFormData,
   MembershipPlanListResponse,
+  UpgradeMembershipData,
+  UpgradeMembershipResponse,
+  UpgradePreview,
 } from "@/types/membership";
 
 /* Membership plans */
@@ -698,6 +701,35 @@ export function renewMembership(
   return request<Membership>(`/memberships/memberships/${id}/renewal/`, {
     method: "POST",
     body: hasBody ? body : undefined,
+    token,
+  });
+}
+
+/**
+ * GET /memberships/{id}/upgrade/ (#105) — the upgrade prefill payload: the
+ * display-only prorated suggestion for every eligible higher-priced plan,
+ * plus the remaining paid days. Advisory only; the desk can override the
+ * amount at capture time.
+ */
+export function fetchUpgradePreview(id: number | string, token: string): Promise<UpgradePreview> {
+  return request<UpgradePreview>(`/memberships/memberships/${id}/upgrade/`, { token });
+}
+
+/**
+ * POST /memberships/{id}/upgrade/ (#105) — swap the membership onto a
+ * higher-priced plan within the paid window (end date unchanged) and record
+ * a completed payment for `amount` — the human-entered number, which wins
+ * over the backend's suggestion. Returns the updated membership and the
+ * recorded payment.
+ */
+export function upgradeMembership(
+  id: number | string,
+  data: UpgradeMembershipData,
+  token: string,
+): Promise<UpgradeMembershipResponse> {
+  return request<UpgradeMembershipResponse>(`/memberships/memberships/${id}/upgrade/`, {
+    method: "POST",
+    body: data,
     token,
   });
 }

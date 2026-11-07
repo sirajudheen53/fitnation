@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Eye, Ban, RotateCcw } from "lucide-react";
+import { Eye, Ban, RotateCcw, TrendingUp } from "lucide-react";
 import { Badge, DeletedUserBadge } from "@/components/ui";
 import type { Membership, MembershipStatus } from "@/types/membership";
 
@@ -35,6 +35,9 @@ interface MembershipTableProps {
   onCancel?: (membership: Membership) => void;
   /** Opens the renew confirmation for the row (active + expired only). */
   onRenew?: (membership: Membership) => void;
+  /** Opens the upgrade dialog for the row (#105, active only — an expired
+   * window has nothing to upgrade into). */
+  onUpgrade?: (membership: Membership) => void;
   loading?: boolean;
 }
 
@@ -42,6 +45,7 @@ export function MembershipTable({
   memberships,
   onCancel,
   onRenew,
+  onUpgrade,
   loading = false,
 }: MembershipTableProps) {
   if (loading) {
@@ -116,6 +120,15 @@ export function MembershipTable({
                         <RotateCcw className="h-4 w-4" />
                       </button>
                     )}
+                  {membership.status === "active" && onUpgrade && (
+                    <button
+                      onClick={() => onUpgrade(membership)}
+                      className="rounded-lg p-2 text-brand-600 hover:bg-brand-50 hover:text-brand-700"
+                      aria-label="Upgrade membership"
+                    >
+                      <TrendingUp className="h-4 w-4" />
+                    </button>
+                  )}
                   {membership.status === "active" && onCancel && (
                     <button
                       onClick={() => onCancel(membership)}

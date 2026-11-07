@@ -2,6 +2,8 @@
  * Membership type definitions — FBOS-004.
  */
 
+import type { Payment, PaymentMethod } from "./payment";
+
 export type MembershipPlanType =
   | "monthly"
   | "quarterly"
@@ -109,4 +111,51 @@ export interface CouponListResponse {
   next: string | null;
   previous: string | null;
   results: Coupon[];
+}
+
+/* ── Plan upgrade (#105) ──────────────────────────────────────── */
+
+/** One eligible (higher-priced, active) plan with its suggested amount. */
+export interface UpgradePlanOption {
+  id: number;
+  name: string;
+  price: string;
+  duration_days: number;
+  /** Display-only prorated price difference for the remaining paid days. */
+  suggested_amount: string;
+}
+
+/**
+ * GET /memberships/memberships/{id}/upgrade/ — the prefill payload for the
+ * upgrade dialog. `suggested_amount` values are advisory only: the desk can
+ * override the amount and the entered number is what gets recorded.
+ */
+export interface UpgradePreview {
+  membership_id: number;
+  end_date: string;
+  remaining_days: number;
+  current_plan: {
+    id: number;
+    name: string;
+    price: string;
+    duration_days: number;
+  };
+  eligible_plans: UpgradePlanOption[];
+}
+
+/** Body of POST /memberships/memberships/{id}/upgrade/. */
+export interface UpgradeMembershipData {
+  plan_id: number;
+  /** The human-entered amount — staff judgment wins over the suggestion. */
+  amount: number;
+  payment_method: PaymentMethod;
+  notes?: string;
+}
+
+/** Response of POST /memberships/memberships/{id}/upgrade/. */
+export interface UpgradeMembershipResponse {
+  membership: Membership;
+  payment: Payment;
+  suggested_amount: string;
+  amount_charged: string;
 }
