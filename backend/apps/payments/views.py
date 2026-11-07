@@ -25,7 +25,7 @@ from apps.payments.serializers import (
     RevenueSummarySerializer,
     VerifyPaymentSerializer,
 )
-from apps.payments.services import send_payment_link
+from apps.payments.services import REASON_DAILY_LIMIT, send_payment_link
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
@@ -344,7 +344,9 @@ class PaymentViewSet(ModelViewSet):
         Returns:
             200 with the outcome (``sent`` / ``already_sent`` / ``skipped``),
             400 when the payment is not pending, the Razorpay link creation
-            or every delivery leg fails, 404 for a foreign-tenant payment.
+            or every delivery leg fails, 429 when the tenant's daily
+            payment-reminder cap is hit (issue #106, like AppInviteView),
+            404 for a foreign-tenant payment.
         """
         self.required_permission = "payments.record_payment"
         payment = self.get_object()
@@ -356,6 +358,11 @@ class PaymentViewSet(ModelViewSet):
 
         result = send_payment_link(request.tenant, payment, actor=request.user)
 
+        if result.reason == REASON_DAILY_LIMIT:
+            return Response(
+                {"detail": "Daily payment-reminder limit reached for this gym. Try again tomorrow."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
         if result.status == "failed":
             return Response({"detail": result.reason}, status=status.HTTP_400_BAD_REQUEST)
         return Response(

@@ -53,6 +53,10 @@ STATUS_SKIPPED = "skipped"
 STATUS_ALREADY_SENT = "already_sent"
 STATUS_NOT_PENDING = "not_pending"
 
+# Issue #106: tenant daily send cap (mirrors the app-invite cap) — the API
+# layer maps this reason to a 429 with friendly copy, like AppInviteView.
+REASON_DAILY_LIMIT = "daily_limit_reached"
+
 
 @dataclass(frozen=True)
 class PaymentLinkResult:
@@ -102,6 +106,19 @@ def _was_sent_within_cooldown(payment: Payment, cooldown_minutes: int) -> timede
     return remainder if remainder.total_seconds() > 0 else None
 
 
+def _daily_send_count(tenant) -> int:
+    """Payment-link attempts already made for the tenant today (cap check)."""
+    day_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    return (
+        NotificationLog.objects.for_tenant(tenant)
+        .filter(
+            notification_type=NotificationLog.NotificationType.PAYMENT_LINK,
+            created_at__gte=day_start,
+        )
+        .count()
+    )
+
+
 def _audit(
     tenant,
     payment: Payment,
@@ -144,7 +161,11 @@ def send_payment_link(
     short-circuited to ``already_sent`` so support cannot spam links. The
     Gupshup WhatsApp leg fires only when ``fitnation_payment_link`` is
     verifiably APPROVED (issue #79) — an unverified template skips loudly
-    with its own audit row instead of 202-acking into the void.
+    with its own audit row instead of 202-acking into the void. Issue #106
+    adds a tenant daily cap (``PAYMENT_LINK_DAILY_LIMIT``) on top of the
+    per-payment cooldown, mirroring the app-invite cap: the day's
+    ``payment_link`` audit rows count all attempts, and a capped send fails
+    with ``daily_limit_reached`` before any Razorpay call.
 
     Args:
         tenant: The sending tenant.
@@ -168,6 +189,13 @@ def send_payment_link(
             reason="A payment link was sent recently. Retry after the cooldown.",
             resend_allowed_after=timezone.now() + remainder,
         )
+
+    # Issue #106: tenant-wide daily cap (like the app-invite cap) so a
+    # repeated queue sweep cannot spam the member base or the BSP bill.
+    # Checked before the Razorpay call — a capped gym must not burn links.
+    if _daily_send_count(tenant) >= int(getattr(settings, "PAYMENT_LINK_DAILY_LIMIT", 100)):
+        logger.warning("Payment-link daily cap reached for tenant %s", tenant.pk)
+        return PaymentLinkResult(status=STATUS_FAILED, reason=REASON_DAILY_LIMIT)
 
     customer = payment.customer
     phone = (customer.phone or "").strip()
@@ -323,7 +351,12 @@ def send_payment_link(
             )
         whatsapp_error = whatsapp_error or "Email delivery failed"
 
-    error = whatsapp_error or "No messaging channel is configured for this tenant"
+    # Issue #106: the no-channel case must read as an actionable setup step,
+    # not a bare failure — this copy lands verbatim in the dashboard toast.
+    error = whatsapp_error or (
+        "No messaging channel is set up for this gym yet — connect WhatsApp,"
+        " SMS, or email under Settings, then send the reminder again."
+    )
     log = _log(NotificationLog.Status.FAILED, "", error=error)
     return PaymentLinkResult(
         status=STATUS_FAILED,

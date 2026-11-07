@@ -1464,6 +1464,80 @@ class SendPaymentLinkServiceTests(TestCase):
         self.assertEqual(third.provider, "gupshup")
         self.assertEqual(getter.call_count, 2)
 
+    def _seed_link_log(self, *, notification_type: str = NotificationLog.NotificationType.PAYMENT_LINK):
+        """One today audit row of the given type (cap-counter fodder)."""
+        return NotificationLog.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            notification_type=notification_type,
+            status=NotificationLog.Status.SENT,
+        )
+
+    def test_daily_cap_blocks_before_any_channel_call(self) -> None:
+        """At the cap the send fails as daily_limit_reached without a Razorpay call (#106)."""
+        self._seed_link_log()
+        self._seed_link_log()
+        with (
+            mock.patch(
+                "apps.payments.razorpay_service.create_payment_link",
+            ) as create_link,
+            mock.patch("apps.payments.services.send_whatsapp_template") as send_template,
+            override_settings(PAYMENT_LINK_DAILY_LIMIT=2),
+        ):
+            result = send_payment_link(self.tenant, self.payment, template_status_getter=_approved)
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.reason, "daily_limit_reached")
+        self.assertIsNone(result.log)  # the cap itself is not a send attempt to audit
+        create_link.assert_not_called()
+        send_template.assert_not_called()
+        # The counter reads existing rows — the capped attempt adds none.
+        self.assertEqual(
+            NotificationLog.objects.filter(notification_type=NotificationLog.NotificationType.PAYMENT_LINK).count(),
+            2,
+        )
+
+    def test_daily_cap_counts_only_todays_payment_link_rows(self) -> None:
+        """Other notification types and yesterday's rows never feed the cap (#106)."""
+        other_type = self._seed_link_log(notification_type=NotificationLog.NotificationType.APP_INVITE)
+        NotificationLog.objects.filter(pk=other_type.pk).update(created_at=timezone.now() - timedelta(days=1))
+        yesterday = self._seed_link_log()
+        NotificationLog.objects.filter(pk=yesterday.pk).update(created_at=timezone.now() - timedelta(days=1))
+        with (
+            mock.patch(
+                "apps.payments.razorpay_service.create_payment_link",
+                return_value={"id": "plink_cap", "short_url": "https://rzp.io/i/cap"},
+            ),
+            mock.patch(
+                "apps.payments.services.send_whatsapp_template",
+                return_value=WhatsAppAttempt(provider="gupshup", sent=True, attempted=True),
+            ),
+            override_settings(PAYMENT_LINK_DAILY_LIMIT=2),
+        ):
+            result = send_payment_link(self.tenant, self.payment, template_status_getter=_approved)
+        self.assertEqual(result.status, "sent")
+
+    def test_unconfigured_channel_failure_is_actionable(self) -> None:
+        """No channel configured -> a setup-step message, not a bare failure (#106)."""
+        self.tenant.is_gupshup_enabled = False
+        self.tenant.save()
+        # Synthetic mailbox: the email leg cannot rescue the send either.
+        self.customer.email = "9876543210.x@fitnation.local"
+        self.customer.save()
+        with (
+            mock.patch(
+                "apps.payments.razorpay_service.create_payment_link",
+                return_value={"id": "plink_nc", "short_url": "https://rzp.io/i/nc"},
+            ),
+            mock.patch(
+                "apps.payments.services.send_whatsapp_template",
+                return_value=WhatsAppAttempt(attempted=False),
+            ),
+        ):
+            result = send_payment_link(self.tenant, self.payment)
+        self.assertEqual(result.status, "failed")
+        self.assertIn("No messaging channel is set up", result.reason)
+        self.assertIn("Settings", result.reason)
+
 
 @override_settings(GUPSHUP_APPROVED_TEMPLATES="fitnation_payment_link")
 class SendPaymentLinkAPITests(APITestCase):
@@ -1597,6 +1671,37 @@ class SendPaymentLinkAPITests(APITestCase):
         self.assertEqual(response.status_code, 404)
         self.payment.refresh_from_db()
         self.assertEqual(self.payment.razorpay_payment_link_id, "")
+
+    def test_send_link_daily_cap_returns_429_with_friendly_detail(self) -> None:
+        """At the tenant cap the API 429s with tomorrow-retry copy (#106)."""
+        NotificationLog.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            notification_type=NotificationLog.NotificationType.PAYMENT_LINK,
+            status=NotificationLog.Status.SENT,
+        )
+        with (
+            mock.patch("apps.payments.razorpay_service.create_payment_link") as create_link,
+            override_settings(PAYMENT_LINK_DAILY_LIMIT=1),
+        ):
+            response = self._send(self.payment)
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("Daily payment-reminder limit reached", response.data["detail"])
+        self.assertIn("Try again tomorrow", response.data["detail"])
+        create_link.assert_not_called()
+
+    def test_send_link_unconfigured_channel_detail_is_actionable(self) -> None:
+        """A gym with no channel gets a setup-step message, not a bare 400 (#106)."""
+        self.tenant.is_gupshup_enabled = False
+        self.tenant.save()
+        with mock.patch(
+            "apps.payments.razorpay_service.create_payment_link",
+            return_value={"id": "plink_e5", "short_url": "https://rzp.io/i/e5"},
+        ):
+            response = self._send(self.payment)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("No messaging channel is set up", response.data["detail"])
+        self.assertIn("Settings", response.data["detail"])
 
 
 class PaymentLinkWebhookTests(TestCase):
