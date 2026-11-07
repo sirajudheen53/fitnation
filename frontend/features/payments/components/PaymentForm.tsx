@@ -174,7 +174,7 @@ export function PaymentForm({
     } else {
       // Validated immediately: an emptied required field says so right away.
       setValue("customer_id", 0, { shouldValidate: true, shouldDirty: true });
-      setValue("membership_id", "");
+      setValue("membership_id", undefined);
     }
   };
 
