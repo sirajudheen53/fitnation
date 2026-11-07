@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import { AppAccessCard } from "@/features/customers/components/AppAccessCard";
 import { sendAppInvite, errorMessage } from "@/lib/api";
 import type { Customer } from "@/types/customer";
@@ -7,6 +8,10 @@ import type { Membership, MembershipPlan } from "@/types/membership";
 jest.mock("@/lib/api", () => ({
   errorMessage: jest.fn((err) => (err instanceof Error ? err.message : "error")),
   sendAppInvite: jest.fn(),
+}));
+
+jest.mock("sonner", () => ({
+  toast: { success: jest.fn(), warning: jest.fn(), error: jest.fn() },
 }));
 
 const mockedSendAppInvite = sendAppInvite as jest.Mock;
@@ -179,5 +184,93 @@ describe("AppAccessCard", () => {
     render(<AppAccessCard customer={customer()} memberships={memberships} plans={plans} />);
     fireEvent.click(screen.getByRole("button", { name: "Send app invite" }));
     await waitFor(() => expect(mockedErrorMessage).toHaveBeenCalled());
+  });
+
+  // #102 regression: a member the card shows as "Entitled" whose invite the
+  // server declines as not_applicable used to flip the chip to the raw
+  // machine string "Last invite: not_applicable" (read as "not available").
+  describe("post-invite UI state (#102)", () => {
+    const notApplicableResponse = {
+      status: "not_applicable",
+      reason: "flag_off",
+      channel: null,
+      sent_at: null,
+      resend_allowed_after: null,
+    };
+
+    it("renders the gym-flag blocker with explicit copy instead of the raw code", async () => {
+      mockedSendAppInvite.mockResolvedValue(notApplicableResponse);
+      render(<AppAccessCard customer={customer()} memberships={memberships} plans={plans} />);
+      fireEvent.click(screen.getByRole("button", { name: "Send app invite" }));
+      await waitFor(() =>
+        expect(screen.getByTestId("app-invite-state")).toHaveTextContent(
+          "App invites not enabled for this gym",
+        ),
+      );
+      expect(screen.getByTestId("app-invite-state")).not.toHaveTextContent("not_applicable");
+    });
+
+    it("drops the resend CTA — resending returns the same verdict", async () => {
+      mockedSendAppInvite.mockResolvedValue(notApplicableResponse);
+      render(<AppAccessCard customer={customer()} memberships={memberships} plans={plans} />);
+      fireEvent.click(screen.getByRole("button", { name: "Send app invite" }));
+      await waitFor(() =>
+        expect(screen.getByTestId("app-invite-state")).toHaveTextContent("App invites not enabled"),
+      );
+      expect(screen.queryByRole("button", { name: /invite/i })).not.toBeInTheDocument();
+    });
+
+    it("explains the Entitled-badge-vs-server-verdict contradiction", async () => {
+      mockedSendAppInvite.mockResolvedValue(notApplicableResponse);
+      render(<AppAccessCard customer={customer()} memberships={memberships} plans={plans} />);
+      fireEvent.click(screen.getByRole("button", { name: "Send app invite" }));
+      const note = await screen.findByTestId("app-access-conflict-note");
+      expect(note).toHaveTextContent("The invite was not sent");
+      expect(screen.getByTestId("app-access-state")).toHaveTextContent("Entitled");
+    });
+
+    it("toasts the human blocker copy, never 'Invite not applicable'", async () => {
+      mockedSendAppInvite.mockResolvedValue(notApplicableResponse);
+      render(<AppAccessCard customer={customer()} memberships={memberships} plans={plans} />);
+      fireEvent.click(screen.getByRole("button", { name: "Send app invite" }));
+      await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+      expect(toast.warning).toHaveBeenCalledWith(
+        "App access is not enabled for this gym yet — the invite cannot go out until it is.",
+      );
+      expect(toast.success).not.toHaveBeenCalled();
+    });
+
+    it("shows already_sent as an explicit success with a forced resend", async () => {
+      mockedSendAppInvite.mockResolvedValue({
+        status: "already_sent",
+        reason: null,
+        channel: "whatsapp",
+        sent_at: "2026-11-07T04:47:22Z",
+        resend_allowed_after: null,
+      });
+      render(<AppAccessCard customer={customer()} memberships={memberships} plans={plans} />);
+      fireEvent.click(screen.getByRole("button", { name: "Send app invite" }));
+      await waitFor(() =>
+        expect(screen.getByTestId("app-invite-state")).toHaveTextContent("Invite already sent"),
+      );
+      expect(screen.getByRole("button", { name: "Resend invite" })).toBeInTheDocument();
+      expect(toast.success).toHaveBeenCalledWith("Invite was already sent recently");
+    });
+
+    it("toasts the per-member failure reason on a failed outcome", async () => {
+      mockedSendAppInvite.mockResolvedValue({
+        status: "failed",
+        reason: "Gupshup rejected the template",
+        channel: "whatsapp",
+        sent_at: null,
+        resend_allowed_after: null,
+      });
+      render(<AppAccessCard customer={customer()} memberships={memberships} plans={plans} />);
+      fireEvent.click(screen.getByRole("button", { name: "Send app invite" }));
+      await waitFor(() =>
+        expect(screen.getByTestId("app-invite-state")).toHaveTextContent("Invite failed"),
+      );
+      expect(toast.error).toHaveBeenCalledWith("Invite failed: Gupshup rejected the template");
+    });
   });
 });

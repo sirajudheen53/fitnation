@@ -11,7 +11,7 @@ import type { AppInviteBlock } from "@/types/onboarding";
 import type { AppInviteStatusSummary } from "@/types/customer";
 import type { Membership, MembershipPlan } from "@/types/membership";
 import { todayISO } from "@/features/onboarding/lib/validity";
-import { deriveAppAccessDisplay, describeInviteStatus } from "../lib/appAccess";
+import { deriveAppAccessDisplay, describeInviteStatus, inviteOutcomeToast } from "../lib/appAccess";
 
 interface AppAccessCardProps {
   customer: Customer;
@@ -48,19 +48,19 @@ export function AppAccessCard({
     setSending(true);
     try {
       const fresh = await sendAppInvite(customer.id, token, inviteDisplay.force);
-      toast.success(
-        fresh.status === "sent"
-          ? `Invite sent via ${fresh.channel === "sms" ? "SMS" : "WhatsApp"}`
-          : fresh.status === "already_sent"
-            ? "Invite was already sent recently"
-            : `Invite ${fresh.status.replace("_", " ")}`,
-      );
-      setOverride({
+      const outcome: AppInviteStatusSummary = {
         status: fresh.status,
         channel: fresh.channel,
         sent_at: fresh.sent_at,
         error_message: fresh.reason,
-      });
+      };
+      // #102: per-outcome copy — a bare "Invite <status>" read like "not
+      // available" and contradicted the Entitled badge above the chip.
+      const toastCopy = inviteOutcomeToast(outcome);
+      if (toastCopy.kind === "success") toast.success(toastCopy.message);
+      else if (toastCopy.kind === "warning") toast.warning(toastCopy.message);
+      else toast.error(toastCopy.message);
+      setOverride(outcome);
       onInviteSent?.(fresh);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -111,6 +111,13 @@ export function AppAccessCard({
           {display.status === "unknown" && (
             <p>No active membership — the app stays locked until they join a plan.</p>
           )}
+          {inviteDisplay.status === "not_applicable" &&
+            (display.status === "active" || display.status === "grace") && (
+              <p className="text-xs text-amber-600" data-testid="app-access-conflict-note">
+                The invite was not sent: {inviteDisplay.detail} The badge above is derived from the
+                membership and may not reflect the gym&apos;s app-access rollout setting.
+              </p>
+            )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4">
