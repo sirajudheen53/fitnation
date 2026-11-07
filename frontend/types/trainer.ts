@@ -91,8 +91,14 @@ export interface TrainerCreatePayload {
   profile_photo?: string;
 }
 
-/** PATCH /users/trainers/{id}/ — profile fields only (user fields immutable). */
+/**
+ * PATCH /users/trainers/{id}/ — profile fields, plus phone (#97): the linked
+ * user's login phone, E.164-normalized server-side; a 400
+ * phone_already_registered fires when another tenant account holds the
+ * number, and a blank value clears it. Name/email stay immutable here.
+ */
 export interface TrainerUpdatePayload {
+  phone?: string;
   specialization?: string;
   bio?: string;
   is_active?: boolean;
