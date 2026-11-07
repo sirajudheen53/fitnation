@@ -1,5 +1,6 @@
 """Membership management serializers."""
 
+from decimal import Decimal
 from typing import ClassVar
 
 from rest_framework import serializers
@@ -7,6 +8,7 @@ from rest_framework import serializers
 from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.memberships.models import Coupon, Membership, MembershipPlan
 from apps.memberships.services import assert_no_membership_overlap
+from apps.payments.models import Payment
 
 
 class MembershipPlanSerializer(serializers.ModelSerializer):
@@ -98,6 +100,34 @@ class AppInviteSerializer(serializers.Serializer):
 
     customer_id = serializers.IntegerField()
     resend = serializers.BooleanField(required=False, default=False)
+
+
+class MembershipUpgradeSerializer(serializers.Serializer):
+    """Validate an upgrade request (#105).
+
+    ``amount`` is the human-entered amount to record — the prorated
+    suggestion is only a default and staff judgment always wins. Field-level
+    errors (``plan_id``/``amount``/``payment_method``) surface inline in the
+    ERP upgrade dialog; the downgrade guardrail lives in the view because it
+    needs both plans loaded.
+    """
+
+    plan_id = serializers.IntegerField()
+    amount = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+    )
+    payment_method = serializers.ChoiceField(
+        choices=Payment.PaymentMethod.choices,
+        required=False,
+        default=Payment.PaymentMethod.CASH,
+    )
+    notes = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
+
+    def validate_notes(self, value: str | None) -> str:
+        """Treat a null note as empty."""
+        return value or ""
 
 
 class CouponSerializer(serializers.ModelSerializer):

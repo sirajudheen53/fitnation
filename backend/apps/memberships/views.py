@@ -3,7 +3,9 @@
 from datetime import timedelta
 from typing import ClassVar
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -21,9 +23,12 @@ from apps.memberships.serializers import (
     CouponSerializer,
     MembershipPlanSerializer,
     MembershipSerializer,
+    MembershipUpgradeSerializer,
 )
-from apps.memberships.services import assert_no_membership_overlap
+from apps.memberships.services import assert_no_membership_overlap, prorated_upgrade_suggestion
 from apps.notifications.services.invite_service import REASON_DAILY_LIMIT, invite_result_payload, send_app_invite
+from apps.payments.models import Payment
+from apps.payments.serializers import PaymentSerializer
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.auth import AuthToken
@@ -243,6 +248,134 @@ class MembershipViewSet(ModelViewSet):
         membership.save()
         self._propagate_access_change(membership)
         return Response(MembershipSerializer(membership).data)
+
+    @action(detail=True, methods=["get", "post"])
+    def upgrade(self, request: Request, pk: int) -> Response:
+        """Upgrade a membership onto a higher-priced plan (#105).
+
+        Owner decision (2026-11-07): the upgrade amount is SUGGESTED — the
+        prorated price difference over the remaining paid days is pre-filled
+        for the desk — and the entered amount is what gets recorded as the
+        payment (staff judgment always wins). The end date stays UNCHANGED:
+        the upgrade swaps the plan within the already-paid window.
+
+        GET returns the display-only suggestion for every eligible
+        (higher-priced, active) tenant plan plus the remaining days, so the
+        ERP dialog can pre-fill the amount without recomputing business
+        rules client-side.
+
+        POST swaps the plan, keeps ``end_date`` and records a COMPLETED
+        payment for the human-entered amount. Downgrades — a plan priced at
+        or below the current one — are rejected as a guardrail. After the
+        swap the access change propagates (door allow-lists + ADMS gate);
+        the app entitlement derives per-request from the new plan's
+        ``includes_app_access`` flag, so it stays consistent without a
+        separate step.
+        """
+        membership = self.get_object()
+
+        if request.method == "GET":
+            remaining_days = max(0, (membership.end_date - timezone.localdate()).days + 1)
+            eligible_plans = []
+            for plan in (
+                MembershipPlan.objects.for_tenant(request.tenant).filter(is_active=True).order_by("price", "id")
+            ):
+                if plan.pk == membership.plan_id or plan.price <= membership.plan.price:
+                    continue
+                suggestion = prorated_upgrade_suggestion(
+                    current_plan=membership.plan,
+                    new_plan=plan,
+                    end_date=membership.end_date,
+                )
+                eligible_plans.append(
+                    {
+                        "id": plan.id,
+                        "name": plan.name,
+                        "price": str(plan.price),
+                        "duration_days": plan.duration_days,
+                        "suggested_amount": str(suggestion["suggested_amount"]),
+                    }
+                )
+            return Response(
+                {
+                    "membership_id": membership.id,
+                    "end_date": membership.end_date.isoformat(),
+                    "remaining_days": remaining_days,
+                    "current_plan": {
+                        "id": membership.plan.id,
+                        "name": membership.plan.name,
+                        "price": str(membership.plan.price),
+                        "duration_days": membership.plan.duration_days,
+                    },
+                    "eligible_plans": eligible_plans,
+                },
+            )
+
+        self.required_permission = "memberships.edit_membership"
+        if membership.status != Membership.Status.ACTIVE:
+            return Response(
+                {"detail": "Only an active membership can be upgraded — renew it instead."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = MembershipUpgradeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+
+        new_plan = (
+            MembershipPlan.objects.for_tenant(request.tenant)
+            .filter(
+                id=validated["plan_id"],
+            )
+            .first()
+        )
+        if new_plan is None:
+            return Response(
+                {"plan_id": ["Invalid plan for this gym."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if new_plan.price <= membership.plan.price:
+            return Response(
+                {
+                    "plan_id": [
+                        f"Downgrade not allowed — {new_plan.name} costs less than or the same "
+                        f"as the current plan ({membership.plan.name}). Pick a higher-priced plan."
+                    ]
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        suggestion = prorated_upgrade_suggestion(
+            current_plan=membership.plan,
+            new_plan=new_plan,
+            end_date=membership.end_date,
+        )
+        amount = validated["amount"]
+        with transaction.atomic():
+            membership.plan = new_plan
+            membership.save()
+            payment = Payment.objects.create(
+                tenant=request.tenant,
+                customer=membership.customer,
+                membership=membership,
+                amount=amount,
+                payment_method=validated["payment_method"],
+                status=Payment.Status.COMPLETED,
+                paid_at=timezone.now(),
+                notes=validated["notes"],
+            )
+
+        # After commit: the syncs below call out to devices and must not run
+        # inside a transaction holding the membership row locked.
+        self._propagate_access_change(membership)
+        return Response(
+            {
+                "membership": MembershipSerializer(membership).data,
+                "payment": PaymentSerializer(payment).data,
+                "suggested_amount": str(suggestion["suggested_amount"]),
+                "amount_charged": str(amount),
+            },
+        )
 
 
 class AppInviteView(APIView):

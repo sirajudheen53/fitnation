@@ -1,6 +1,7 @@
 """Tests for the memberships app."""
 
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import ClassVar
 from unittest import mock
 
@@ -11,8 +12,9 @@ from rest_framework.test import APITestCase
 
 from apps.customers.models import Customer
 from apps.memberships.models import Coupon, Membership, MembershipPlan
-from apps.memberships.services import MEMBERSHIP_OVERLAP_CODE
+from apps.memberships.services import MEMBERSHIP_OVERLAP_CODE, prorated_upgrade_suggestion
 from apps.memberships.views import MembershipViewSet
+from apps.payments.models import Payment
 from apps.tenants.services import provision_tenant
 from apps.users.services import create_owner_user, issue_token
 
@@ -1054,3 +1056,436 @@ class MembershipRenewalOverlapGuardAPITests(APITestCase):
         self.assertEqual(response.data["status"], "active")
         self.assertEqual(date.fromisoformat(response.data["end_date"]), _offset_day(20))
         self.assertEqual(Membership.objects.for_tenant(self.tenant).count(), 1)
+
+
+class ProratedUpgradeSuggestionTests(TestCase):
+    """Unit tests for the #105 display-only prorated suggestion math."""
+
+    def setUp(self) -> None:
+        """Create a tenant and the plans used by the math cases."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.monthly = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Monthly",
+            price="1500.00",
+            duration_days=30,
+        )
+
+    def _plan(self, name: str, price: str, duration_days: int) -> MembershipPlan:
+        """Create a plan on the test tenant."""
+        return MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name=name,
+            price=price,
+            duration_days=duration_days,
+        )
+
+    def test_remaining_days_are_inclusive_of_end_date(self) -> None:
+        """A membership ending today still has one paid day left (#104 rule)."""
+        result = prorated_upgrade_suggestion(
+            current_plan=self.monthly,
+            new_plan=self._plan("Gold", "3000.00", 30),
+            end_date=_offset_day(0),
+        )
+        self.assertEqual(result["remaining_days"], 1)
+
+    def test_suggestion_prorates_price_difference_over_current_duration(self) -> None:
+        """(new - current) / current duration × inclusive remaining days."""
+        result = prorated_upgrade_suggestion(
+            current_plan=self.monthly,
+            new_plan=self._plan("Gold", "3000.00", 30),
+            end_date=_offset_day(20),
+        )
+        self.assertEqual(result["remaining_days"], 21)
+        self.assertEqual(result["suggested_amount"], Decimal("1050.00"))
+
+    def test_zero_remaining_days_yields_zero_suggestion(self) -> None:
+        """A window already past suggests nothing."""
+        result = prorated_upgrade_suggestion(
+            current_plan=self.monthly,
+            new_plan=self._plan("Gold", "3000.00", 30),
+            end_date=_offset_day(-1),
+        )
+        self.assertEqual(result["remaining_days"], 0)
+        self.assertEqual(result["suggested_amount"], Decimal("0.00"))
+
+    def test_rounds_half_up_to_cents(self) -> None:
+        """Fractional cents round HALF_UP (0.005/day × 1 day → 0.01)."""
+        result = prorated_upgrade_suggestion(
+            current_plan=self._plan("Base", "100.00", 10),
+            new_plan=self._plan("Plus", "100.05", 10),
+            end_date=_offset_day(0),
+        )
+        self.assertEqual(result["suggested_amount"], Decimal("0.01"))
+
+    def test_zero_day_current_plan_falls_back_to_full_difference(self) -> None:
+        """A zero-duration current plan can't give a per-day rate — full diff."""
+        result = prorated_upgrade_suggestion(
+            current_plan=self._plan("Zero", "500.00", 0),
+            new_plan=self._plan("Gold", "3000.00", 30),
+            end_date=_offset_day(20),
+        )
+        self.assertEqual(result["suggested_amount"], Decimal("2500.00"))
+
+
+class MembershipUpgradeAPITests(APITestCase):
+    """The upgrade action: suggested amount, override, guardrails, access (#105)."""
+
+    def setUp(self) -> None:
+        """Create tenant, owner token, plan ladder, foreign plan, and a member."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        self.plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Monthly",
+            price="1500.00",
+            duration_days=30,
+        )
+        self.gold_plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Gold",
+            price="3000.00",
+            duration_days=30,
+        )
+        self.quarterly_plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Quarterly",
+            price="4000.00",
+            duration_days=90,
+        )
+        self.basic_plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Basic",
+            price="1000.00",
+            duration_days=30,
+        )
+        MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Inactive Premium",
+            price="5000.00",
+            duration_days=30,
+            is_active=False,
+        )
+        other_tenant = provision_tenant(name="Other Gym", contact_email="other@local.test")
+        self.foreign_plan = MembershipPlan.objects.create(
+            tenant=other_tenant,
+            name="Foreign Plan",
+            price="9000.00",
+            duration_days=60,
+        )
+        self.user = User.objects.create_user(
+            email="upgrade-cust@local.test",
+            password="F1tNati0n!",
+            first_name="Up",
+            last_name="Grader",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Up Grader",
+            email="upgrade-cust@local.test",
+        )
+
+    def _membership(self, *, end_offset: int = 20) -> Membership:
+        """Create an ACTIVE membership ending ``end_offset`` days from today."""
+        return Membership.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            plan=self.plan,
+            start_date=_offset_day(-9),
+            end_date=_offset_day(end_offset),
+        )
+
+    def _upgrade_url(self, membership: Membership) -> str:
+        """Return the upgrade action URL for a membership."""
+        return f"/api/v1/memberships/memberships/{membership.id}/upgrade/"
+
+    def test_preview_lists_higher_priced_active_plans_with_suggestions(self) -> None:
+        """GET returns remaining days plus per-plan suggestions, nothing cheaper."""
+        membership = self._membership()
+        response = self.client.get(self._upgrade_url(membership))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["membership_id"], membership.id)
+        self.assertEqual(response.data["remaining_days"], 21)
+        self.assertEqual(response.data["end_date"], _offset_day(20).isoformat())
+        self.assertEqual(response.data["current_plan"]["id"], self.plan.id)
+        eligible_ids = [p["id"] for p in response.data["eligible_plans"]]
+        self.assertEqual(eligible_ids, [self.gold_plan.id, self.quarterly_plan.id])
+        # (3000-1500)/30 × 21 and (4000-1500)/30 × 21, cents rounded.
+        suggestions = {p["id"]: p["suggested_amount"] for p in response.data["eligible_plans"]}
+        self.assertEqual(Decimal(suggestions[self.gold_plan.id]), Decimal("1050.00"))
+        self.assertEqual(Decimal(suggestions[self.quarterly_plan.id]), Decimal("1750.00"))
+
+    def test_preview_counts_a_membership_ending_today_as_one_remaining_day(self) -> None:
+        """The inclusive window: end date = today → 1 remaining day."""
+        membership = self._membership(end_offset=0)
+        response = self.client.get(self._upgrade_url(membership))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["remaining_days"], 1)
+
+    def test_upgrade_swaps_plan_keeps_end_date_and_records_payment(self) -> None:
+        """Happy path: plan swapped, end date unchanged, completed payment recorded."""
+        membership = self._membership()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": self.gold_plan.id, "amount": "1050.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["membership"]["plan"], self.gold_plan.id)
+        self.assertEqual(
+            date.fromisoformat(response.data["membership"]["end_date"]),
+            _offset_day(20),
+        )
+        self.assertEqual(response.data["payment"]["status"], "completed")
+        self.assertEqual(response.data["amount_charged"], "1050.00")
+        self.assertEqual(response.data["suggested_amount"], "1050.00")
+
+        membership.refresh_from_db()
+        self.assertEqual(membership.plan_id, self.gold_plan.id)
+        self.assertEqual(membership.end_date, _offset_day(20))
+        self.assertEqual(membership.status, Membership.Status.ACTIVE)
+
+        payment = Payment.objects.for_tenant(self.tenant).get()
+        self.assertEqual(payment.amount, Decimal("1050.00"))
+        self.assertEqual(payment.status, Payment.Status.COMPLETED)
+        self.assertEqual(payment.payment_method, Payment.PaymentMethod.CASH)
+        self.assertEqual(payment.kind, Payment.Kind.MEMBERSHIP)
+        self.assertEqual(payment.membership_id, membership.id)
+        self.assertEqual(payment.customer_id, self.customer.id)
+        self.assertIsNotNone(payment.paid_at)
+
+    def test_entered_amount_overrides_the_suggestion(self) -> None:
+        """Staff judgment wins: the payment records what was typed, not the suggestion."""
+        membership = self._membership()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": self.gold_plan.id, "amount": "500.00", "notes": "Loyalty discount"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["amount_charged"], "500.00")
+        self.assertEqual(response.data["suggested_amount"], "1050.00")
+        payment = Payment.objects.for_tenant(self.tenant).get()
+        self.assertEqual(payment.amount, Decimal("500.00"))
+        self.assertEqual(payment.notes, "Loyalty discount")
+
+    def test_downgrade_is_rejected_and_nothing_changes(self) -> None:
+        """The guardrail: a cheaper plan is a 400 — no swap, no payment."""
+        membership = self._membership()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": self.basic_plan.id, "amount": "100.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("plan_id", response.data)
+        self.assertIn("Downgrade not allowed", str(response.data["plan_id"]))
+        membership.refresh_from_db()
+        self.assertEqual(membership.plan_id, self.plan.id)
+        self.assertEqual(membership.end_date, _offset_day(20))
+        self.assertEqual(Payment.objects.for_tenant(self.tenant).count(), 0)
+
+    def test_equal_price_plan_is_rejected_as_downgrade(self) -> None:
+        """Same price is not an upgrade — the guardrail covers it too."""
+        twin_plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Monthly Twin",
+            price="1500.00",
+            duration_days=30,
+        )
+        membership = self._membership()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": twin_plan.id, "amount": "10.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Downgrade not allowed", str(response.data["plan_id"]))
+        membership.refresh_from_db()
+        self.assertEqual(membership.plan_id, self.plan.id)
+
+    def test_unknown_plan_is_rejected(self) -> None:
+        """A plan id that does not exist is rejected before any mutation."""
+        membership = self._membership()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": 999999, "amount": "10.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("plan_id", response.data)
+        membership.refresh_from_db()
+        self.assertEqual(membership.plan_id, self.plan.id)
+        self.assertEqual(Payment.objects.for_tenant(self.tenant).count(), 0)
+
+    def test_foreign_tenant_plan_is_rejected(self) -> None:
+        """Another gym's plan is not sellable here."""
+        membership = self._membership()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": self.foreign_plan.id, "amount": "10.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("plan_id", response.data)
+        membership.refresh_from_db()
+        self.assertEqual(membership.plan_id, self.plan.id)
+
+    def test_non_integer_plan_id_is_rejected(self) -> None:
+        """A garbage plan id is a field error, not a 500."""
+        membership = self._membership()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": "abc", "amount": "10.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("plan_id", response.data)
+
+    def test_amount_must_be_positive(self) -> None:
+        """Zero, negative, and missing amounts are field errors — no payment."""
+        for amount in ("0.00", "-5.00"):
+            with self.subTest(amount=amount):
+                membership = self._membership()
+                response = self.client.post(
+                    self._upgrade_url(membership),
+                    {"plan_id": self.gold_plan.id, "amount": amount},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("amount", response.data)
+                membership.refresh_from_db()
+                self.assertEqual(membership.plan_id, self.plan.id)
+        self.assertEqual(Payment.objects.for_tenant(self.tenant).count(), 0)
+
+    def test_missing_amount_is_rejected(self) -> None:
+        """An upgrade without an amount is a field error."""
+        membership = self._membership()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": self.gold_plan.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("amount", response.data)
+
+    def test_invalid_payment_method_is_rejected(self) -> None:
+        """A method outside the payment-method choices is a field error."""
+        membership = self._membership()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": self.gold_plan.id, "amount": "10.00", "payment_method": "crypto"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("payment_method", response.data)
+        self.assertEqual(Payment.objects.for_tenant(self.tenant).count(), 0)
+
+    def test_payment_method_and_notes_are_recorded(self) -> None:
+        """A non-default method and a note travel onto the payment."""
+        membership = self._membership()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {
+                "plan_id": self.gold_plan.id,
+                "amount": "1050.00",
+                "payment_method": "upi",
+                "notes": "Paid at the desk",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payment = Payment.objects.for_tenant(self.tenant).get()
+        self.assertEqual(payment.payment_method, Payment.PaymentMethod.UPI)
+        self.assertEqual(payment.notes, "Paid at the desk")
+
+    def test_expired_membership_cannot_be_upgraded(self) -> None:
+        """An expired window has nothing to upgrade — renew it instead."""
+        membership = self._membership(end_offset=-1)
+        self.assertEqual(membership.status, Membership.Status.EXPIRED)
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": self.gold_plan.id, "amount": "10.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("detail", response.data)
+        membership.refresh_from_db()
+        self.assertEqual(membership.plan_id, self.plan.id)
+        self.assertEqual(Payment.objects.for_tenant(self.tenant).count(), 0)
+
+    def test_cancelled_membership_cannot_be_upgraded(self) -> None:
+        """A cancelled membership is not upgradeable."""
+        membership = self._membership()
+        membership.status = Membership.Status.CANCELLED
+        membership.save()
+        response = self.client.post(
+            self._upgrade_url(membership),
+            {"plan_id": self.gold_plan.id, "amount": "10.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("detail", response.data)
+        membership.refresh_from_db()
+        self.assertEqual(membership.plan_id, self.plan.id)
+
+    def test_upgrade_propagates_access_change(self) -> None:
+        """The plan swap pushes allow-lists/biometric updates downstream."""
+        membership = self._membership()
+        with mock.patch.object(MembershipViewSet, "_propagate_access_change") as propagate:
+            response = self.client.post(
+                self._upgrade_url(membership),
+                {"plan_id": self.gold_plan.id, "amount": "1050.00"},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(propagate.call_count, 1)
+        self.assertEqual(propagate.call_args.args[0].plan_id, self.gold_plan.id)
+
+    def test_upgrade_is_tenant_isolated(self) -> None:
+        """Another gym's membership is invisible to the upgrade endpoints."""
+        other_tenant = provision_tenant(name="Other Gym 2", contact_email="other2@local.test")
+        other_user = User.objects.create_user(
+            email="other2-cust@local.test",
+            password="F1tNati0n!",
+            first_name="Other2",
+            last_name="Customer",
+            role=User.Role.CUSTOMER,
+            tenant=other_tenant,
+        )
+        other_customer = Customer.objects.create(
+            tenant=other_tenant,
+            user=other_user,
+            name="Other2 Customer",
+            email="other2-cust@local.test",
+        )
+        other_membership = Membership.objects.create(
+            tenant=other_tenant,
+            customer=other_customer,
+            plan=self.foreign_plan,
+            start_date=_offset_day(-9),
+            end_date=_offset_day(20),
+        )
+        self.assertEqual(
+            self.client.get(self._upgrade_url(other_membership)).status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.post(
+                self._upgrade_url(other_membership),
+                {"plan_id": self.gold_plan.id, "amount": "10.00"},
+                format="json",
+            ).status_code,
+            404,
+        )
