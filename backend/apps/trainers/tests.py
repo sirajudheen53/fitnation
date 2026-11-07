@@ -1,16 +1,20 @@
 """Tests for the trainers app (FBOS-007)."""
 
+from datetime import timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 from django.db import IntegrityError, transaction
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.branches.models import Branch
 from apps.customers.models import Customer
 from apps.tenants.services import provision_tenant
 from apps.trainers.models import TrainerAssignment, TrainerPerformance
-from apps.users.models import TrainerSchedule, User
+from apps.trainers.serializers import TrainerSerializer
+from apps.users.models import OtpCode, TrainerSchedule, User
 from apps.users.services import (
     SYNTHETIC_EMAIL_DOMAIN,
     create_owner_user,
@@ -573,3 +577,71 @@ class TrainerAddCustomerAPITests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 405)
+
+
+class TrainerSerializerPhoneTests(TestCase):
+    """TrainerSerializer writable phone (issue #97).
+
+    The ERP edits trainers through ``/users/trainers/{id}/``, but this
+    serializer (line-18 ``phone`` used to be read-only) must behave
+    identically wherever a save carries a phone: E.164 normalization (#88),
+    the ADR-002 conflict rule via ``reject_registered_phone``, and the write
+    delegated to ``update_trainer`` so a number change purges outstanding
+    OTP codes for the freed old phone (#72 hygiene).
+    """
+
+    def setUp(self) -> None:
+        """Create a tenant, a trainer with a phone, and a request stub."""
+        self.tenant = provision_tenant(name="Gym A", contact_email="a@local.test")
+        self.trainer = _make_trainer(self.tenant, "a@trainer.test")
+        self.trainer.user.phone = "918606806956"
+        self.trainer.user.save()
+        self.context = {"request": SimpleNamespace(tenant=self.tenant)}
+
+    def _serializer(self, instance=None, data=None):
+        """A partial TrainerSerializer bound to the tenant-stubbed context."""
+        return TrainerSerializer(instance, data=data, partial=True, context=self.context)
+
+    def test_writable_phone_updates_user_e164_and_delegates_purge(self) -> None:
+        """A phone save lands E.164 on the user; profile fields ride along."""
+        code = OtpCode.objects.create(
+            phone="+918606806956",
+            tenant=self.tenant,
+            code_hash="a" * 64,
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+        serializer = self._serializer(
+            self.trainer,
+            data={"phone": "9999999999", "specialization": "Mobility"},
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        trainer = serializer.save()
+        trainer.refresh_from_db()
+        self.assertEqual(trainer.user.phone, "+919999999999")
+        self.assertEqual(trainer.specialization, "Mobility")
+        self.assertEqual(trainer.max_clients, 10, "untouched profile field must survive")
+        self.assertFalse(OtpCode.objects.filter(pk=code.pk).exists(), "freed phone codes purged")
+
+    def test_phone_owned_by_another_account_rejected(self) -> None:
+        """A number held by any other tenant account raises phone_already_registered."""
+        holder = _make_customer(self.tenant, "holder@customer.test")
+        holder.user.phone = "8888888888"
+        holder.user.save()
+        serializer = self._serializer(self.trainer, data={"phone": "8888888888"})
+        self.assertFalse(serializer.is_valid())
+        error = serializer.errors["phone"][0]
+        self.assertEqual(error.code, "phone_already_registered")
+        self.assertIn("This phone is already registered to a different account", str(error))
+        holder.user.refresh_from_db()
+        self.assertEqual(holder.user.phone, "+918888888888", "holder never clobbered")
+        self.trainer.user.refresh_from_db()
+        self.assertEqual(self.trainer.user.phone, "+918606806956", "trainer phone untouched")
+
+    def test_own_number_resubmission_is_valid(self) -> None:
+        """Re-submitting the trainer's own number passes the conflict check."""
+        serializer = self._serializer(self.trainer, data={"phone": "+91 86068 06956"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_read_representation_serves_user_phone(self) -> None:
+        """Reads are unchanged: phone still renders from the linked user."""
+        self.assertEqual(TrainerSerializer(self.trainer).data["phone"], "+918606806956")
