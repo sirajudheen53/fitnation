@@ -18,6 +18,7 @@ from apps.notifications.services.router import (
     gupshup_ready,
     is_emailable,
     send_verification_message,
+    send_welcome_notification,
     send_whatsapp_template,
     whatsapp_providers,
 )
@@ -342,6 +343,175 @@ class SendNotificationRoutingTests(TestCase):
         log = send_notification(self.tenant, self.customer, "check_in", {})
         self.assertEqual(log.status, NotificationLog.Status.SKIPPED)
         self.assertIn("phone", log.error_message.lower())
+
+
+class SendWelcomeNotificationTests(TestCase):
+    """The welcome rides the approved-template path (#98), never freeform.
+
+    A brand-new member has never messaged the gym, so no 24h session window
+    exists — the freeform send this service used before #98 could never
+    deliver on either provider.
+    """
+
+    def setUp(self) -> None:
+        """A member with a phone on a tenant with both WhatsApp legs ready."""
+        self.tenant = provision_tenant(
+            name="Welcome Gym",
+            contact_email="welcome@local.test",
+            is_wati_enabled=True,
+            wati_api_key="wati-key",
+            **GUPSHUP,
+        )
+        user = User.objects.create_user(
+            email="newmember@fitnation.local",
+            password="x",
+            first_name="Asha",
+            last_name="Nair",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+            phone="+919900010001",
+        )
+        self.customer = Customer.objects.create(tenant=self.tenant, user=user, name="Asha Nair", phone="+919900010001")
+
+    def _context(self) -> dict:
+        """The wizard's welcome context shape."""
+        return {"plan_name": "Monthly", "end_date": "2026-12-07", "phone": "+919900010001"}
+
+    def _customer_on(self, tenant, phone: str = "+919900010002"):
+        """A customer row on the given tenant."""
+        user = User.objects.create_user(
+            email=f"w{phone or 'nophone'}@fitnation.local",
+            password="x",
+            first_name="N",
+            last_name="P",
+            role=User.Role.CUSTOMER,
+            tenant=tenant,
+            phone=phone,
+        )
+        return Customer.objects.create(tenant=tenant, user=user, name="N P", phone=phone)
+
+    def test_welcome_rides_the_wati_template_path(self) -> None:
+        """The WATI leg posts the fitnation_welcome TEMPLATE, not session text."""
+        poster = _ok_poster()
+        log = send_welcome_notification(self.tenant, self.customer, self._context(), poster=poster)
+        self.assertEqual(log.status, NotificationLog.Status.SENT)
+        self.assertEqual(log.channel, "whatsapp")
+        self.assertEqual(log.provider, "wati")
+        urls = _posted_urls(poster)
+        self.assertEqual(len(urls), 1)
+        self.assertIn("/api/v1/sendTemplateMessage/fitnation_welcome", urls[0])
+        self.assertIn("whatsappNumber=919900010001", urls[0])
+        self.assertNotIn("sendSessionMessage", urls[0])
+        self.assertEqual(
+            poster.call_args.kwargs["json"]["templateParams"],
+            ["Asha Nair", "Welcome Gym", "Monthly", "2026-12-07"],
+        )
+
+    def test_wati_message_id_is_recorded(self) -> None:
+        """The audit row keeps the WATI message id (parity with the old path)."""
+        poster = MagicMock()
+        poster.return_value = MagicMock(
+            status_code=200,
+            raise_for_status=MagicMock(),
+            json=MagicMock(return_value={"messageId": "wamid.welcome1"}),
+        )
+        log = send_welcome_notification(self.tenant, self.customer, self._context(), poster=poster)
+        self.assertEqual(log.status, NotificationLog.Status.SENT)
+        self.assertEqual(log.wati_message_id, "wamid.welcome1")
+
+    def test_wati_failure_falls_through_to_the_gupshup_template(self) -> None:
+        """A WATI transport failure is swallowed; Gupshup carries the template."""
+        import requests
+
+        def _post(url, **kwargs):
+            if "api.wati.io" in url:
+                raise requests.exceptions.ConnectionError("wati down")
+            return MagicMock(status_code=200, raise_for_status=MagicMock())
+
+        poster = MagicMock()
+        poster.side_effect = _post
+        log = send_welcome_notification(self.tenant, self.customer, self._context(), poster=poster)
+        self.assertEqual(log.status, NotificationLog.Status.SENT)
+        self.assertEqual(log.provider, "gupshup")
+        self.assertEqual(poster.call_count, 2)
+        gup_call = poster.call_args_list[1]
+        self.assertIn("api.gupshup.io", gup_call.args[0])
+        self.assertEqual(
+            json.loads(gup_call.kwargs["data"]["message"]),
+            {
+                "type": "template",
+                "name": "fitnation_welcome",
+                "params": ["Asha Nair", "Welcome Gym", "Monthly", "2026-12-07"],
+            },
+        )
+
+    def test_all_legs_failing_is_failed_with_the_last_error(self) -> None:
+        """Every enabled leg failing → failed, provider = last enabled leg."""
+        poster = MagicMock(side_effect=RuntimeError("gupshup down"))
+        log = send_welcome_notification(self.tenant, self.customer, self._context(), poster=poster)
+        self.assertEqual(log.status, NotificationLog.Status.FAILED)
+        self.assertEqual(log.provider, "gupshup")
+        self.assertIn("gupshup down", log.error_message)
+        self.assertEqual(log.channel, "whatsapp")
+
+    def test_misconfigured_wati_leg_falls_to_gupshup(self) -> None:
+        """Enabled-but-keyless WATI is a failed leg, not a silent skip."""
+        tenant = provision_tenant(
+            name="Half Wati",
+            contact_email="half.wati@local.test",
+            is_wati_enabled=True,
+            **GUPSHUP,
+        )
+        poster = _ok_poster()
+        log = send_welcome_notification(tenant, self._customer_on(tenant), self._context(), poster=poster)
+        self.assertEqual(log.status, NotificationLog.Status.SENT)
+        self.assertEqual(log.provider, "gupshup")
+        self.assertFalse(any("api.wati.io" in url for url in _posted_urls(poster)))
+
+    def test_all_legs_misconfigured_is_failed(self) -> None:
+        """Both legs enabled but keyless → failed with the config error."""
+        tenant = provision_tenant(
+            name="No Keys",
+            contact_email="nokeys@local.test",
+            is_wati_enabled=True,
+            is_gupshup_enabled=True,
+        )
+        log = send_welcome_notification(tenant, self._customer_on(tenant), self._context())
+        self.assertEqual(log.status, NotificationLog.Status.FAILED)
+        self.assertEqual(log.provider, "gupshup")
+        self.assertEqual(log.error_message, "Gupshup API key is not configured")
+
+    def test_no_channel_enabled_is_skipped(self) -> None:
+        """No WhatsApp channel at all → skipped with the audit copy intact."""
+        plain = provision_tenant(name="Plain Gym", contact_email="plain.w@local.test")
+        log = send_welcome_notification(plain, self._customer_on(plain), self._context())
+        self.assertEqual(log.status, NotificationLog.Status.SKIPPED)
+        self.assertIn("No WhatsApp channel", log.error_message)
+        self.assertIn("Welcome to Plain Gym", log.content)
+
+    def test_no_phone_is_skipped(self) -> None:
+        """The capability check: WhatsApp needs a phone."""
+        log = send_welcome_notification(self.tenant, self._customer_on(self.tenant, phone=""), self._context())
+        self.assertEqual(log.status, NotificationLog.Status.SKIPPED)
+        self.assertIn("phone", log.error_message.lower())
+
+    def test_phone_only_recipient_is_supported(self) -> None:
+        """The vendor-provisioning welcome (#66) sends without a customer row."""
+        poster = _ok_poster()
+        log = send_welcome_notification(
+            self.tenant,
+            None,
+            {"customer_name": "Hash Fit Owner", "plan_name": "professional", "end_date": "—"},
+            to_phone="+919900010003",
+            poster=poster,
+        )
+        self.assertEqual(log.status, NotificationLog.Status.SENT)
+        self.assertIsNone(log.customer)
+        self.assertIn("whatsappNumber=919900010003", _posted_urls(poster)[0])
+        self.assertEqual(
+            poster.call_args.kwargs["json"]["templateParams"],
+            ["Hash Fit Owner", "Welcome Gym", "professional", "—"],
+        )
 
 
 class SendVerificationMessageTests(TestCase):

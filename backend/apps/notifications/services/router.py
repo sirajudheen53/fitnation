@@ -47,6 +47,7 @@ from apps.notifications.services.wati_service import build_message, post_wati_se
 from apps.users.services import SYNTHETIC_EMAIL_DOMAIN
 
 if TYPE_CHECKING:
+    from apps.customers.models import Customer
     from apps.tenants.models import Tenant
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ __all__ = [
     "gupshup_template_approval",
     "is_emailable",
     "send_verification_message",
+    "send_welcome_notification",
     "send_whatsapp_template",
     "wati_ready",
     "whatsapp_providers",
@@ -85,6 +87,12 @@ WHATSAPP_TEMPLATE_NAMES: dict[str, str] = {
     # [customer_name, amount, gym_name, short_url_suffix]. WATI's template
     # inlines the whole link as its 4th body variable instead.
     "payment_link": "fitnation_payment_link",
+    # Issue #98: the member/gym welcome — business-initiated (a brand-new
+    # member has never messaged the gym, so no 24h session window exists and
+    # freeform text can never deliver on either provider). The same 4
+    # positional body params ride both BSP templates:
+    # [customer_name, gym_name, plan_name, end_date].
+    "welcome": "fitnation_welcome",
 }
 
 
@@ -218,6 +226,20 @@ class WhatsAppAttempt:
     failures: tuple[tuple[str, str], ...] = ()
 
 
+def _wati_message_id(response: Any) -> str:
+    """The WATI message id from a send response, ``""`` when unusable.
+
+    Mirrors the parse in :func:`...wati_service.post_wati_session_text`
+    (``messageId`` / ``id`` / ``result``); a non-JSON body must not turn a
+    delivered message into a failed leg, so every parse trouble is swallowed.
+    """
+    with contextlib.suppress(Exception):
+        data = response.json() if hasattr(response, "json") else {}
+        if isinstance(data, dict):
+            return str(data.get("messageId") or data.get("id") or data.get("result") or "")
+    return ""
+
+
 def send_whatsapp_template(
     tenant: Tenant,
     template_name: str,
@@ -260,9 +282,11 @@ def send_whatsapp_template(
     attempt = WhatsAppAttempt(attempted=bool(order))
     failures: list[tuple[str, str]] = []
     for provider in order:
+        message_id = ""
         try:
             if provider == PROVIDER_WATI:
-                post_wati_template(tenant, template_name, to_msisdn, template_params, poster=poster)
+                response = post_wati_template(tenant, template_name, to_msisdn, template_params, poster=poster)
+                message_id = _wati_message_id(response)
             elif provider == PROVIDER_GUPSHUP:
                 post_gupshup_template(
                     tenant,
@@ -281,8 +305,139 @@ def send_whatsapp_template(
             failures.append((provider, str(exc)))
             attempt = WhatsAppAttempt(provider, False, "", str(exc), True, tuple(failures))
             continue
-        return WhatsAppAttempt(provider, True, "", "", True, tuple(failures))
+        return WhatsAppAttempt(provider, True, message_id, "", True, tuple(failures))
     return attempt
+
+
+def send_welcome_notification(
+    tenant: Tenant,
+    customer: Customer | None,
+    context_data: dict[str, Any] | None = None,
+    *,
+    to_phone: str | None = None,
+    actor: Any = None,
+    poster: Callable[..., Any] | None = None,
+) -> NotificationLog:
+    """Send the welcome over the approved WhatsApp templates (issue #98).
+
+    The welcome is business-initiated — a brand-new member has never messaged
+    the gym, so no 24-hour customer-service window exists and freeform
+    session text can never deliver (#98). Both legs therefore ride the
+    approved ``fitnation_welcome`` template via
+    :func:`send_whatsapp_template` (the app-invite pattern, #85) with the
+    same positional body params ``[customer_name, gym_name, plan_name,
+    end_date]``. Freeform session text stays only on the settings-page test
+    send, which targets a phone the owner controls.
+
+    Audit semantics mirror
+    :func:`apps.notifications.services.wati_service.send_notification`: one
+    ``NotificationLog`` row per attempt — ``skipped`` when no channel is
+    enabled or the recipient has no phone, ``failed`` with the last leg's
+    error when every enabled leg failed (an enabled-but-misconfigured leg is
+    a failed leg, not a silent skip), ``sent`` with the carrying provider.
+
+    Args:
+        tenant: The sending tenant (per-provider credentials).
+        customer: The recipient member (``None`` for the vendor-provisioning
+            welcome, which addresses ``to_phone`` directly).
+        context_data: Template context — ``plan_name`` and ``end_date`` feed
+            body params 3 and 4; ``phone`` only feeds the audit copy.
+        to_phone: Explicit recipient, overriding the customer phone.
+        actor: The staff user who triggered the send (audit trail).
+        poster: Injectable HTTP post callable (tests).
+
+    Returns:
+        The created ``NotificationLog`` record.
+    """
+    context = context_data or {}
+    context.setdefault("gym_name", tenant.name)
+    context.setdefault("customer_name", customer.name if customer else "there")
+
+    content = build_message("welcome", context)
+    log = NotificationLog.objects.create(
+        tenant=tenant,
+        customer=customer,
+        actor=actor,
+        notification_type=NotificationLog.NotificationType.WELCOME,
+        status=NotificationLog.Status.PENDING,
+        content=content,
+    )
+
+    enabled = [name for name in (PROVIDER_WATI, PROVIDER_GUPSHUP) if getattr(tenant, f"is_{name}_enabled", False)]
+    if not enabled:
+        log.status = NotificationLog.Status.SKIPPED
+        log.error_message = "No WhatsApp channel is enabled for this tenant (Wati and Gupshup are both not enabled)"
+        log.save(update_fields=["status", "error_message", "updated_at"])
+        return log
+
+    recipient = (to_phone or (customer.phone if customer else "") or "").strip()
+    if not recipient:
+        log.status = NotificationLog.Status.SKIPPED
+        log.error_message = "No recipient phone for this notification"
+        log.save(update_fields=["status", "error_message", "updated_at"])
+        return log
+
+    # Enabled-but-misconfigured legs are failed legs carrying the same error
+    # copy send_notification records; the ready legs carry the send in policy
+    # order. A FAILED row names the last *enabled* provider, ready or not.
+    ready: list[str] = []
+    last_error = ""
+    for candidate in enabled:
+        if candidate == PROVIDER_WATI:
+            if not tenant.wati_api_key:
+                last_error = "Wati API key is not configured"
+                continue
+        else:
+            missing = next(
+                (
+                    label
+                    for label, value in (
+                        ("API key", tenant.gupshup_api_key),
+                        ("source number", tenant.gupshup_source),
+                        ("app name", tenant.gupshup_app_name),
+                    )
+                    if not value
+                ),
+                "",
+            )
+            if missing:
+                last_error = f"Gupshup {missing} is not configured"
+                continue
+        ready.append(candidate)
+
+    # Issue #98: no CTA button on either BSP template (unlike the invite /
+    # payment-link shapes), so both legs carry the identical 4 body params.
+    params = [
+        str(context.get("customer_name") or "there"),
+        str(context.get("gym_name") or tenant.name),
+        str(context.get("plan_name") or ""),
+        str(context.get("end_date") or ""),
+    ]
+    attempt = send_whatsapp_template(
+        tenant,
+        WHATSAPP_TEMPLATE_NAMES["welcome"],
+        normalize_msisdn(recipient, getattr(settings, "OTP_DEFAULT_COUNTRY_CODE", "91")),
+        params,
+        gupshup_params=params,
+        providers=ready,
+        poster=poster,
+    )
+    if attempt.sent:
+        log.wati_message_id = attempt.message_id
+        log.channel = CHANNEL_WHATSAPP
+        log.provider = attempt.provider
+        log.status = NotificationLog.Status.SENT
+        log.save(update_fields=["wati_message_id", "channel", "provider", "status", "updated_at"])
+        return log
+
+    for _, error in attempt.failures:
+        last_error = error
+    log.channel = CHANNEL_WHATSAPP
+    log.provider = enabled[-1]
+    log.status = NotificationLog.Status.FAILED
+    log.error_message = last_error
+    log.save(update_fields=["channel", "provider", "status", "error_message", "updated_at"])
+    return log
 
 
 def send_verification_message(

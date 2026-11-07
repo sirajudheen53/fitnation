@@ -51,7 +51,8 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     # FBOS-011 §5.2 / onboarding-design §3.5: rendered copy stored on the
     # NotificationLog so the audit trail is human-readable. The actual WATI
     # sends for these types use APPROVED TEMPLATE messages (variable params),
-    # not session messages — see invite_service / apps.users.otp.
+    # not session messages — app_invite via invite_service (#85), welcome via
+    # router.send_welcome_notification (#98).
     "welcome": (
         "Welcome to {gym_name}, {customer_name}! 🎉 Your {plan_name} membership is active until {end_date}. "
         "Install the FitNation app and sign in with {phone} to get your plans. See you at the gym! 💪"
@@ -162,6 +163,14 @@ def send_notification(
     falls through to the next one; when none delivers, the attempt is logged
     ``failed`` (or ``skipped`` when no channel is enabled at all — these
     types have no SMS/email template, so there is no further leg).
+
+    Issue #98: the ``welcome`` type's production sends no longer ride this
+    freeform path — a brand-new recipient has no 24h session window, so the
+    welcome goes through the approved-template sender
+    :func:`apps.notifications.services.router.send_welcome_notification`
+    instead. This session-text path remains for the other notification types
+    (signals, expiry nudges) and the settings-page test send, whose WATI leg
+    targets a phone the owner controls.
 
     Behavior:
     - No WhatsApp channel enabled → log ``skipped``.
