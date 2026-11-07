@@ -285,6 +285,57 @@ describe("TrainerFormDialog — edit mode", () => {
     );
     expect(createTrainer).not.toHaveBeenCalled();
   });
+
+  it("shows the phone prefilled and PATCHes the edited number (#97)", async () => {
+    const saved = sampleTrainer({ phone: "+91 90000 00002" });
+    (updateTrainer as jest.Mock).mockResolvedValue(saved);
+
+    render(<TrainerFormDialog trainer={sampleTrainer()} onClose={() => {}} onSaved={() => {}} />);
+
+    // Stored "+91 90000 00001" prefills as canonical E.164 national digits.
+    expect(screen.getByLabelText("Phone")).toHaveValue("9000000001");
+
+    fireEvent.change(screen.getByLabelText("Phone"), {
+      target: { value: "90000 00002" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(updateTrainer).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ phone: "+919000000002" }),
+        "trainer-admin-token",
+      ),
+    );
+  });
+
+  it("blocks saving a too-short phone with an inline error (#97)", async () => {
+    render(<TrainerFormDialog trainer={sampleTrainer()} onClose={() => {}} onSaved={() => {}} />);
+
+    // "+911234" is under the E.164 minimum (7 digits) and not a bare Indian
+    // national number either — the shape check is what the backend enforces.
+    fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "1234" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("Enter a valid phone number.")).toBeInTheDocument();
+    expect(updateTrainer).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a phone_already_registered API error on the phone field (#97)", async () => {
+    (updateTrainer as jest.Mock).mockRejectedValue({
+      data: {
+        phone: ["This phone is already registered to a different account. Resolve manually."],
+      },
+    });
+
+    render(<TrainerFormDialog trainer={sampleTrainer()} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(
+      await screen.findByText(/already registered to a different account/),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("TrainerProfilePage — tabs", () => {

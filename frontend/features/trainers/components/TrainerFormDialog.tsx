@@ -75,8 +75,9 @@ interface TrainerFormDialogProps {
  * Create/edit trainer dialog (issue #53).
  *
  * Create provisions the staff user (role=trainer) plus profile in one POST;
- * edit PATCHes the profile fields only — name/email/phone live on the user
- * record and are not editable here.
+ * edit PATCHes the profile plus the trainer's phone (#97 — the linked user's
+ * login phone). Name/email still live on the user record and are not
+ * editable here.
  */
 export function TrainerFormDialog({ trainer, onClose, onSaved }: TrainerFormDialogProps) {
   const editing = trainer !== null;
@@ -145,6 +146,7 @@ export function TrainerFormDialog({ trainer, onClose, onSaved }: TrainerFormDial
         ? await updateTrainer(
             trainer.id,
             {
+              phone: values.phone || "",
               specialization: values.specialization || "",
               bio: values.bio || "",
               is_active: values.is_active,
@@ -246,21 +248,20 @@ export function TrainerFormDialog({ trainer, onClose, onSaved }: TrainerFormDial
                 />
               </div>
             )}
-            {!editing && (
-              <Controller
-                control={control}
-                name="phone"
-                render={({ field }) => (
-                  <PhoneInput
-                    label="Phone"
-                    error={errors.phone?.message ?? fieldErrors.phone?.[0]}
-                    value={field.value ?? ""}
-                    onChange={field.onChange}
-                    autoComplete="tel"
-                  />
-                )}
-              />
-            )}
+            <Controller
+              control={control}
+              name="phone"
+              render={({ field }) => (
+                <PhoneInput
+                  label="Phone"
+                  hint={editing ? "Used for the trainer's OTP login" : undefined}
+                  error={errors.phone?.message ?? fieldErrors.phone?.[0]}
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  autoComplete="tel"
+                />
+              )}
+            />
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <Input
