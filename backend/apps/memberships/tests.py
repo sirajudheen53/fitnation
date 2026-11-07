@@ -938,3 +938,119 @@ class MembershipOverlapGuardAPITests(APITestCase):
         self.assertEqual(response.status_code, 200)
         cancelled.refresh_from_db()
         self.assertEqual(cancelled.status, Membership.Status.CANCELLED)
+
+
+class MembershipRenewalOverlapGuardAPITests(APITestCase):
+    """Renewal extension may not reach into another ACTIVE membership (#104).
+
+    The renewed row itself is excluded — extending the same membership is
+    never a self-overlap — but an extension (with or without a plan swap)
+    that would overlap a different active membership is blocked with a 400
+    naming that row, before anything is mutated.
+    """
+
+    def setUp(self) -> None:
+        """Create tenant, owner token, two plans, and a member."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        self.plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Monthly",
+            price="1500.00",
+            duration_days=30,
+        )
+        self.quarterly_plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Quarterly",
+            price="4000.00",
+            duration_days=90,
+        )
+        self.user = User.objects.create_user(
+            email="renewal-overlap-cust@local.test",
+            password="F1tNati0n!",
+            first_name="Renewal",
+            last_name="Customer",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Renewal Customer",
+            email="renewal-overlap-cust@local.test",
+        )
+
+    def _create_membership(
+        self,
+        *,
+        start_offset: int,
+        end_offset: int,
+        plan: MembershipPlan | None = None,
+        status: str = Membership.Status.ACTIVE,
+    ) -> Membership:
+        """Persist a membership row; ``save()`` syncs status from dates."""
+        return Membership.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            plan=plan or self.plan,
+            start_date=_offset_day(start_offset),
+            end_date=_offset_day(end_offset),
+            status=status,
+        )
+
+    def _renewal_response(self, membership: Membership, payload: dict):
+        """POST the renewal action for a membership."""
+        return self.client.post(
+            f"/api/v1/memberships/memberships/{membership.id}/renewal/",
+            payload,
+            format="json",
+        )
+
+    def test_renewal_extending_into_active_membership_blocked(self) -> None:
+        """An extension reaching into a later ACTIVE membership is rejected, row untouched."""
+        target = self._create_membership(start_offset=-40, end_offset=-10)  # stored EXPIRED
+        later = self._create_membership(start_offset=5, end_offset=35)
+        response = self._renewal_response(target, {"days": 20})  # new end = today+10
+        self.assertEqual(response.status_code, 400)
+        error = response.data["non_field_errors"][0]
+        self.assertEqual(error.code, MEMBERSHIP_OVERLAP_CODE)
+        self.assertIn(f"#{later.id}", str(error))
+        target.refresh_from_db()
+        self.assertEqual(target.end_date, _offset_day(-10))
+        self.assertEqual(target.status, Membership.Status.EXPIRED)
+
+    def test_renewal_plan_swap_into_active_membership_blocked(self) -> None:
+        """A plan-swap renewal whose extension overlaps is rejected before mutation."""
+        target = self._create_membership(start_offset=-40, end_offset=-10)
+        later = self._create_membership(start_offset=5, end_offset=35)
+        response = self._renewal_response(target, {"plan_id": self.quarterly_plan.id, "days": 20})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(f"#{later.id}", str(response.data["non_field_errors"][0]))
+        target.refresh_from_db()
+        self.assertEqual(target.plan_id, self.plan.id)
+        self.assertEqual(target.end_date, _offset_day(-10))
+
+    def test_renewal_extension_stopping_before_active_membership_allowed(self) -> None:
+        """An extension ending the day before the next membership starts is accepted."""
+        target = self._create_membership(start_offset=-40, end_offset=-10)
+        self._create_membership(start_offset=25, end_offset=55)
+        response = self._renewal_response(target, {"days": 30})  # new end = today+20
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(date.fromisoformat(response.data["end_date"]), _offset_day(20))
+
+    def test_renewal_of_own_row_is_not_an_overlap(self) -> None:
+        """Extending the same membership never conflicts with itself (#104 edge case)."""
+        target = self._create_membership(start_offset=-40, end_offset=-10)
+        response = self._renewal_response(target, {"days": 30})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "active")
+        self.assertEqual(date.fromisoformat(response.data["end_date"]), _offset_day(20))
+        self.assertEqual(Membership.objects.for_tenant(self.tenant).count(), 1)

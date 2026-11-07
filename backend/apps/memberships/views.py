@@ -22,6 +22,7 @@ from apps.memberships.serializers import (
     MembershipPlanSerializer,
     MembershipSerializer,
 )
+from apps.memberships.services import assert_no_membership_overlap
 from apps.notifications.services.invite_service import REASON_DAILY_LIMIT, invite_result_payload, send_app_invite
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
@@ -173,6 +174,11 @@ class MembershipViewSet(ModelViewSet):
         membership onto that plan before the extension (issue #68); the
         default ``days`` then comes from the NEW plan's duration. Without
         ``plan_id`` the renewal extends the current plan as before.
+
+        The extension may not reach into another ACTIVE membership's period
+        (issue #104) — the same row is exempt, cancelled/expired rows don't
+        count; a violating extension is rejected with a 400 naming the
+        conflicting membership.
         """
         self.required_permission = "memberships.edit_membership"
         membership = self.get_object()
@@ -216,6 +222,19 @@ class MembershipViewSet(ModelViewSet):
                 {"detail": "Renewal must extend the membership."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # Issue #104: the extension must not reach into another ACTIVE
+        # membership's period. The row itself is excluded — extending the
+        # same membership is never a self-overlap — but an extension that
+        # would overlap a different active membership is blocked (no
+        # auto-supersede), before any field is mutated.
+        assert_no_membership_overlap(
+            tenant=request.tenant,
+            customer=membership.customer,
+            start_date=membership.start_date,
+            end_date=new_end,
+            exclude_pk=membership.pk,
+        )
 
         membership.plan = plan
         membership.end_date = new_end
