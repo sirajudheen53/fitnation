@@ -11,11 +11,17 @@ from rest_framework.test import APITestCase
 
 from apps.customers.models import Customer
 from apps.memberships.models import Coupon, Membership, MembershipPlan
+from apps.memberships.services import MEMBERSHIP_OVERLAP_CODE
 from apps.memberships.views import MembershipViewSet
 from apps.tenants.services import provision_tenant
 from apps.users.services import create_owner_user, issue_token
 
 User = get_user_model()
+
+
+def _offset_day(offset: int) -> date:
+    """Return today shifted by ``offset`` days (naive local test date)."""
+    return date.today() + timedelta(days=offset)  # noqa: DTZ011 — naive local test date
 
 
 class MembershipPlanModelTests(TestCase):
@@ -710,3 +716,225 @@ class MembershipPlanPlanTypeAPITests(APITestCase):
         self.assertIn("plan_type", response.data)
         self.plan.refresh_from_db()
         self.assertEqual(self.plan.plan_type, "monthly")
+
+
+class MembershipOverlapGuardAPITests(APITestCase):
+    """Overlap guard on membership writes (#104).
+
+    Owner decision on the issue: BLOCK the overlapping membership — no
+    auto-supersede. A member never holds two ACTIVE memberships whose
+    periods overlap; the 400 names the conflicting row (id, plan, period).
+    Cancelled/expired rows don't count, and a renewal extending its own row
+    is never a self-overlap.
+    """
+
+    def setUp(self) -> None:
+        """Create tenant, owner token, two plans, and a member."""
+        self.tenant = provision_tenant(name="Iron Peak", contact_email="owner@local.test")
+        self.owner = create_owner_user(
+            tenant=self.tenant,
+            email="owner@local.test",
+            password_hash="pbkdf2_sha256$hashed",
+            contact_name="Owner User",
+        )
+        self.token = issue_token(self.owner, self.tenant)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        self.plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Monthly",
+            price="1500.00",
+            duration_days=30,
+        )
+        self.quarterly_plan = MembershipPlan.objects.create(
+            tenant=self.tenant,
+            name="Quarterly",
+            price="4000.00",
+            duration_days=90,
+        )
+        self.user = User.objects.create_user(
+            email="overlap-cust@local.test",
+            password="F1tNati0n!",
+            first_name="Overlap",
+            last_name="Customer",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            name="Overlap Customer",
+            email="overlap-cust@local.test",
+        )
+
+    def _create_membership(
+        self,
+        *,
+        start_offset: int,
+        end_offset: int,
+        plan: MembershipPlan | None = None,
+        status: str = Membership.Status.ACTIVE,
+        customer: Customer | None = None,
+    ) -> Membership:
+        """Persist a membership row; ``save()`` syncs status from dates."""
+        return Membership.objects.create(
+            tenant=self.tenant,
+            customer=customer or self.customer,
+            plan=plan or self.plan,
+            start_date=_offset_day(start_offset),
+            end_date=_offset_day(end_offset),
+            status=status,
+        )
+
+    def _post_membership(self, start: date, end: date, **extra: object):
+        """POST a create payload covering ``[start, end]`` for the member."""
+        payload = {
+            "customer": self.customer.id,
+            "plan": self.plan.id,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            **extra,
+        }
+        return self.client.post("/api/v1/memberships/memberships/", payload, format="json")
+
+    def test_create_overlapping_active_membership_blocked(self) -> None:
+        """A create overlapping an ACTIVE membership is rejected with the overlap code."""
+        existing = self._create_membership(start_offset=0, end_offset=30)
+        response = self._post_membership(_offset_day(10), _offset_day(40))
+        self.assertEqual(response.status_code, 400)
+        error = response.data["non_field_errors"][0]
+        self.assertEqual(error.code, MEMBERSHIP_OVERLAP_CODE)
+        self.assertEqual(Membership.objects.for_tenant(self.tenant).count(), 1)
+        # The rejection is the existing row — nothing was superseded.
+        self.assertIn(f"#{existing.id}", str(error))
+
+    def test_create_contained_within_active_membership_blocked(self) -> None:
+        """A period fully inside an ACTIVE membership overlaps."""
+        self._create_membership(start_offset=0, end_offset=30)
+        response = self._post_membership(_offset_day(5), _offset_day(10))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("non_field_errors", response.data)
+
+    def test_create_error_names_plan_and_period_of_conflicting_row(self) -> None:
+        """The message cites the conflicting membership's plan and period."""
+        existing = self._create_membership(start_offset=0, end_offset=30)
+        response = self._post_membership(_offset_day(5), _offset_day(20))
+        self.assertEqual(response.status_code, 400)
+        message = str(response.data["non_field_errors"][0])
+        self.assertIn(f"#{existing.id}", message)
+        self.assertIn("Monthly", message)
+        self.assertIn(_offset_day(0).isoformat(), message)
+        self.assertIn(_offset_day(30).isoformat(), message)
+
+    def test_create_starting_on_active_end_date_blocked(self) -> None:
+        """Boundary dates are inclusive: starting on the active end_date shares that day."""
+        self._create_membership(start_offset=0, end_offset=30)
+        response = self._post_membership(_offset_day(30), _offset_day(60))
+        self.assertEqual(response.status_code, 400)
+
+    def test_create_starting_day_after_active_end_allowed(self) -> None:
+        """A successor starting the day after the active end_date does not overlap."""
+        self._create_membership(start_offset=0, end_offset=30)
+        response = self._post_membership(_offset_day(31), _offset_day(60))
+        self.assertEqual(response.status_code, 201)
+
+    def test_create_against_expired_membership_allowed(self) -> None:
+        """Expired rows don't count — a new period overlapping an expired one is fine."""
+        self._create_membership(start_offset=-60, end_offset=-30)  # save() stores EXPIRED
+        response = self._post_membership(_offset_day(-40), _offset_day(5))
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["status"], "active")
+
+    def test_create_against_cancelled_membership_allowed(self) -> None:
+        """Cancelled rows don't count as conflicts."""
+        self._create_membership(start_offset=0, end_offset=30, status=Membership.Status.CANCELLED)
+        response = self._post_membership(_offset_day(10), _offset_day(40))
+        self.assertEqual(response.status_code, 201)
+
+    def test_create_backfill_ending_in_past_overlapping_active_allowed(self) -> None:
+        """A backfill ending before today is born expired — it can never hold ACTIVE."""
+        self._create_membership(start_offset=-5, end_offset=30)
+        response = self._post_membership(_offset_day(-10), _offset_day(-1))
+        self.assertEqual(response.status_code, 201)
+        created = Membership.objects.for_tenant(self.tenant).order_by("id").last()
+        assert created is not None
+        self.assertEqual(created.status, Membership.Status.EXPIRED)
+
+    def test_create_same_period_for_different_customer_allowed(self) -> None:
+        """The guard is per member — another customer's identical period is fine."""
+        self._create_membership(start_offset=0, end_offset=30)
+        other_user = User.objects.create_user(
+            email="overlap-other@local.test",
+            password="F1tNati0n!",
+            first_name="Other",
+            last_name="Member",
+            role=User.Role.CUSTOMER,
+            tenant=self.tenant,
+        )
+        other_customer = Customer.objects.create(
+            tenant=self.tenant,
+            user=other_user,
+            name="Other Member",
+            email="overlap-other@local.test",
+        )
+        payload = {
+            "customer": other_customer.id,
+            "plan": self.plan.id,
+            "start_date": _offset_day(0).isoformat(),
+            "end_date": _offset_day(30).isoformat(),
+        }
+        response = self.client.post("/api/v1/memberships/memberships/", payload, format="json")
+        self.assertEqual(response.status_code, 201)
+
+    def test_patch_dates_into_active_overlap_blocked(self) -> None:
+        """An edit that moves a row onto an ACTIVE neighbour's period is rejected."""
+        self._create_membership(start_offset=0, end_offset=30)
+        target = self._create_membership(start_offset=40, end_offset=70)
+        response = self.client.patch(
+            f"/api/v1/memberships/memberships/{target.id}/",
+            {"start_date": _offset_day(20).isoformat()},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["non_field_errors"][0].code, MEMBERSHIP_OVERLAP_CODE)
+        target.refresh_from_db()
+        self.assertEqual(target.start_date, _offset_day(40))
+
+    def test_patch_dates_up_to_adjacent_allowed(self) -> None:
+        """An edit stopping the day before the neighbour's start is accepted."""
+        self._create_membership(start_offset=0, end_offset=30)
+        target = self._create_membership(start_offset=40, end_offset=70)
+        response = self.client.patch(
+            f"/api/v1/memberships/memberships/{target.id}/",
+            {"start_date": _offset_day(31).isoformat()},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_patch_plan_change_without_date_change_allowed(self) -> None:
+        """A plan swap on a non-overlapping active row passes the guard."""
+        target = self._create_membership(start_offset=0, end_offset=30)
+        response = self.client.patch(
+            f"/api/v1/memberships/memberships/{target.id}/",
+            {"plan": self.quarterly_plan.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        target.refresh_from_db()
+        self.assertEqual(target.plan_id, self.quarterly_plan.id)
+
+    def test_patch_cancelled_membership_dates_over_active_allowed(self) -> None:
+        """A cancelled row keeps that status regardless of dates — never a conflict."""
+        self._create_membership(start_offset=0, end_offset=30)
+        cancelled = self._create_membership(start_offset=-10, end_offset=5, status=Membership.Status.CANCELLED)
+        response = self.client.patch(
+            f"/api/v1/memberships/memberships/{cancelled.id}/",
+            {
+                "start_date": _offset_day(10).isoformat(),
+                "end_date": _offset_day(40).isoformat(),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        cancelled.refresh_from_db()
+        self.assertEqual(cancelled.status, Membership.Status.CANCELLED)

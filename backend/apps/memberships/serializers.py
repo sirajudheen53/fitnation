@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from apps.customers.serializers import DeletedCustomerFlagMixin
 from apps.memberships.models import Coupon, Membership, MembershipPlan
+from apps.memberships.services import assert_no_membership_overlap
 
 
 class MembershipPlanSerializer(serializers.ModelSerializer):
@@ -68,13 +69,27 @@ class MembershipSerializer(DeletedCustomerFlagMixin, serializers.ModelSerializer
         return 0.0
 
     def validate(self, data: dict) -> dict:
-        """Ensure end_date is after start_date."""
+        """Ensure end_date is after start_date and no ACTIVE period overlaps (#104)."""
         start_date = data.get("start_date") or getattr(self.instance, "start_date", None)
         end_date = data.get("end_date") or getattr(self.instance, "end_date", None)
         if start_date and end_date and end_date <= start_date:
             raise serializers.ValidationError(
                 {"end_date": "end_date must be after start_date."},
             )
+        customer = data.get("customer") or getattr(self.instance, "customer", None)
+        if customer is not None and start_date and end_date:
+            # A cancelled row stays cancelled regardless of dates
+            # (``compute_status``), so moving its period can never produce a
+            # second ACTIVE membership — nothing to guard.
+            cancelled = self.instance is not None and self.instance.status == Membership.Status.CANCELLED
+            if not cancelled:
+                assert_no_membership_overlap(
+                    tenant=customer.tenant,
+                    customer=customer,
+                    start_date=start_date,
+                    end_date=end_date,
+                    exclude_pk=self.instance.pk if self.instance is not None else None,
+                )
         return data
 
 
