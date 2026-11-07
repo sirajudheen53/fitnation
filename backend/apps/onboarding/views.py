@@ -1,7 +1,10 @@
 """Onboarding API views — thin wrappers over the orchestration service."""
 
+import json
+import logging
 from typing import Any, ClassVar
 
+from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -16,6 +19,8 @@ from apps.onboarding.services import (
 from apps.permissions.permissions import RolePermission
 from apps.tenants.permissions import IsTenantMember
 from apps.users.authentication import TenantTokenAuthentication
+
+logger = logging.getLogger(__name__)
 
 # Any-of the permissions the wizard touches (onboarding-design §3): a
 # front-desk role holding all three passes; a role missing one (e.g. cannot
@@ -56,6 +61,17 @@ class OnboardingMemberView(APIView):
                 request=request,
                 idempotency_key=idempotency_key,
             )
+        except serializers.ValidationError as exc:
+            # DRF 400s are never logged by default — without this a prod
+            # diagnosis means asking the user what the screen said (#96).
+            logger.warning(
+                "onboarding_member_400 tenant=%s user=%s errors=%s payload=%s",
+                getattr(request.tenant, "pk", None),
+                getattr(request.user, "pk", None),
+                exc.detail,
+                json.dumps(request.data, default=str),
+            )
+            raise
         except OnboardingError as exc:
             return Response(exc.detail, status=exc.status_code)
         return Response(result, status=201)

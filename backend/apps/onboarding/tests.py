@@ -183,3 +183,21 @@ class OnboardingMemberEndpointTests(APITestCase):
         self.assertEqual(response.data["app_invite"]["status"], "skipped")
         self.assertEqual(response.data["app_invite"]["reason"], "disabled")
         invite.assert_not_called()
+
+    def test_validation_400_logs_payload_and_errors(self) -> None:
+        """A 400 logs the failing payload + field errors for prod diagnosis (#96).
+
+        DRF validation errors otherwise never reach the logs — the desk
+        report ("failed with error 400") used to be the only evidence.
+        """
+        body = self.payload()
+        del body["customer"]["name"]  # trigger OnboardingCustomerSerializer.validate
+        with self.assertLogs("apps.onboarding.views", level="WARNING") as captured:
+            response = self.post_member(body)
+        self.assertEqual(response.status_code, 400, response.data)
+        joined = "\n".join(captured.output)
+        self.assertIn("onboarding_member_400", joined)
+        self.assertIn("9876543210", joined)  # request payload is in the log
+        self.assertIn("Provide a name", joined)  # so are the field errors
+        # The response body still carries the field errors for the wizard.
+        self.assertEqual(response.data["customer"]["name"], ["Provide a name (or first/last name)."])
