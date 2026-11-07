@@ -22,6 +22,7 @@ from apps.customers.models import Customer
 from apps.customers.serializers import CustomerSerializer
 from apps.memberships.models import Membership, MembershipPlan
 from apps.notifications.services.invite_service import invite_result_payload, send_app_invite
+from apps.notifications.services.router import send_welcome_notification
 from apps.notifications.services.wati_service import send_notification
 from apps.onboarding.models import OnboardingSession
 from apps.onboarding.serializers import (
@@ -250,10 +251,13 @@ def _notify(
     """
     rows = []
     if send_welcome:
-        log = send_notification(
+        # Issue #98: the welcome rides the approved fitnation_welcome template
+        # (a brand-new member has no 24h session window, so freeform text can
+        # never deliver); the payment receipt stays a session-window message —
+        # it fires right after a desk interaction.
+        log = send_welcome_notification(
             tenant,
             customer,
-            "welcome",
             {
                 "plan_name": membership.plan.name if membership else "",
                 "end_date": membership.end_date.isoformat() if membership else "",

@@ -43,8 +43,10 @@ def send_welcome_email(registration: "VendorRegistration", tenant: "Tenant") -> 
 
     When the freshly provisioned gym already has a WhatsApp channel and the
     vendor left a contact phone, the welcome goes out over it (the channel
-    policy applies to every communication, issue #66). Otherwise the email
-    payload is logged for the operator as before.
+    policy applies to every communication, issue #66) as the approved
+    ``fitnation_welcome`` template (#98 — business-initiated, no session
+    window exists). Otherwise the email payload is logged for the operator
+    as before.
 
     Args:
         registration: The provisioned vendor registration.
@@ -53,12 +55,11 @@ def send_welcome_email(registration: "VendorRegistration", tenant: "Tenant") -> 
     from apps.notifications.services.router import whatsapp_providers
 
     if registration.contact_phone and whatsapp_providers(tenant, ready_only=True):
-        from apps.notifications.services.wati_service import send_notification
+        from apps.notifications.services.router import send_welcome_notification
 
-        send_notification(
+        send_welcome_notification(
             tenant,
             customer=None,
-            notification_type="welcome",
             context_data={
                 "customer_name": registration.contact_name or registration.business_name,
                 "plan_name": tenant.subscription_plan,

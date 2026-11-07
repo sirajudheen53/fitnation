@@ -4,12 +4,15 @@ Covers the composite response contract, the idempotency-key replay, the
 double-submit guard, tenant isolation, and the app-invite ride-along.
 """
 
+import json
 from unittest import mock
 
 from rest_framework.test import APITestCase
 
 from apps.branches.models import Branch
+from apps.customers.models import Customer
 from apps.memberships.models import Membership, MembershipPlan
+from apps.notifications.models import NotificationLog
 from apps.onboarding.models import OnboardingSession
 from apps.tenants.services import provision_tenant
 from apps.users.models import AuthToken, User
@@ -183,6 +186,50 @@ class OnboardingMemberEndpointTests(APITestCase):
         self.assertEqual(response.data["app_invite"]["status"], "skipped")
         self.assertEqual(response.data["app_invite"]["reason"], "disabled")
         invite.assert_not_called()
+
+    def test_welcome_rides_the_template_path(self) -> None:
+        """The wizard welcome posts the fitnation_welcome TEMPLATE (#98).
+
+        The pre-#98 freeform session text could never deliver — a brand-new
+        member has never messaged the gym, so no 24h session window exists.
+        """
+        for field, value in {
+            "is_gupshup_enabled": True,
+            "gupshup_api_key": "gup-key",
+            "gupshup_source": "911234567890",
+            "gupshup_app_name": "hash-fit-app",
+        }.items():
+            setattr(self.tenant, field, value)
+        self.tenant.save()
+        with mock.patch("apps.notifications.services.channels.requests.post") as poster:
+            poster.return_value = mock.MagicMock(status_code=200, raise_for_status=mock.MagicMock())
+            response = self.post_member(self.payload(send_welcome=True))
+        self.assertEqual(response.status_code, 201, response.data)
+        # The wizard response notifications block keeps its shape (#98).
+        self.assertEqual(response.data["notifications"][0], {"type": "welcome", "status": "sent"})
+        # The welcome leg is the Gupshup TEMPLATE send — the payment-receipt
+        # session texts (payment signal + post-commit send) share the transport.
+        welcome_call = next(
+            call
+            for call in poster.call_args_list
+            if json.loads(call.kwargs["data"]["message"]).get("name") == "fitnation_welcome"
+        )
+        self.assertEqual(welcome_call.args[0], "https://api.gupshup.io/wa/api/v1/msg")
+        self.assertEqual(welcome_call.kwargs["data"]["destination"], "919876543210")
+        message = json.loads(welcome_call.kwargs["data"]["message"])
+        self.assertEqual(
+            message,
+            {
+                "type": "template",
+                "name": "fitnation_welcome",
+                "params": ["Asha Nair", "Onboard Gym", "Monthly", response.data["membership"]["end_date"]],
+            },
+        )
+        log = NotificationLog.objects.for_tenant(self.tenant).filter(notification_type="welcome").latest("created_at")
+        self.assertEqual(log.status, NotificationLog.Status.SENT)
+        self.assertEqual(log.channel, "whatsapp")
+        self.assertEqual(log.provider, "gupshup")
+        self.assertEqual(log.customer, Customer.objects.for_tenant(self.tenant).get(phone__endswith="9876543210"))
 
     def test_validation_400_logs_payload_and_errors(self) -> None:
         """A 400 logs the failing payload + field errors for prod diagnosis (#96).
