@@ -14,6 +14,7 @@ import {
   fetchAttendanceHeatmap,
   fetchMembershipFunnel,
   fetchTopCustomers,
+  hasFieldErrors,
   isPhoneConflict,
   isPhoneConflictError,
   login,
@@ -168,6 +169,16 @@ describe("DRF field-error extraction (#96)", () => {
     expect(isPhoneConflictError(new ApiError(400, body, "400"))).toBe(true);
     expect(isPhoneConflict({ name: ["Provide a name (or first/last name)."] })).toBe(false);
     expect(isPhoneConflictError(new Error("nope"))).toBe(false);
+  });
+
+  it("hasFieldErrors flags inline-renderable fields but not message containers", () => {
+    expect(hasFieldErrors({ phone: ["This field is required."] })).toBe(true);
+    expect(hasFieldErrors({ detail: "Not found." })).toBe(false);
+    expect(hasFieldErrors({ error: "Payment order could not be created." })).toBe(false);
+    expect(hasFieldErrors({ non_field_errors: ["Nope."] })).toBe(false);
+    expect(hasFieldErrors({})).toBe(false);
+    // A relation the form cannot render inline (e.g. an invisible FK).
+    expect(hasFieldErrors({ trainer: ["This field is required."] }, ["trainer"])).toBe(false);
   });
 
   it("builds the readable copy into ApiError.message at request time", async () => {

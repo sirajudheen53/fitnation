@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { X } from "lucide-react";
 import { Button, Card, CardBody, Input, PhoneInput } from "@/components/ui";
-import { addTrainerCustomer, errorMessage, fetchBranches } from "@/lib/api";
+import { addTrainerCustomer, errorMessage, fetchBranches, hasFieldErrors } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { isAcceptablePhoneValue } from "@/lib/phone";
 import type { Branch } from "@/types/branch";
@@ -140,7 +140,11 @@ export function AddCustomerDialog({ trainer, onClose, onSaved }: AddCustomerDial
           );
         }
       }
-      setApiError(errorMessage(err));
+      // Field errors render next to their inputs (#96) — the banner only
+      // carries bodies with nothing inline-renderable.
+      if (!hasFieldErrors((err as { data?: unknown }).data)) {
+        setApiError(errorMessage(err));
+      }
       setSaving(false);
     }
   }

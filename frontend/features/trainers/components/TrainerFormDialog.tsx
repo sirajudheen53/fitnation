@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { X, Plus } from "lucide-react";
 import { Button, Card, CardBody, Input, PhoneInput } from "@/components/ui";
-import { createTrainer, errorMessage, updateTrainer } from "@/lib/api";
+import { createTrainer, errorMessage, hasFieldErrors, updateTrainer } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { isAcceptablePhoneValue, normalizePhoneValue } from "@/lib/phone";
 import type { Trainer } from "@/types/trainer";
@@ -191,7 +191,11 @@ export function TrainerFormDialog({ trainer, onClose, onSaved }: TrainerFormDial
           );
         }
       }
-      setApiError(errorMessage(err));
+      // Field errors render next to their inputs (#96) — the banner only
+      // carries bodies with nothing inline-renderable.
+      if (!hasFieldErrors((err as { data?: unknown }).data)) {
+        setApiError(errorMessage(err));
+      }
       setSaving(false);
     }
   }

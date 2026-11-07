@@ -150,6 +150,19 @@ export function isPhoneConflictError(err: unknown): boolean {
 }
 
 /**
+ * True when the body carries field errors a form can render next to inputs
+ * (#96). Message containers ({detail}/{error}/non_field_errors) don't count —
+ * they have no input to sit beside and must reach the banner. `exclude`
+ * drops fields the form can't display inline (e.g. a select-less relation).
+ */
+export function hasFieldErrors(data: unknown, exclude: readonly string[] = []): boolean {
+  return extractFieldErrors(data).some((fieldError) => {
+    const leaf = fieldError.field.split(".").pop() ?? fieldError.field;
+    return !UNLABELLED_FIELDS.has(leaf) && !exclude.includes(leaf);
+  });
+}
+
+/**
  * Rewrite one DRF field message into desk-actionable copy (#96). Returns
  * null when the raw message is already fine.
  */

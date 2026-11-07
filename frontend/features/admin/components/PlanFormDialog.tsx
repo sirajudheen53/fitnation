@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { Button, Card, CardBody, Input } from "@/components/ui";
-import { createAdminPlan, errorMessage, updateAdminPlan } from "@/lib/api";
+import { createAdminPlan, errorMessage, hasFieldErrors, updateAdminPlan } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { SUBSCRIPTION_PLANS, type AdminSubscriptionPlan } from "@/types/admin";
 
@@ -101,7 +101,11 @@ export function PlanFormDialog({ plan, onClose, onSaved }: PlanFormDialogProps) 
           );
         }
       }
-      setError(errorMessage(err));
+      // Field errors render next to their inputs (#96) — the banner only
+      // carries bodies with nothing inline-renderable.
+      if (!hasFieldErrors((err as { data?: unknown }).data)) {
+        setError(errorMessage(err));
+      }
       setSaving(false);
     }
   }

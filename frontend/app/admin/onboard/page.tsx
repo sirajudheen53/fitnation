@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Copy, RotateCcw, Table2 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button, Card, CardBody, Input, PhoneInput } from "@/components/ui";
-import { errorMessage, onboardGym } from "@/lib/api";
+import { errorMessage, hasFieldErrors, onboardGym } from "@/lib/api";
 import { getToken, getStoredUser } from "@/lib/auth";
 import { SUBSCRIPTION_PLANS, type AdminOnboardGymResult } from "@/types/admin";
 
@@ -62,7 +62,11 @@ export default function AdminOnboardGymPage() {
           );
         }
       }
-      setError(errorMessage(err));
+      // Field errors render next to their inputs (#96) — the banner only
+      // carries bodies with nothing inline-renderable.
+      if (!hasFieldErrors((err as { data?: unknown }).data)) {
+        setError(errorMessage(err));
+      }
     } finally {
       setSaving(false);
     }

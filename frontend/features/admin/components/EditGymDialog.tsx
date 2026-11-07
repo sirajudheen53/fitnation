@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { Button, Card, CardBody, Input, PhoneInput } from "@/components/ui";
-import { errorMessage, updateAdminTenant } from "@/lib/api";
+import { errorMessage, hasFieldErrors, updateAdminTenant } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { normalizePhoneValue } from "@/lib/phone";
 import { SUBSCRIPTION_PLANS, type AdminTenant } from "@/types/admin";
@@ -55,7 +55,11 @@ export function EditGymDialog({ tenant, onClose, onSaved }: EditGymDialogProps) 
           );
         }
       }
-      setError(errorMessage(err));
+      // Field errors render next to their inputs (#96) — the banner only
+      // carries bodies with nothing inline-renderable.
+      if (!hasFieldErrors((err as { data?: unknown }).data)) {
+        setError(errorMessage(err));
+      }
     } finally {
       setSaving(false);
     }
