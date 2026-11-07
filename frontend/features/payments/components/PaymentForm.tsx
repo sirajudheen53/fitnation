@@ -1,19 +1,39 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { DollarSign, Calendar, CreditCard, StickyNote } from "lucide-react";
+import { Calendar, CreditCard, DollarSign, StickyNote } from "lucide-react";
 import { Button, Input, Alert } from "@/components/ui";
+import { CustomerPicker } from "./CustomerPicker";
 import type { Payment, PaymentFormData, PaymentMethod } from "@/types/payment";
-import { errorMessage } from "@/lib/api";
+import type { Membership } from "@/types/membership";
+import type { Customer as CustomerRecord } from "@/types/customer";
+import { errorMessage, fetchMemberships, fetchPayments } from "@/lib/api";
+import { getToken } from "@/lib/auth";
+
+/**
+ * Empty text/NaN/undefined all mean "no membership chosen" — without this,
+ * a cleared field coerces "" to 0 and submits a bogus positive() error.
+ */
+const emptyToUndefined = (value: unknown) =>
+  value === "" || value === null || value === undefined ||
+  (typeof value === "number" && Number.isNaN(value))
+    ? undefined
+    : value;
 
 const paymentSchema = z.object({
-  customer_id: z.coerce.number().int().positive("Select a customer"),
+  customer_id: z.preprocess(
+    (v) =>
+      v === "" || v === null || v === undefined || (typeof v === "number" && Number.isNaN(v))
+        ? 0
+        : v,
+    z.coerce.number().int().positive("Select a customer"),
+  ),
   amount: z.coerce.number().positive("Amount must be greater than 0"),
   method: z.enum(["cash", "card", "upi", "bank_transfer", "other"]),
-  membership_id: z.coerce.number().int().positive().optional().or(z.nan().transform(() => undefined)),
+  membership_id: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
   notes: z.string().max(500).optional().or(z.literal("")),
   payment_date: z.string().min(1, "Payment date is required"),
 });
@@ -27,6 +47,34 @@ const METHOD_LABELS: Record<PaymentMethod, string> = {
   bank_transfer: "Bank transfer",
   other: "Other",
 };
+
+/**
+ * The customer's membership this payment should default to (#103): their
+ * active membership, else their latest one. The backend orders memberships
+ * newest-first (-created_at) and has no per-customer filter, so callers pass
+ * the already-filtered list.
+ */
+export function pickLatestMembership(
+  memberships: Membership[],
+  customerId: number,
+): Membership | null {
+  const mine = memberships.filter((m) => m.customer_id === customerId);
+  return mine.find((m) => m.status === "active") ?? mine[0] ?? null;
+}
+
+/** Pending-payment totals surfaced next to the auto-linked membership. */
+export interface MembershipLink {
+  membership: Membership | null;
+  pendingTotal: number;
+  pendingCount: number;
+}
+
+export function summarizePending(payments: Payment[]): { total: number; count: number } {
+  return {
+    total: payments.reduce((sum, p) => sum + Number(p.amount || 0), 0),
+    count: payments.length,
+  };
+}
 
 interface PaymentFormProps {
   payment?: Payment;
@@ -49,6 +97,7 @@ export function PaymentForm({
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<PaymentSchemaData>({
     resolver: zodResolver(paymentSchema),
@@ -63,6 +112,12 @@ export function PaymentForm({
     },
   });
 
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
+  const [link, setLink] = useState<MembershipLink | null>(null);
+  const [linkLoading, setLinkLoading] = useState(false);
+  /** Ignore stale link loads when the picked customer changes quickly. */
+  const linkSeq = useRef(0);
+
   useEffect(() => {
     if (payment) {
       reset({
@@ -75,6 +130,53 @@ export function PaymentForm({
       });
     }
   }, [payment, reset]);
+
+  /**
+   * Load the picked customer's memberships + pending payments and auto-fill
+   * the membership field (#103). Both fetches are non-fatal: a failed
+   * membership lookup leaves the field empty and editable.
+   */
+  const loadMembershipLink = (customerId: number) => {
+    const token = getToken();
+    if (!token) return;
+    const authToken: string = token;
+    setLinkLoading(true);
+    const seq = ++linkSeq.current;
+    Promise.all([
+      fetchMemberships(authToken).catch(() => null),
+      fetchPayments(authToken, { customer: customerId, status: "pending" }).catch(() => null),
+    ]).then(([membershipRes, pendingRes]) => {
+      if (seq !== linkSeq.current) return;
+      const memberships = membershipRes ? membershipRes.results : [];
+      const active = pickLatestMembership(memberships, customerId);
+      const pending = pendingRes ? pendingRes.results : [];
+      const pendingSummary = summarizePending(pending);
+      setLink({
+        membership: active,
+        pendingTotal: pendingSummary.total,
+        pendingCount: pendingSummary.count,
+      });
+      setLinkLoading(false);
+      if (active) {
+        setValue("membership_id", active.id, { shouldValidate: true, shouldDirty: true });
+      }
+    });
+  };
+
+  const handleCustomerSelect = (customer: CustomerRecord | null) => {
+    setSelectedCustomer(customer);
+    linkSeq.current += 1;
+    setLink(null);
+    setLinkLoading(false);
+    if (customer) {
+      setValue("customer_id", customer.id, { shouldValidate: true, shouldDirty: true });
+      loadMembershipLink(customer.id);
+    } else {
+      // Validated immediately: an emptied required field says so right away.
+      setValue("customer_id", 0, { shouldValidate: true, shouldDirty: true });
+      setValue("membership_id", "");
+    }
+  };
 
   const handleFormSubmit = async (data: PaymentSchemaData) => {
     const payload: PaymentFormData = {
@@ -95,15 +197,48 @@ export function PaymentForm({
     <form onSubmit={handleSubmit(handleFormSubmit)} className="max-w-3xl space-y-6">
       {error != null && <Alert variant="error">{errorMessage(error)}</Alert>}
 
+      {/* customer_id is set via setValue from the picker; the hidden input
+          keeps the field registered so shouldValidate/trigger work. */}
+      <input type="hidden" {...register("customer_id")} />
+
+      <CustomerPicker
+        label="Customer"
+        selected={selectedCustomer}
+        onSelect={handleCustomerSelect}
+        error={errors.customer_id?.message}
+      />
+
+      {linkLoading && (
+        <p data-testid="membership-link-loading" className="text-sm text-gray-500">
+          Checking memberships…
+        </p>
+      )}
+      {link && (
+        <div
+          data-testid="membership-link"
+          className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm"
+        >
+          {link.membership ? (
+            <p className="text-gray-700">
+              Auto-linked membership #{link.membership.id} ·{" "}
+              <span className="font-medium">{link.membership.plan_name}</span> ·{" "}
+              <span className="capitalize">{link.membership.status}</span>
+            </p>
+          ) : (
+            <p className="text-gray-500">No membership found for this customer.</p>
+          )}
+          {link.pendingCount > 0 ? (
+            <p className="mt-1 text-amber-700">
+              Pending dues: ₹{link.pendingTotal.toFixed(2)} across {link.pendingCount}{" "}
+              {link.pendingCount === 1 ? "payment" : "payments"}
+            </p>
+          ) : (
+            <p className="mt-1 text-gray-500">No pending dues.</p>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Input
-          label="Customer ID"
-          type="number"
-          min="1"
-          placeholder="1"
-          error={errors.customer_id?.message}
-          {...register("customer_id")}
-        />
         <Input
           label="Amount"
           type="number"
@@ -114,9 +249,6 @@ export function PaymentForm({
           error={errors.amount?.message}
           {...register("amount")}
         />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
           <label htmlFor="method" className="block text-sm font-medium text-gray-700">
             Payment method
@@ -139,7 +271,9 @@ export function PaymentForm({
             <p className="text-sm text-red-600">{errors.method.message}</p>
           )}
         </div>
+      </div>
 
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Input
           label="Payment date"
           type="date"
@@ -147,16 +281,20 @@ export function PaymentForm({
           error={errors.payment_date?.message}
           {...register("payment_date")}
         />
+        <Input
+          label="Membership ID"
+          type="number"
+          min="1"
+          placeholder="Link to a membership"
+          hint={
+            link?.membership
+              ? "Auto-filled from the customer's membership — edit if needed"
+              : undefined
+          }
+          error={errors.membership_id?.message}
+          {...register("membership_id")}
+        />
       </div>
-
-      <Input
-        label="Membership ID (optional)"
-        type="number"
-        min="1"
-        placeholder="Link to a membership"
-        error={errors.membership_id?.message}
-        {...register("membership_id")}
-      />
 
       <div className="space-y-1.5">
         <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
