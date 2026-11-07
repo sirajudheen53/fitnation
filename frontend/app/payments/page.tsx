@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PaymentTable, type PaymentFilters } from "@/features/payments/components/PaymentTable";
 import { PendingPaymentTable } from "@/features/payments/components/PendingPaymentTable";
+import { paymentReminderErrorText, paymentReminderToast } from "@/features/payments/lib/reminders";
 import { RevenueSummary } from "@/features/payments/components/RevenueSummary";
 import { Button, Alert, Spinner } from "@/components/ui";
 import { fetchPayments, fetchRevenueSummary, sendPaymentLink, errorMessage } from "@/lib/api";
@@ -88,9 +89,10 @@ export default function PaymentsPage() {
   const pendingPayments = useMemo(() => payments.filter((p) => p.status === "pending"), [payments]);
 
   /**
-   * Row action on the pending queue (issue #72): create a Razorpay payment
-   * link and push it to the member over WhatsApp (backend falls back to SMS
-   * then email). The backend cooldown surfaces as "already_sent".
+   * Row action on the pending queue (#72, error copy #106): create a Razorpay
+   * payment link and push it to the member over WhatsApp (backend falls back
+   * to SMS then email). The cooldown surfaces as "already_sent"; a skipped
+   * gate or the daily cap (429) toasts the backend's explicit reason.
    */
   const handleSendLink = async (payment: Payment) => {
     const token = getToken();
@@ -99,15 +101,12 @@ export default function PaymentsPage() {
     setSendingPaymentId(payment.id);
     try {
       const outcome = await sendPaymentLink(payment.id, authToken);
-      if (outcome.status === "sent") {
-        toast.success(`Payment link sent to ${payment.customer_name} over ${outcome.channel}`);
-      } else if (outcome.status === "already_sent") {
-        toast.info(`A link was sent to ${payment.customer_name} recently — try again later.`);
-      } else {
-        toast.error(outcome.reason || `Could not send a payment link to ${payment.customer_name}`);
-      }
+      const reminder = paymentReminderToast(outcome, payment.customer_name);
+      if (reminder.kind === "success") toast.success(reminder.message);
+      else if (reminder.kind === "info") toast.info(reminder.message);
+      else toast.error(reminder.message);
     } catch (err) {
-      toast.error(errorMessage(err));
+      toast.error(paymentReminderErrorText(err));
     } finally {
       setSendingPaymentId(null);
     }
