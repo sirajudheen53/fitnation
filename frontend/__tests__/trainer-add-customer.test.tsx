@@ -288,6 +288,14 @@ describe("AddCustomerDialog — validation", () => {
     expect(await screen.findByText("Please enter a valid email")).toBeInTheDocument();
     expect(addTrainerCustomer).not.toHaveBeenCalled();
   });
+
+  it("previews the stored E.164 number while the phone is typed (#99)", async () => {
+    render(<AddCustomerDialog trainer={sampleTrainer()} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "9876543210" } });
+
+    expect(screen.getByTestId("phone-preview")).toHaveTextContent("Will save as +919876543210");
+  });
 });
 
 describe("AddCustomerDialog — submission", () => {

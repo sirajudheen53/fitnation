@@ -79,6 +79,12 @@ describe("CustomerForm optional contact fields", () => {
     expect(payload.phone).toBeUndefined();
   });
 
+  it("previews the stored E.164 number while the phone is typed (#99)", async () => {
+    render(<CustomerForm onSubmit={jest.fn()} />);
+    fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "9876543210" } });
+    expect(screen.getByTestId("phone-preview")).toHaveTextContent("Will save as +919876543210");
+  });
+
   it("still validates email format when one is entered", async () => {
     const onSubmit = jest.fn();
     const { container } = render(<CustomerForm onSubmit={onSubmit} />);

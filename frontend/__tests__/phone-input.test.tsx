@@ -24,6 +24,12 @@ function ExternalValueHarness({ value }: { value: string }) {
   return <PhoneInput label="Phone" value={value} onChange={jest.fn()} />;
 }
 
+/** Stateful harness passing a hint — the wizard's phone-field shape. */
+function HintHarness() {
+  const [value, setValue] = useState("");
+  return <PhoneInput label="Phone" hint="The phone IS the login" value={value} onChange={setValue} />;
+}
+
 describe("PhoneInput", () => {
   it("defaults to India (+91) and an empty national number", () => {
     render(<Harness />);
@@ -109,5 +115,88 @@ describe("PhoneInput", () => {
     render(<PhoneInput label="Phone" value="+919876543210" onChange={jest.fn()} disabled />);
     expect(screen.getByLabelText("Phone country code")).toBeDisabled();
     expect(nationalInput()).toBeDisabled();
+  });
+});
+
+describe("PhoneInput resolved-value preview (#99)", () => {
+  it("previews the E.164 value while typing", () => {
+    render(<Harness />);
+    expect(screen.queryByTestId("phone-preview")).not.toBeInTheDocument();
+    fireEvent.change(nationalInput(), { target: { value: "9876" } });
+    expect(screen.getByTestId("phone-preview")).toHaveTextContent("Will save as +919876");
+    fireEvent.change(nationalInput(), { target: { value: "9876543210" } });
+    expect(screen.getByTestId("phone-preview")).toHaveTextContent("Will save as +919876543210");
+  });
+
+  it("previews the new dial code when the country changes", () => {
+    render(<Harness initialValue="+919876543210" />);
+    fireEvent.change(screen.getByLabelText("Phone country code"), {
+      target: { value: "AE" },
+    });
+    expect(screen.getByTestId("phone-preview")).toHaveTextContent("Will save as +9719876543210");
+  });
+
+  it("resolves untouched legacy prefills to what the backend will store", () => {
+    render(<ExternalValueHarness value="8606806956" />);
+    expect(screen.getByTestId("phone-preview")).toHaveTextContent("Will save as +918606806956");
+  });
+
+  it("keeps the hint alongside the preview and restores hint-only when cleared", () => {
+    render(<HintHarness />);
+    expect(screen.getByText("The phone IS the login")).toBeInTheDocument();
+    expect(screen.queryByTestId("phone-preview")).not.toBeInTheDocument();
+    fireEvent.change(nationalInput(), { target: { value: "9876543210" } });
+    // The hint stays (it can carry live state, e.g. "Looking up…" in the
+    // wizard) — the preview line is appended under it (#99).
+    expect(screen.getByText("The phone IS the login")).toBeInTheDocument();
+    expect(screen.getByTestId("phone-preview")).toBeInTheDocument();
+    fireEvent.change(nationalInput(), { target: { value: "" } });
+    expect(screen.getByText("The phone IS the login")).toBeInTheDocument();
+    expect(screen.queryByTestId("phone-preview")).not.toBeInTheDocument();
+  });
+});
+
+describe("PhoneInput normalization error state (#99)", () => {
+  it("stays a neutral preview while an incomplete number is being typed", () => {
+    render(<Harness />);
+    fireEvent.change(nationalInput(), { target: { value: "9876" } });
+    expect(screen.queryByTestId("phone-normalize-error")).not.toBeInTheDocument();
+    expect(nationalInput()).toHaveAttribute("aria-invalid", "false");
+  });
+
+  it("shows a clear error after blur when the value can't be normalized", () => {
+    render(<Harness />);
+    fireEvent.change(nationalInput(), { target: { value: "9876" } });
+    fireEvent.blur(nationalInput());
+    expect(screen.getByTestId("phone-normalize-error")).toBeInTheDocument();
+    expect(nationalInput()).toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByTestId("phone-preview")).not.toBeInTheDocument();
+  });
+
+  it("clears the error state once the number becomes valid again", () => {
+    render(<Harness />);
+    fireEvent.change(nationalInput(), { target: { value: "9876" } });
+    fireEvent.blur(nationalInput());
+    expect(screen.getByTestId("phone-normalize-error")).toBeInTheDocument();
+    fireEvent.change(nationalInput(), { target: { value: "9876543210" } });
+    expect(screen.queryByTestId("phone-normalize-error")).not.toBeInTheDocument();
+    expect(screen.getByTestId("phone-preview")).toBeInTheDocument();
+  });
+
+  it("does not fire for a valid number blurred after typing", () => {
+    render(<Harness />);
+    fireEvent.change(nationalInput(), { target: { value: "9876543210" } });
+    fireEvent.blur(nationalInput());
+    expect(screen.queryByTestId("phone-normalize-error")).not.toBeInTheDocument();
+    expect(screen.getByTestId("phone-preview")).toBeInTheDocument();
+  });
+
+  it("the form-supplied error wins — no duplicate normalize error", () => {
+    render(
+      <PhoneInput label="Phone" value="+91987" onChange={jest.fn()} error="Enter a valid phone number" />,
+    );
+    expect(screen.getByText("Enter a valid phone number")).toBeInTheDocument();
+    expect(screen.queryByTestId("phone-normalize-error")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("phone-preview")).not.toBeInTheDocument();
   });
 });

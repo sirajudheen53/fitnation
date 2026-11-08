@@ -294,6 +294,8 @@ describe("TrainerFormDialog — edit mode", () => {
 
     // Stored "+91 90000 00001" prefills as canonical E.164 national digits.
     expect(screen.getByLabelText("Phone")).toHaveValue("9000000001");
+    // The preview resolves the stored value for the edit branch too (#99).
+    expect(screen.getByTestId("phone-preview")).toHaveTextContent("Will save as +919000000001");
 
     fireEvent.change(screen.getByLabelText("Phone"), {
       target: { value: "90000 00002" },

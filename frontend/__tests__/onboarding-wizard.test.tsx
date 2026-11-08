@@ -163,6 +163,11 @@ describe("OnboardingWizard — step 1 (Who)", () => {
     await waitFor(() => expect(mockedSearchCustomers).toHaveBeenCalledWith(expect.anything(), "9876543210"));
     expect(screen.queryByTestId("returning-member-banner")).not.toBeInTheDocument();
   });
+
+  it("previews the stored E.164 number while the phone is typed (#99)", async () => {
+    await fillStep1();
+    expect(screen.getByTestId("phone-preview")).toHaveTextContent("Will save as +919876543210");
+  });
 });
 
 describe("OnboardingWizard — submit errors (#96)", () => {

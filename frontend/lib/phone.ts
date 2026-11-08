@@ -22,6 +22,52 @@ export function phoneDigits(raw: string | null | undefined): string {
   return String(raw ?? "").replace(/\D/g, "");
 }
 
+/** The bare Indian national number the backend's storage rule accepts. */
+const IN_NATIONAL_RE = /^[2-9]\d{9}$/;
+
+/** Trunk/country prefixes a bare Indian number is commonly typed with. */
+const IN_PREFIXES = ["0", "91", "091"] as const;
+
+/** Separators phone fields collect from copy-paste; stripped before shape checks. */
+const PHONE_SEPARATORS_RE = /[\s().-]/g;
+
+/** The 10-digit Indian national number inside `digits`, per apps/users/phone.py. */
+function indianNationalDigits(digits: string): string | null {
+  if (IN_NATIONAL_RE.test(digits)) return digits;
+  for (const prefix of IN_PREFIXES) {
+    if (digits.startsWith(prefix) && IN_NATIONAL_RE.test(digits.slice(prefix.length))) {
+      return digits.slice(prefix.length);
+    }
+  }
+  return null;
+}
+
+/**
+ * What the backend's storage rule (apps/users/phone.py normalize_e164) turns
+ * `raw` into — the source for the PhoneInput "will save as" preview (#99).
+ * An unambiguous Indian number becomes `+91XXXXXXXXXX` (bare, 0/91/091-
+ * prefixed, or +91-prefixed with separators); other "+" numbers pass through
+ * with separators dropped; anything ambiguous is returned untouched rather
+ * than guessed — exactly the backend's ambiguity stance, so the preview never
+ * promises a normalization the API won't perform.
+ */
+export function resolvePhoneE164(raw: string | null | undefined): string {
+  const text = String(raw ?? "").trim();
+  if (!text) return "";
+  const cleaned = text.replace(PHONE_SEPARATORS_RE, "");
+  if (cleaned.startsWith("+")) {
+    const digits = cleaned.slice(1);
+    if (!digits) return text;
+    const rest = digits.startsWith("91") ? digits.slice(2) : "";
+    const national = rest ? indianNationalDigits(rest) : null;
+    if (national !== null) return `+91${national}`;
+    return cleaned;
+  }
+  const national = indianNationalDigits(phoneDigits(text));
+  if (national !== null) return `+91${national}`;
+  return text;
+}
+
 /**
  * Split a stored/typed value into a country and national digits.
  *

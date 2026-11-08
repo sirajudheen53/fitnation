@@ -8,6 +8,7 @@ import {
   isValidPhoneE164,
   parsePhoneInput,
   phoneDigits,
+  resolvePhoneE164,
   samePhoneNumber,
 } from "@/lib/phone";
 import { findCountryByIso } from "@/lib/phoneCountries";
@@ -115,5 +116,44 @@ describe("phoneDigits", () => {
     expect(phoneDigits("+91 98765 43210")).toBe("919876543210");
     expect(phoneDigits("(555) 123-4567")).toBe("5551234567");
     expect(phoneDigits(null)).toBe("");
+  });
+});
+
+describe("resolvePhoneE164", () => {
+  // The preview's source of truth (#99): a frontend mirror of
+  // apps/users/phone.py normalize_e164 — same inputs, same stored value.
+  it("is blank for blank input", () => {
+    expect(resolvePhoneE164("")).toBe("");
+    expect(resolvePhoneE164(null)).toBe("");
+  });
+
+  it("keeps canonical E.164 as-is (idempotent)", () => {
+    expect(resolvePhoneE164("+919876543210")).toBe("+919876543210");
+  });
+
+  it("canonicalizes +91 numbers with separators", () => {
+    expect(resolvePhoneE164("+91 98765 43210")).toBe("+919876543210");
+    expect(resolvePhoneE164("+91-98765-43210")).toBe("+919876543210");
+  });
+
+  it("resolves bare Indian rows (and 0/91/091-prefixed forms) to +91", () => {
+    expect(resolvePhoneE164("8606806956")).toBe("+918606806956");
+    expect(resolvePhoneE164("08606806956")).toBe("+918606806956");
+    expect(resolvePhoneE164("918606806956")).toBe("+918606806956");
+    expect(resolvePhoneE164("0918606806956")).toBe("+918606806956");
+  });
+
+  it("passes other countries' + numbers through untouched", () => {
+    expect(resolvePhoneE164("+971501234567")).toBe("+971501234567");
+    expect(resolvePhoneE164("+442071234567")).toBe("+442071234567");
+  });
+
+  it("leaves ambiguous values untouched rather than guessing", () => {
+    // Not +91-prefixed, so the bare-national rule doesn't apply inside "+" values.
+    expect(resolvePhoneE164("+9991234567")).toBe("+9991234567");
+    expect(resolvePhoneE164("+912345")).toBe("+912345");
+    expect(resolvePhoneE164("12345")).toBe("12345");
+    expect(resolvePhoneE164("0551234567")).toBe("0551234567"); // 10 digits starting 0
+    expect(resolvePhoneE164("98765432101")).toBe("98765432101"); // 11 bare digits
   });
 });

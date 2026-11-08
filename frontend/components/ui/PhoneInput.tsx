@@ -8,7 +8,7 @@ import {
   countryFlag,
   findCountryByIso,
 } from "@/lib/phoneCountries";
-import { formatPhoneE164, parsePhoneInput } from "@/lib/phone";
+import { formatPhoneE164, isAcceptablePhoneValue, parsePhoneInput, resolvePhoneE164 } from "@/lib/phone";
 
 interface PhoneInputProps {
   label?: string;
@@ -40,6 +40,12 @@ const INPUT_CLASSES =
  * the source. Paste of a full international number re-splits into country +
  * national instead of being mangled. Kept deliberately native-elements-only
  * — a select plus a text input, styled like the shared Input.
+ *
+ * Issue #99: while a value is present, a "Will save as …" line previews the
+ * exact E.164 value the backend's storage rule will hold (mirrored in
+ * resolvePhoneE164); once the field is blurred with a value that rule can't
+ * normalize, the preview turns into an explicit red error. A form-supplied
+ * `error` always wins so submit-time messages aren't duplicated.
  */
 export function PhoneInput({
   label,
@@ -58,6 +64,9 @@ export function PhoneInput({
   const initial = parsePhoneInput(value);
   const [countryIso, setCountryIso] = useState(initial.country.iso);
   const [national, setNational] = useState(initial.national);
+  // The normalization state speaks only after the user leaves the field —
+  // mid-typing an incomplete number is expected, not an error (#99).
+  const [blurred, setBlurred] = useState(false);
   // Values the component itself emitted are echoed back through `value`;
   // anything else is an external reset (form prefill) and re-splits.
   const lastEmitted = useRef(value);
@@ -72,6 +81,12 @@ export function PhoneInput({
   }, [value]);
 
   const country = findCountryByIso(countryIso);
+  // The stored value the backend's rule will hold for the current form value —
+  // canonical E.164 for everything the component emits, and the resolved
+  // target for untouched legacy prefills (bare Indian rows).
+  const resolved = resolvePhoneE164(value);
+  const hasValue = value.trim() !== "";
+  const unnormalizable = hasValue && !isAcceptablePhoneValue(resolved);
 
   const emit = (iso: string, digits: string) => {
     const next = formatPhoneE164(findCountryByIso(iso).dial, digits);
@@ -116,7 +131,11 @@ export function PhoneInput({
       <div className="flex gap-2">
         <select
           aria-label={label ? `${label} country code` : "Country code"}
-          className={cn(SELECT_CLASSES, error && "border-red-500 focus:border-red-500 focus:ring-red-500")}
+          className={cn(
+            SELECT_CLASSES,
+            (error || (unnormalizable && blurred)) &&
+              "border-red-500 focus:border-red-500 focus:ring-red-500",
+          )}
           value={countryIso}
           disabled={disabled}
           onChange={(e) => handleCountryChange(e.target.value)}
@@ -134,27 +153,52 @@ export function PhoneInput({
           id={inputId}
           type="tel"
           inputMode="tel"
-          className={cn(INPUT_CLASSES, error && "border-red-500 focus:border-red-500 focus:ring-red-500")}
+          className={cn(
+            INPUT_CLASSES,
+            (error || (unnormalizable && blurred)) &&
+              "border-red-500 focus:border-red-500 focus:ring-red-500",
+          )}
           value={national}
           placeholder={placeholder}
           disabled={disabled}
           required={required}
           autoComplete={autoComplete}
-          aria-invalid={!!error}
-          aria-describedby={error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined}
+          aria-invalid={!!error || (unnormalizable && blurred)}
+          aria-describedby={
+            error || (unnormalizable && blurred)
+              ? `${inputId}-error`
+              : hint
+                ? `${inputId}-hint`
+                : undefined
+          }
           onChange={(e) => handleNationalChange(e.target.value)}
-          onBlur={onBlur}
+          onBlur={() => {
+            setBlurred(true);
+            onBlur?.();
+          }}
         />
       </div>
-      {error && (
+      {error ? (
         <p id={`${inputId}-error`} className="text-sm text-red-600">
           {error}
         </p>
-      )}
-      {hint && !error && (
-        <p id={`${inputId}-hint`} className="text-sm text-gray-500">
-          {hint}
+      ) : unnormalizable && blurred ? (
+        <p id={`${inputId}-error`} className="text-sm text-red-600" data-testid="phone-normalize-error">
+          This number can&apos;t be saved as entered — check the country code and digits.
         </p>
+      ) : (
+        <>
+          {hasValue && (
+            <p className="text-sm text-gray-500" data-testid="phone-preview">
+              Will save as <span className="font-medium text-gray-700">{resolved}</span>
+            </p>
+          )}
+          {hint && (
+            <p id={`${inputId}-hint`} className="text-sm text-gray-500">
+              {hint}
+            </p>
+          )}
+        </>
       )}
     </div>
   );
